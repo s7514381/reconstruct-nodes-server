@@ -58,7 +58,7 @@ namespace ReconstructNodesServer.Filter
             string sToken = headers["Authorization"].ToString();
             if (string.IsNullOrEmpty(sToken)) { sToken = headers["PlayerToken"].ToString(); }
 #if DEBUG
-            sToken = "45C3E4A4-B53D-40F8-84C2-80AA3DB0710D";
+            if (string.IsNullOrEmpty(sToken)) { sToken = "45C3E4A4-B53D-40F8-84C2-80AA3DB0710D"; }
 #endif
 
             return Guid.TryParse(sToken, out Guid token) ? token : null;
