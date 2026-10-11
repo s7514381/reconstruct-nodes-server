@@ -1,0 +1,6 @@
+@reconstruct_nodes_server_HostAddress = http://localhost:5073
+
+GET {{reconstruct_nodes_server_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

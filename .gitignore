@@ -1,0 +1,20 @@
+﻿################################################################################
+# 這個 .gitignore 檔案由 Microsoft(R) Visual Studio 自動建立。
+################################################################################
+
+/.vs
+/.vs/reconstruct-nodes-server/DesignTimeBuild/.dtbcache.v2
+/.vs/reconstruct-nodes-server/v17/.suo
+/.vs/reconstruct-nodes-server/v17/DocumentLayout.backup.json
+/.vs/reconstruct-nodes-server/v17/DocumentLayout.json
+/reconstruct-nodes-server.Library/bin
+/reconstruct-nodes-server.Library/obj
+/reconstruct-nodes-server/bin
+/reconstruct-nodes-server/obj
+/.vs/reconstruct-nodes-server/v17/.futdcache.v2
+/reconstruct-nodes-server.Library/Properties/PublishProfiles/FolderProfile.pubxml
+/reconstruct-nodes-server.Library/Properties/PublishProfiles/FolderProfile.pubxml.user
+/reconstruct-nodes-server.Library/reconstruct-nodes-server.Library.csproj.user
+/reconstruct-nodes-server/reconstruct-nodes-server.csproj.user
+/reconstruct-nodes-server/Properties/PublishProfiles
+/reconstruct-nodes-server/File/*firebase-adminsdk*.json
