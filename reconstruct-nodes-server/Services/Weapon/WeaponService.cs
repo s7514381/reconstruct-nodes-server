@@ -5,7 +5,7 @@ using ReconstructNodesServer.Library.Models;
 
 namespace ReconstructNodesServer.Services
 {
-    public class WeaponService(BaseServiceArgument argument) : _ModelService<Weapon, Weapon>(argument)
+    public class WeaponService(BaseServiceArgument argument) : _SnapshotService<Weapon, WeaponInstanceModel>(argument)
     {
         private const string AffixTable = nameof(WeaponAffix);
         private const string AffixValueTable = nameof(WeaponAffixValue);
@@ -13,7 +13,7 @@ namespace ReconstructNodesServer.Services
 
         protected override string? NaturalKeyField => "EntryKey";
 
-        public virtual async Task<IEnumerable<WeaponInstanceModel>> GetWeaponList()
+        public virtual async Task<IEnumerable<WeaponInstanceModel>> GetInstanceList()
         {
             string weaponSql = $@"SELECT *
                                     FROM {_tableName}
@@ -85,57 +85,57 @@ namespace ReconstructNodesServer.Services
         /// <summary>
         /// 單把武器 upsert：以 EntryKey 定位，子表整批刪除後重插。需在交易內呼叫。
         /// </summary>
-        public virtual async Task SaveWeapon(WeaponInstanceModel model)
+        public override Task Save(WeaponInstanceModel model) => base.Save(model);
+
+        protected override void ValidateSnapshot(WeaponInstanceModel model)
         {
             if (string.IsNullOrWhiteSpace(model.Id) || string.IsNullOrWhiteSpace(model.WeaponId))
             {
                 throw new ArgumentException("武器實例代碼與武器代碼不可為空");
             }
+        }
 
+        protected override async Task SaveSnapshot(WeaponInstanceModel model)
+        {
             // 先完整解析再寫入，格式錯誤時不會留下部分資料
             List<WeaponAffixSnapshot> affixes = WeaponSnapshotCodec.ReadAffixes(model.Affixes ?? new());
             WeaponUniqueSnapshot? unique = WeaponSnapshotCodec.ReadUnique(model.Unique);
 
-            // UPDLOCK + HOLDLOCK 鎖住既有列與不存在時的鍵區間，避免並行儲存重複插入同一把武器
-            string lockSql = $@"SELECT TOP 1 *
-                                  FROM {_tableName} WITH (UPDLOCK, HOLDLOCK)
-                                 WHERE Status != -1
-                                   AND CreateUserId = @CreateUserId
-                                   AND EntryKey = @EntryKey";
-            Weapon? existing = await QueryFirstAsync<Weapon?>(lockSql, new { CreateUserId = _playerId, EntryKey = model.Id });
-
-            Weapon weapon = existing ?? new Weapon { EntryKey = model.Id, CreateUserId = _playerId };
-            weapon.WeaponKey = model.WeaponId;
-            weapon.WeaponFamilyKey = model.WeaponFamilyId;
-            weapon.Rarity = model.Rarity;
-            weapon.UniqueKey = unique?.UniqueKey;
-
-            if (existing == null)
+            (Weapon weapon, bool isNew) = await UpsertSnapshotParentAsync(row =>
             {
-                await InsertAsync(weapon);
-            }
-            else
+                row.EntryKey = model.Id;
+                row.WeaponKey = model.WeaponId;
+                row.WeaponFamilyKey = model.WeaponFamilyId;
+                row.Rarity = model.Rarity;
+                row.UniqueKey = unique?.UniqueKey;
+            }, model.Id, UpdateSnapshotParentAsync);
+
+            if (!isNew)
             {
-                string updateSql = $@"UPDATE {_tableName}
-                                         SET WeaponKey = @WeaponKey,
-                                             WeaponFamilyKey = @WeaponFamilyKey,
-                                             Rarity = @Rarity,
-                                             UniqueKey = @UniqueKey
-                                       WHERE Id = @Id
-                                         AND CreateUserId = @CreateUserId";
-                await ExecuteAsync(updateSql, new
-                {
-                    weapon.Id,
-                    CreateUserId = _playerId,
-                    weapon.WeaponKey,
-                    weapon.WeaponFamilyKey,
-                    weapon.Rarity,
-                    weapon.UniqueKey,
-                });
                 await DeleteChildrenAsync(weapon.Id);
             }
 
             await InsertChildrenAsync(weapon.Id, affixes, unique);
+        }
+
+        private async Task UpdateSnapshotParentAsync(Weapon weapon)
+        {
+            string updateSql = $@"UPDATE {_tableName}
+                                     SET WeaponKey = @WeaponKey,
+                                         WeaponFamilyKey = @WeaponFamilyKey,
+                                         Rarity = @Rarity,
+                                         UniqueKey = @UniqueKey
+                                   WHERE Id = @Id
+                                     AND CreateUserId = @CreateUserId";
+            await ExecuteAsync(updateSql, new
+            {
+                weapon.Id,
+                CreateUserId = _playerId,
+                weapon.WeaponKey,
+                weapon.WeaponFamilyKey,
+                weapon.Rarity,
+                weapon.UniqueKey,
+            });
         }
 
         /// <summary>
@@ -158,7 +158,7 @@ namespace ReconstructNodesServer.Services
                                      WHERE CreateUserId = @CreateUserId
                                        AND EntryKey = @EntryKey)
                                  + (SELECT COUNT(1)
-                                      FROM {nameof(GameProgressDeployment)}
+                                      FROM {nameof(Deployment)}
                                      WHERE CreateUserId = @CreateUserId
                                        AND WeaponEntryKey = @EntryKey)";
             int count = await QueryFirstAsync<int>(sql, new { CreateUserId = _playerId, EntryKey = entryKey });

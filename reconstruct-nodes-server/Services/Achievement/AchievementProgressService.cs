@@ -8,7 +8,7 @@ namespace ReconstructNodesServer.Services
     /// 成就進度服務：Achievement 每個群組一列（Total 為進度），AchievementDetail 為群組內項目與領取狀態，
     /// AchievementCollected 為已收集的武器與詞綴。
     /// </summary>
-    public class AchievementProgressService(BaseServiceArgument argument, ItemService itemService) : _ModelService<Achievement, Achievement>(argument)
+    public class AchievementProgressService(BaseServiceArgument argument, ItemService itemService) : _SnapshotService<Achievement, AchievementProgressModel>(argument)
     {
         // 與用戶端 AchievementItem.REWARD_ID、REWARD_AMOUNT 保持一致
         private const string RewardItemKey = "diamond";
@@ -20,7 +20,7 @@ namespace ReconstructNodesServer.Services
         /// <summary>
         /// 讀取目前玩家的成就進度，尚未儲存過時回傳 null
         /// </summary>
-        public virtual async Task<AchievementProgressModel?> GetProgress()
+        public virtual async Task<AchievementProgressModel?> Get()
         {
             List<Achievement> groups = await QueryGroupsAsync(lockRows: false);
             if (groups.Count == 0) { return null; }
@@ -49,10 +49,12 @@ namespace ReconstructNodesServer.Services
         /// <summary>
         /// 以整份成就快照覆寫目前玩家的資料。已領取紀錄由伺服器保留，用戶端無法撤銷或重複領取。需在交易內呼叫。
         /// </summary>
-        public virtual async Task SaveProgress(AchievementProgressModel model)
-        {
-            ValidateProgress(model);
+        public override Task Save(AchievementProgressModel model) => base.Save(model);
 
+        protected override void ValidateSnapshot(AchievementProgressModel model) => ValidateProgress(model);
+
+        protected override async Task SaveSnapshot(AchievementProgressModel model)
+        {
             // 與 ClaimReward 相同的鎖順序（先群組、後項目），避免死結
             await QueryGroupsAsync(lockRows: true);
             Dictionary<string, AchievementDetail> claimed = (await QueryChildrenAsync<AchievementDetail>(DetailTable))
@@ -130,7 +132,7 @@ namespace ReconstructNodesServer.Services
             detail.IsReward = true;
             detail.RewardDate = DateTime.Now;
             await UpdateAsync(detail);
-            await itemService.AddItem(RewardItemKey, RewardAmount);
+            await itemService.AdjustAmount(RewardItemKey, RewardAmount);
         }
 
         private async Task<List<Achievement>> QueryGroupsAsync(bool lockRows)

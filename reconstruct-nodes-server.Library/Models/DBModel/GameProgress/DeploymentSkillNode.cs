@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using Dapper.Contrib.Extensions;
 using Microsoft.EntityFrameworkCore;
 using ReconstructNodesServer.Library.Attributes;
@@ -6,11 +6,11 @@ using ReconstructNodesServer.Library.Models;
 
 namespace ReconstructNodesServer.Library.DBModel
 {
-    [Table(nameof(GameProgressDeploymentSkillNode))]
-    public class GameProgressDeploymentSkillNode : ModelBase
+    [Table(nameof(DeploymentSkillNode))]
+    public class DeploymentSkillNode : ModelBase
     {
-        [Relation(nameof(GameProgressDeploymentSkill))]
-        public Guid? GameProgressDeploymentSkillId { get => Get<Guid?>(); set => Set(value); }
+        [Relation(nameof(DeploymentSkill))]
+        public Guid? DeploymentSkillId { get => Get<Guid?>(); set => Set(value); }
 
         /// <summary>auxiliary 或 active，決定 LootId 與 Kind 的語意。</summary>
         public string NodeType { get => Get<string>(); set => Set(value); }
@@ -23,8 +23,8 @@ namespace ReconstructNodesServer.Library.DBModel
         {
             base.OnModelCreating(modelBuilder);
 
-            modelBuilder.Entity<GameProgressDeploymentSkillNode>()
-                .HasIndex(b => b.GameProgressDeploymentSkillId);
+            modelBuilder.Entity<DeploymentSkillNode>()
+                .HasIndex(b => b.DeploymentSkillId);
         }
     }
 }

@@ -26,6 +26,9 @@ namespace ReconstructNodesServer.Controllers
             if (model.ClientId == null
                 || !model.Type.HasValue) { return BadRequest(); }
 
+            // Google 必須由後端驗證 ID Token 後取得 sub；客戶端傳入的 GoogleId 不可信，改由 GoogleAuth/Login 處理
+            if (model.Type == ELoginType.Google) { return BadRequest("Google 登入請改用 GoogleAuth/Login"); }
+
             ResultModel<LoginResponse> result = new();
             result.Data = new();
 
@@ -33,8 +36,8 @@ namespace ReconstructNodesServer.Controllers
             {
                 // 訪客由 PlayerService 統一查找或建立（與 DeviceAuth 共用），其餘登入方式維持原流程
                 Player? player = model.Type == ELoginType.訪客
-                    ? await playerService.FindOrCreateGuestPlayer(model.ClientId)
-                    : await playerService.GetPlayerByLogin(model);
+                    ? await playerService.FindOrCreateGuest(model.ClientId)
+                    : await playerService.GetDataByLogin(model);
                 if (player == null)
                 {
                     //如果沒有的話要建帳號

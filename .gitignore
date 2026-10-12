@@ -7,10 +7,8 @@
 /.vs/reconstruct-nodes-server/v17/.suo
 /.vs/reconstruct-nodes-server/v17/DocumentLayout.backup.json
 /.vs/reconstruct-nodes-server/v17/DocumentLayout.json
-/reconstruct-nodes-server.Library/bin
-/reconstruct-nodes-server.Library/obj
-/reconstruct-nodes-server/bin
-/reconstruct-nodes-server/obj
+bin/
+obj/
 /.vs/reconstruct-nodes-server/v17/.futdcache.v2
 /reconstruct-nodes-server.Library/Properties/PublishProfiles/FolderProfile.pubxml
 /reconstruct-nodes-server.Library/Properties/PublishProfiles/FolderProfile.pubxml.user

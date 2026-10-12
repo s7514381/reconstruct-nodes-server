@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using Dapper.Contrib.Extensions;
 using Microsoft.EntityFrameworkCore;
 using ReconstructNodesServer.Library.Attributes;
@@ -6,11 +6,11 @@ using ReconstructNodesServer.Library.Models;
 
 namespace ReconstructNodesServer.Library.DBModel
 {
-    [Table(nameof(GameProgressDeploymentSkill))]
-    public class GameProgressDeploymentSkill : ModelBase
+    [Table(nameof(DeploymentSkill))]
+    public class DeploymentSkill : ModelBase
     {
-        [Relation(nameof(GameProgressDeployment))]
-        public Guid? GameProgressDeploymentId { get => Get<Guid?>(); set => Set(value); }
+        [Relation(nameof(Deployment))]
+        public Guid? DeploymentId { get => Get<Guid?>(); set => Set(value); }
 
         public int Kind { get => Get<int>(); set => Set(value); }
 
@@ -18,8 +18,8 @@ namespace ReconstructNodesServer.Library.DBModel
         {
             base.OnModelCreating(modelBuilder);
 
-            modelBuilder.Entity<GameProgressDeploymentSkill>()
-                .HasIndex(b => b.GameProgressDeploymentId);
+            modelBuilder.Entity<DeploymentSkill>()
+                .HasIndex(b => b.DeploymentId);
         }
     }
 }

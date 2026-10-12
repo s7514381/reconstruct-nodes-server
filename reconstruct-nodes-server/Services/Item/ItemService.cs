@@ -7,7 +7,7 @@ namespace ReconstructNodesServer.Services
     {
         protected override string? NaturalKeyField => "ItemKey";
 
-        public virtual async Task<IEnumerable<Item>> GetItemList()
+        public virtual async Task<IEnumerable<Item>> GetInStockList()
         {
             string sql = $@"SELECT *
                               FROM {_tableName}
@@ -22,7 +22,7 @@ namespace ReconstructNodesServer.Services
         /// 數量歸零時軟刪除該列；結果小於 0 時拋出例外，由交易回滾。
         /// 名稱與分類僅在建立列或既有列名稱為空白時寫入。
         /// </summary>
-        public virtual async Task<int> AddItem(string itemKey, int delta, string? name = null, string? category = null)
+        public virtual async Task<int> AdjustAmount(string itemKey, int delta, string? name = null, string? category = null)
         {
             // UPDLOCK + HOLDLOCK 同時鎖住既有列與不存在時的鍵區間，避免並行增量遺失更新或重複插入
             string sql = $@"SELECT TOP 1 *

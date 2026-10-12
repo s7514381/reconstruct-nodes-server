@@ -8,7 +8,7 @@ namespace ReconstructNodesServer.Services
     /// <summary>
     /// 天賦樹服務：父表 Talent 每位玩家一列，已取得節點與舊分支節點各自拆表。
     /// </summary>
-    public class TalentService(BaseServiceArgument argument) : _ModelService<Talent, Talent>(argument)
+    public class TalentService(BaseServiceArgument argument) : _SnapshotService<Talent, TalentModel>(argument)
     {
         private const string AcquiredTable = nameof(TalentAcquired);
         private const string LegacyCategoryTable = nameof(TalentLegacyCategory);
@@ -16,7 +16,7 @@ namespace ReconstructNodesServer.Services
         /// <summary>
         /// 讀取目前玩家的天賦樹，沒有資料時回傳 null
         /// </summary>
-        public virtual async Task<TalentModel?> GetTalent()
+        public virtual async Task<TalentModel?> GetSnapshot()
         {
             string sql = $@"SELECT TOP 1 *
                               FROM {_tableName}
@@ -42,30 +42,22 @@ namespace ReconstructNodesServer.Services
         /// <summary>
         /// 以整份天賦快照覆寫目前玩家的資料：父表 upsert，子表整批刪除後重插。需在交易內呼叫。
         /// </summary>
-        public virtual async Task SaveTalent(TalentModel model)
+        public override Task Save(TalentModel model) => base.Save(model);
+
+        protected override void ValidateSnapshot(TalentModel model) => ValidateTalent(model);
+
+        protected override async Task SaveSnapshot(TalentModel model)
         {
-            ValidateTalent(model);
-
-            // UPDLOCK + HOLDLOCK 鎖住既有列與不存在時的鍵區間，避免並行儲存重複建立父列
-            string lockSql = $@"SELECT TOP 1 *
-                                  FROM {_tableName} WITH (UPDLOCK, HOLDLOCK)
-                                 WHERE Status != -1
-                                   AND CreateUserId = @CreateUserId";
-            Talent? existing = await QueryFirstAsync<Talent?>(lockSql, new { CreateUserId = _playerId });
-
-            Talent talent = existing ?? new Talent { CreateUserId = _playerId };
-            talent.Version = model.Version;
-            talent.TalentPoints = model.TalentPoints;
-            talent.TotalSpentPoints = model.TotalSpentPoints;
-            talent.PointsRecalculationVersion = model.PointsRecalculationVersion;
-
-            if (existing == null)
+            (Talent talent, bool isNew) = await UpsertSnapshotParentAsync(row =>
             {
-                await InsertAsync(talent);
-            }
-            else
+                row.Version = model.Version;
+                row.TalentPoints = model.TalentPoints;
+                row.TotalSpentPoints = model.TotalSpentPoints;
+                row.PointsRecalculationVersion = model.PointsRecalculationVersion;
+            });
+
+            if (!isNew)
             {
-                await UpdateAsync(talent);
                 await DeleteOwnedRowsAsync(AcquiredTable, "TalentId", talent.Id);
                 await DeleteOwnedRowsAsync(LegacyCategoryTable, "TalentId", talent.Id);
             }

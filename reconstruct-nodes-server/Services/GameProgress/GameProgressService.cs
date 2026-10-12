@@ -10,12 +10,12 @@ namespace ReconstructNodesServer.Services
     /// 遊戲進度服務：無父表。純量與設定存於 PlayerParams（Group 以 game_progress 開頭）；
     /// 部署、技能、戰場道路與角色裝備依 CreateUserId 拆表。裝備只存 EntryKey，詳情以 Weapon 為準。
     /// </summary>
-    public class GameProgressService(BaseServiceArgument argument) : _ModelService<PlayerParams, PlayerParams>(argument)
+    public class GameProgressService(BaseServiceArgument argument) : _SnapshotService<PlayerParams, GameProgressModel>(argument)
     {
-        private const string DeploymentTable = nameof(GameProgressDeployment);
-        private const string SkillTable = nameof(GameProgressDeploymentSkill);
-        private const string NodeTable = nameof(GameProgressDeploymentSkillNode);
-        private const string RoadTable = nameof(GameProgressBattlefieldRoad);
+        private const string DeploymentTable = nameof(Deployment);
+        private const string SkillTable = nameof(DeploymentSkill);
+        private const string NodeTable = nameof(DeploymentSkillNode);
+        private const string RoadTable = nameof(BattlefieldRoad);
         private const string CharacterWeaponTable = nameof(CharacterWeapon);
 
         private const string ProgressGroup = GameProgressParamGroups.Progress;
@@ -55,7 +55,7 @@ namespace ReconstructNodesServer.Services
         /// <summary>
         /// 讀取目前玩家的遊戲進度，沒有資料（缺少 version 純量）時回傳 null
         /// </summary>
-        public virtual async Task<GameProgressModel?> GetProgress()
+        public virtual async Task<GameProgressModel?> Get()
         {
             string rowSql = $@"SELECT *
                                  FROM {_tableName}
@@ -74,17 +74,17 @@ namespace ReconstructNodesServer.Services
                 .Where(param => param.Group != ProgressGroup)
                 .ToLookup(param => param.Group);
 
-            List<GameProgressDeployment> deploymentRows = await QueryOwnedAsync<GameProgressDeployment>(DeploymentTable);
-            List<GameProgressDeploymentSkill> skillRows = await QueryOwnedAsync<GameProgressDeploymentSkill>(SkillTable);
-            List<GameProgressDeploymentSkillNode> nodeRows = await QueryOwnedAsync<GameProgressDeploymentSkillNode>(NodeTable);
-            List<GameProgressBattlefieldRoad> roadRows = await QueryOwnedAsync<GameProgressBattlefieldRoad>(RoadTable);
+            List<Deployment> deploymentRows = await QueryOwnedAsync<Deployment>(DeploymentTable);
+            List<DeploymentSkill> skillRows = await QueryOwnedAsync<DeploymentSkill>(SkillTable);
+            List<DeploymentSkillNode> nodeRows = await QueryOwnedAsync<DeploymentSkillNode>(NodeTable);
+            List<BattlefieldRoad> roadRows = await QueryOwnedAsync<BattlefieldRoad>(RoadTable);
             List<CharacterWeapon> characterWeaponRows = await QueryOwnedAsync<CharacterWeapon>(CharacterWeaponTable);
 
-            Dictionary<string, WeaponInstanceModel> liveWeapons = (await _lazy.WeaponService.Value.GetWeaponList())
+            Dictionary<string, WeaponInstanceModel> liveWeapons = (await _lazy.WeaponService.Value.GetInstanceList())
                 .ToDictionary(weapon => weapon.Id);
 
-            ILookup<Guid?, GameProgressDeploymentSkill> skillsByDeployment = skillRows.ToLookup(skill => skill.GameProgressDeploymentId);
-            ILookup<Guid?, GameProgressDeploymentSkillNode> nodesBySkill = nodeRows.ToLookup(node => node.GameProgressDeploymentSkillId);
+            ILookup<Guid?, DeploymentSkill> skillsByDeployment = skillRows.ToLookup(skill => skill.DeploymentId);
+            ILookup<Guid?, DeploymentSkillNode> nodesBySkill = nodeRows.ToLookup(node => node.DeploymentSkillId);
 
             List<GameProgressDeploymentModel> deploymentLog = deploymentRows.Select(row =>
             {
@@ -140,10 +140,12 @@ namespace ReconstructNodesServer.Services
         /// <summary>
         /// 以整份快照覆寫遊戲進度：先刪除此玩家既有的進度列再重新寫入。需在交易內呼叫。
         /// </summary>
-        public virtual async Task SaveProgress(GameProgressModel model)
-        {
-            ValidateProgress(model);
+        public override Task Save(GameProgressModel model) => base.Save(model);
 
+        protected override void ValidateSnapshot(GameProgressModel model) => ValidateProgress(model);
+
+        protected override async Task SaveSnapshot(GameProgressModel model)
+        {
             // 與武器刪除共用玩家鎖，避免刪武器與寫入裝備參照交錯
             await LockPlayerAsync();
             await DeleteProgressRowsAsync();
@@ -308,7 +310,7 @@ namespace ReconstructNodesServer.Services
             for (int index = 0; index < deployments.Count; index++)
             {
                 GameProgressDeploymentModel deployment = deployments[index];
-                GameProgressDeployment row = new()
+                Deployment row = new()
                 {
                     SpotIndex = deployment.SpotIndex,
                     CellX = deployment.Cell?[0],
@@ -332,9 +334,9 @@ namespace ReconstructNodesServer.Services
             for (int index = 0; index < loadouts.Count; index++)
             {
                 GameProgressSkillLoadoutModel loadout = loadouts[index];
-                GameProgressDeploymentSkill skill = new()
+                DeploymentSkill skill = new()
                 {
-                    GameProgressDeploymentId = deploymentId,
+                    DeploymentId = deploymentId,
                     Kind = loadout.Kind,
                     Sequence = index,
                     CreateUserId = _playerId,
@@ -350,9 +352,9 @@ namespace ReconstructNodesServer.Services
             for (int index = 0; index < nodes.Count; index++)
             {
                 GameProgressSkillNodeModel node = nodes[index];
-                await InsertAsync(new GameProgressDeploymentSkillNode
+                await InsertAsync(new DeploymentSkillNode
                 {
-                    GameProgressDeploymentSkillId = skillId,
+                    DeploymentSkillId = skillId,
                     NodeType = node.Type,
                     // 主動節點可能沒有 loot_id，空字串存為 NULL
                     LootId = string.IsNullOrEmpty(node.LootId) ? null : node.LootId,
@@ -384,7 +386,7 @@ namespace ReconstructNodesServer.Services
             for (int index = 0; index < roads.Count; index++)
             {
                 GameProgressRoadModel road = roads[index];
-                await InsertAsync(new GameProgressBattlefieldRoad
+                await InsertAsync(new BattlefieldRoad
                 {
                     X = road.X,
                     Y = road.Y,
@@ -420,7 +422,7 @@ namespace ReconstructNodesServer.Services
         private static bool ReadBool(IReadOnlyDictionary<string, string> values, string name) =>
             values.TryGetValue(name, out string? value) && bool.Parse(value);
 
-        private static GameProgressBattlefieldModel? BuildBattlefield(IReadOnlyDictionary<string, string> values, IEnumerable<GameProgressBattlefieldRoad> roadRows)
+        private static GameProgressBattlefieldModel? BuildBattlefield(IReadOnlyDictionary<string, string> values, IEnumerable<BattlefieldRoad> roadRows)
         {
             if (!values.ContainsKey(ProgressKey.BattlefieldVersion)) { return null; }
 
@@ -440,7 +442,7 @@ namespace ReconstructNodesServer.Services
             };
         }
 
-        private static GameProgressSkillNodeModel ToNodeModel(GameProgressDeploymentSkillNode node) => new()
+        private static GameProgressSkillNodeModel ToNodeModel(DeploymentSkillNode node) => new()
         {
             Type = node.NodeType,
             LootId = node.LootId,

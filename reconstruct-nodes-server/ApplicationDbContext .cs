@@ -45,10 +45,10 @@ namespace ReconstructNodesServer
         public virtual DbSet<WeaponAffix> WeaponAffix { get; set; }
         public virtual DbSet<WeaponAffixValue> WeaponAffixValue { get; set; }
         public virtual DbSet<WeaponUniqueValue> WeaponUniqueValue { get; set; }
-        public virtual DbSet<GameProgressDeployment> GameProgressDeployment { get; set; }
-        public virtual DbSet<GameProgressDeploymentSkill> GameProgressDeploymentSkill { get; set; }
-        public virtual DbSet<GameProgressDeploymentSkillNode> GameProgressDeploymentSkillNode { get; set; }
-        public virtual DbSet<GameProgressBattlefieldRoad> GameProgressBattlefieldRoad { get; set; }
+        public virtual DbSet<Deployment> Deployment { get; set; }
+        public virtual DbSet<DeploymentSkill> DeploymentSkill { get; set; }
+        public virtual DbSet<DeploymentSkillNode> DeploymentSkillNode { get; set; }
+        public virtual DbSet<BattlefieldRoad> BattlefieldRoad { get; set; }
         public virtual DbSet<CharacterWeapon> CharacterWeapon { get; set; }
         public virtual DbSet<Talent> Talent { get; set; }
         public virtual DbSet<TalentAcquired> TalentAcquired { get; set; }

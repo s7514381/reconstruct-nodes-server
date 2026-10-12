@@ -1,10 +1,10 @@
-using Dapper.Contrib.Extensions;
+﻿using Dapper.Contrib.Extensions;
 using ReconstructNodesServer.Library.Models;
 
 namespace ReconstructNodesServer.Library.DBModel
 {
-    [Table(nameof(GameProgressBattlefieldRoad))]
-    public class GameProgressBattlefieldRoad : ModelBase
+    [Table(nameof(BattlefieldRoad))]
+    public class BattlefieldRoad : ModelBase
     {
         public int X { get => Get<int>(); set => Set(value); }
 

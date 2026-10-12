@@ -41,7 +41,7 @@ namespace ReconstructNodesServer.Controllers
 
         [HttpPost]
         [ServiceFilter(typeof(AuthorizeFilter))]
-        public IActionResult GetManagerSession()
+        public IActionResult GetSession()
         {
             Player? player = playerService.Player;
             if (player?.Token == null)

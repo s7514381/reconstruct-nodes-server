@@ -35,6 +35,18 @@ namespace ReconstructNodesServer.Library.DBModel
 
             modelBuilder.Entity<Player>()
                 .HasIndex(b => b.Token);
+
+            // Google 玩家唯一來源：同一 GoogleId 只能有一筆非訪客列。訪客列（IsClientLogin = 1）不納入，
+            // 以免舊版 Bind 殘留的 GoogleId 阻擋 Google 玩家建立。GoogleId 需可作為索引鍵，故限長 128（Google sub 實際為數字串）。
+            modelBuilder.Entity<Player>()
+                .Property(b => b.GoogleId)
+                .HasMaxLength(128);
+
+            modelBuilder.Entity<Player>()
+                .HasIndex(b => b.GoogleId)
+                .IsUnique()
+                .HasFilter("[GoogleId] IS NOT NULL AND [IsClientLogin] = 0")
+                .HasDatabaseName("UX_Player_GoogleId_NonClient");
         }
     }
 }

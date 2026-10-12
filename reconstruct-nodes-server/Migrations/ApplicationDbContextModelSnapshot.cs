@@ -562,6 +562,46 @@ namespace ReconstructNodesServer.Migrations
                     b.ToTable("AchievementSetting");
                 });
 
+            modelBuilder.Entity("ReconstructNodesServer.Library.DBModel.BattlefieldRoad", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasDefaultValueSql("NEWID()");
+
+                    b.Property<bool>("Corner")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("CreateDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("CreateUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Rotation")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("Sequence")
+                        .HasColumnType("int");
+
+                    b.Property<short?>("Status")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("smallint")
+                        .HasDefaultValueSql("1");
+
+                    b.Property<int>("X")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Y")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreateUserId");
+
+                    b.ToTable("BattlefieldRoad");
+                });
+
             modelBuilder.Entity("ReconstructNodesServer.Library.DBModel.Character", b =>
                 {
                     b.Property<Guid>("Id")
@@ -636,6 +676,136 @@ namespace ReconstructNodesServer.Migrations
                         .HasFilter("[Status] <> -1");
 
                     b.ToTable("CharacterWeapon");
+                });
+
+            modelBuilder.Entity("ReconstructNodesServer.Library.DBModel.Deployment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasDefaultValueSql("NEWID()");
+
+                    b.Property<int?>("CellX")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("CellY")
+                        .HasColumnType("int");
+
+                    b.Property<string>("CharacterName")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("CreateDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("CreateUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("Sequence")
+                        .HasColumnType("int");
+
+                    b.Property<int>("SpotIndex")
+                        .HasColumnType("int");
+
+                    b.Property<short?>("Status")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("smallint")
+                        .HasDefaultValueSql("1");
+
+                    b.Property<int>("Wave")
+                        .HasColumnType("int");
+
+                    b.Property<string>("WeaponEntryKey")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int?>("WeaponQualityVersion")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreateUserId");
+
+                    b.ToTable("Deployment");
+                });
+
+            modelBuilder.Entity("ReconstructNodesServer.Library.DBModel.DeploymentSkill", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasDefaultValueSql("NEWID()");
+
+                    b.Property<DateTime?>("CreateDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("CreateUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("DeploymentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("Sequence")
+                        .HasColumnType("int");
+
+                    b.Property<short?>("Status")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("smallint")
+                        .HasDefaultValueSql("1");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreateUserId");
+
+                    b.HasIndex("DeploymentId");
+
+                    b.ToTable("DeploymentSkill");
+                });
+
+            modelBuilder.Entity("ReconstructNodesServer.Library.DBModel.DeploymentSkillNode", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasDefaultValueSql("NEWID()");
+
+                    b.Property<DateTime?>("CreateDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("CreateUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("DeploymentSkillId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int?>("Kind")
+                        .HasColumnType("int");
+
+                    b.Property<string>("LootId")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("NodeType")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int?>("Sequence")
+                        .HasColumnType("int");
+
+                    b.Property<short?>("Status")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("smallint")
+                        .HasDefaultValueSql("1");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreateUserId");
+
+                    b.HasIndex("DeploymentSkillId");
+
+                    b.ToTable("DeploymentSkillNode");
                 });
 
             modelBuilder.Entity("ReconstructNodesServer.Library.DBModel.EmailVerify", b =>
@@ -745,176 +915,6 @@ namespace ReconstructNodesServer.Migrations
                     b.HasIndex("CreateUserId");
 
                     b.ToTable("GameCollection");
-                });
-
-            modelBuilder.Entity("ReconstructNodesServer.Library.DBModel.GameProgressBattlefieldRoad", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier")
-                        .HasDefaultValueSql("NEWID()");
-
-                    b.Property<bool>("Corner")
-                        .HasColumnType("bit");
-
-                    b.Property<DateTime?>("CreateDate")
-                        .HasColumnType("datetime2");
-
-                    b.Property<Guid?>("CreateUserId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<int>("Rotation")
-                        .HasColumnType("int");
-
-                    b.Property<int?>("Sequence")
-                        .HasColumnType("int");
-
-                    b.Property<short?>("Status")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("smallint")
-                        .HasDefaultValueSql("1");
-
-                    b.Property<int>("X")
-                        .HasColumnType("int");
-
-                    b.Property<int>("Y")
-                        .HasColumnType("int");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CreateUserId");
-
-                    b.ToTable("GameProgressBattlefieldRoad");
-                });
-
-            modelBuilder.Entity("ReconstructNodesServer.Library.DBModel.GameProgressDeployment", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier")
-                        .HasDefaultValueSql("NEWID()");
-
-                    b.Property<int?>("CellX")
-                        .HasColumnType("int");
-
-                    b.Property<int?>("CellY")
-                        .HasColumnType("int");
-
-                    b.Property<string>("CharacterName")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<DateTime?>("CreateDate")
-                        .HasColumnType("datetime2");
-
-                    b.Property<Guid?>("CreateUserId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<int>("Kind")
-                        .HasColumnType("int");
-
-                    b.Property<int?>("Sequence")
-                        .HasColumnType("int");
-
-                    b.Property<int>("SpotIndex")
-                        .HasColumnType("int");
-
-                    b.Property<short?>("Status")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("smallint")
-                        .HasDefaultValueSql("1");
-
-                    b.Property<int>("Wave")
-                        .HasColumnType("int");
-
-                    b.Property<string>("WeaponEntryKey")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<int?>("WeaponQualityVersion")
-                        .HasColumnType("int");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CreateUserId");
-
-                    b.ToTable("GameProgressDeployment");
-                });
-
-            modelBuilder.Entity("ReconstructNodesServer.Library.DBModel.GameProgressDeploymentSkill", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier")
-                        .HasDefaultValueSql("NEWID()");
-
-                    b.Property<DateTime?>("CreateDate")
-                        .HasColumnType("datetime2");
-
-                    b.Property<Guid?>("CreateUserId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid?>("GameProgressDeploymentId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<int>("Kind")
-                        .HasColumnType("int");
-
-                    b.Property<int?>("Sequence")
-                        .HasColumnType("int");
-
-                    b.Property<short?>("Status")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("smallint")
-                        .HasDefaultValueSql("1");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CreateUserId");
-
-                    b.HasIndex("GameProgressDeploymentId");
-
-                    b.ToTable("GameProgressDeploymentSkill");
-                });
-
-            modelBuilder.Entity("ReconstructNodesServer.Library.DBModel.GameProgressDeploymentSkillNode", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier")
-                        .HasDefaultValueSql("NEWID()");
-
-                    b.Property<DateTime?>("CreateDate")
-                        .HasColumnType("datetime2");
-
-                    b.Property<Guid?>("CreateUserId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid?>("GameProgressDeploymentSkillId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<int?>("Kind")
-                        .HasColumnType("int");
-
-                    b.Property<string>("LootId")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("NodeType")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<int?>("Sequence")
-                        .HasColumnType("int");
-
-                    b.Property<short?>("Status")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("smallint")
-                        .HasDefaultValueSql("1");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CreateUserId");
-
-                    b.HasIndex("GameProgressDeploymentSkillId");
-
-                    b.ToTable("GameProgressDeploymentSkillNode");
                 });
 
             modelBuilder.Entity("ReconstructNodesServer.Library.DBModel.Item", b =>
@@ -1204,7 +1204,8 @@ namespace ReconstructNodesServer.Migrations
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("GoogleId")
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
 
                     b.Property<int?>("InventorySlotCount")
                         .HasColumnType("int");
@@ -1244,6 +1245,11 @@ namespace ReconstructNodesServer.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("CreateUserId");
+
+                    b.HasIndex("GoogleId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Player_GoogleId_NonClient")
+                        .HasFilter("[GoogleId] IS NOT NULL AND [IsClientLogin] = 0");
 
                     b.HasIndex("Token");
 

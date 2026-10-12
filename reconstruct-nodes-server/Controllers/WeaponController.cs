@@ -8,9 +8,9 @@ namespace ReconstructNodesServer.Controllers
     public class WeaponController(BaseApiArgument argument, WeaponService service) : AuthorizeApiController(argument)
     {
         [HttpPost]
-        public virtual async Task<IActionResult> GetWeaponList()
+        public virtual async Task<IActionResult> GetInstanceList()
         {
-            IEnumerable<WeaponInstanceModel> list = await service.GetWeaponList();
+            IEnumerable<WeaponInstanceModel> list = await service.GetInstanceList();
             return Ok(BackendApiResult<IEnumerable<WeaponInstanceModel>>.Create(200, string.Empty, list));
         }
 
@@ -18,11 +18,11 @@ namespace ReconstructNodesServer.Controllers
         /// 儲存單把背包武器（以 id 為實例代碼做 upsert）
         /// </summary>
         [HttpPost]
-        public virtual async Task<IActionResult> SaveWeapon(WeaponInstanceModel model)
+        public virtual async Task<IActionResult> Save(WeaponInstanceModel model)
         {
             (bool success, string? message) = await TransactionFunc(async () =>
             {
-                await service.SaveWeapon(model);
+                await service.Save(model);
             });
 
             if (!success) { return StatusCode(400, BackendApiResult<string>.Create(400, message ?? "武器儲存失敗")); }
@@ -33,7 +33,7 @@ namespace ReconstructNodesServer.Controllers
         /// 軟刪除武器；仍被角色或部署裝備參照時回傳 400
         /// </summary>
         [HttpPost]
-        public virtual Task<IActionResult> DeleteWeapon(EntryKeyRequest request)
+        public virtual Task<IActionResult> Delete(EntryKeyRequest request)
             => DeleteByKeyAsync(request.EntryKey, "武器實例代碼不可為空", "武器刪除失敗", service.DeleteByNaturalKey);
     }
 }

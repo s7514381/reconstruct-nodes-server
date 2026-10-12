@@ -57,9 +57,7 @@ namespace ReconstructNodesServer.Filter
             // 優先讀取 Authorization（前端 BackendApiClient 使用），保留 PlayerToken 相容既有客戶端
             string sToken = headers["Authorization"].ToString();
             if (string.IsNullOrEmpty(sToken)) { sToken = headers["PlayerToken"].ToString(); }
-#if DEBUG
-            if (string.IsNullOrEmpty(sToken)) { sToken = "45C3E4A4-B53D-40F8-84C2-80AA3DB0710D"; }
-#endif
+            // 不再於 DEBUG 下套用硬編碼測試帳號：未帶 Token 必須直接拒絕，避免所有無 Token 請求共用同一玩家資料
 
             return Guid.TryParse(sToken, out Guid token) ? token : null;
         }

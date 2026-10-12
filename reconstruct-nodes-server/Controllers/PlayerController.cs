@@ -40,6 +40,9 @@ namespace ReconstructNodesServer.Controllers
             if (model.ClientId == null
                 || !model.Type.HasValue) { return BadRequest(); }
 
+            // 拒絕訪客→Google 的綁定遷移：Google 身分必須經 GoogleAuth/Login 驗證，且不得覆寫既有訪客進度
+            if (model.Type == ELoginType.Google) { return BadRequest("Google 登入請改用 GoogleAuth/Login，不支援綁定遷移"); }
+
             ResultModel<LoginResponse> result = new();
             LoginResponse response = result.Data = new();
 

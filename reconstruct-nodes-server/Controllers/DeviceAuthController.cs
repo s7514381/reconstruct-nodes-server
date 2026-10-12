@@ -31,7 +31,7 @@ namespace ReconstructNodesServer.Controllers
             {
                 (bool isSuccess, string? error) = await TransactionFunc(async () =>
                 {
-                    Player player = await playerService.FindOrCreateGuestPlayer(clientId);
+                    Player player = await playerService.FindOrCreateGuest(clientId);
 
                     // 與 LoginController 相同：每次登入重置 Token，舊 Token 立即失效
                     if (player.Token.HasValue) { cache.Remove(player.Token); }

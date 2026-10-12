@@ -5,6 +5,8 @@ using ReconstructNodesServer;
 using ReconstructNodesServer.Argument;
 using ReconstructNodesServer.Filter;
 using ReconstructNodesServer.Host;
+using ReconstructNodesServer.Library.Auth;
+using ReconstructNodesServer.Auth;
 using ReconstructNodesServer.Repositories;
 using ReconstructNodesServer.Services;
 using ReconstructNodesServer.Utility;
@@ -52,6 +54,22 @@ services.AddSingleton<FirebaseService>();
 //services.AddHostedService<TimedHostedService>();
 
 services.AddMemoryCache();
+
+// Google 登入：設定以 GoogleAuth 區段讀取，ClientSecret 只允許來自 user-secrets 或環境變數，不寫入 appsettings
+GoogleAuthOptions googleAuthOptions = builder.Configuration.GetSection(GoogleAuthOptions.SectionName).Get<GoogleAuthOptions>() ?? new GoogleAuthOptions();
+services.AddSingleton(googleAuthOptions);
+services.AddHttpClient("google-oauth", client => client.Timeout = TimeSpan.FromSeconds(15));
+services.AddHttpClient("google-jwks", client => client.Timeout = TimeSpan.FromSeconds(15));
+services.AddSingleton<IGoogleSigningKeySource>(sp => new GoogleSigningKeySource(
+    sp.GetRequiredService<IHttpClientFactory>().CreateClient("google-jwks"),
+    sp.GetRequiredService<GoogleAuthOptions>()));
+services.AddSingleton<IGoogleCodeExchanger>(sp => new GoogleCodeExchanger(
+    sp.GetRequiredService<IHttpClientFactory>().CreateClient("google-oauth"),
+    sp.GetRequiredService<GoogleAuthOptions>()));
+services.AddSingleton<IGoogleIdTokenValidator, GoogleIdTokenValidator>();
+services.AddScoped<IGoogleSessionStore, GoogleSessionStore>();
+services.AddScoped<GoogleLoginService>();
+
 
 var app = builder.Build();
 

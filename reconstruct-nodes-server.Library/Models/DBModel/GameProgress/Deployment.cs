@@ -1,10 +1,10 @@
-using Dapper.Contrib.Extensions;
+﻿using Dapper.Contrib.Extensions;
 using ReconstructNodesServer.Library.Models;
 
 namespace ReconstructNodesServer.Library.DBModel
 {
-    [Table(nameof(GameProgressDeployment))]
-    public class GameProgressDeployment : ModelBase
+    [Table(nameof(Deployment))]
+    public class Deployment : ModelBase
     {
         public int SpotIndex { get => Get<int>(); set => Set(value); }
 

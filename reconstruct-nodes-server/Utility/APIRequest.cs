@@ -57,7 +57,8 @@ namespace ReconstructNodesServer.Utility
                 entity = new TableEntity(nameof(APIRequest), entityId)
                 {
                     { "Path", context.Request.Path.ToString() },
-                    { "Body", body },
+                    // Google 登入含授權碼與 PKCE verifier，不寫入日誌
+                    { "Body", context.Request.Path.StartsWithSegments("/GoogleAuth", StringComparison.OrdinalIgnoreCase) ? "[REDACTED]" : body },
                     { "IPAddress", context.Connection.RemoteIpAddress?.ToString() },
                     { "LoadTime", sw.ElapsedMilliseconds },
                 };
@@ -81,7 +82,8 @@ namespace ReconstructNodesServer.Utility
                     if (token.HasValue) 
                     {
                         if (cache.TryGetValue(token.Value, out PlayerValidateModel? model)) { entity.Add("CreateUserId", model?.Id); }
-                        else { entity.Add("Token", token.Value); }
+                        // 快取未命中時不得寫入原始 session Token（Azure 日誌可讀），只記錄遮蔽標記
+                        else { entity.Add("Token", "[REDACTED]"); }
                     }
                     await azureStoreService.Transfer(TableClientType.Log, entity).ConfigureAwait(false);
                 });

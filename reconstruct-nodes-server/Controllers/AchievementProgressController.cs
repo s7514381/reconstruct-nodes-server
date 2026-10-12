@@ -11,9 +11,9 @@ namespace ReconstructNodesServer.Controllers
         /// 讀取目前玩家的成就進度；尚未儲存過時回傳 404 封包（前端據此判定為 MISSING）
         /// </summary>
         [HttpPost]
-        public virtual async Task<IActionResult> GetProgress()
+        public virtual async Task<IActionResult> Get()
         {
-            AchievementProgressModel? progress = await service.GetProgress();
+            AchievementProgressModel? progress = await service.Get();
             if (progress == null) { return StatusCode(404, BackendApiResult<string>.Create(404, "尚無成就進度")); }
             return Ok(BackendApiResult<AchievementProgressModel>.Create(200, string.Empty, progress));
         }
@@ -22,11 +22,11 @@ namespace ReconstructNodesServer.Controllers
         /// 以整份成就快照覆寫目前玩家的資料
         /// </summary>
         [HttpPost]
-        public virtual async Task<IActionResult> SaveProgress(AchievementProgressModel model)
+        public virtual async Task<IActionResult> Save(AchievementProgressModel model)
         {
             (bool success, string? message) = await TransactionFunc(async () =>
             {
-                await service.SaveProgress(model);
+                await service.Save(model);
             });
 
             if (!success) { return StatusCode(400, BackendApiResult<string>.Create(400, message ?? "成就進度儲存失敗")); }
