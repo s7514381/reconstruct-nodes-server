@@ -1,39 +1,34 @@
-﻿using System;
-using System.Data;
-
 namespace ReconstructNodesServer.Repositories
 {
-    /// <summary>
-    /// 與資料庫管理物件連動的包裝後 Transaction
-    /// </summary>
-    public class ManagedTransaction : IDisposable
+    public sealed class ManagedTransaction : IDisposable
     {
-        private readonly IDbTransaction _transaction;
-        private readonly IDapperRepository _repository;
+        private readonly Action _commit;
+        private readonly Action _rollback;
+        private readonly Action _dispose;
+        private int _disposed;
 
-        public ManagedTransaction(IDbTransaction transaction, IDapperRepository repository)
+        internal ManagedTransaction(Action commit, Action rollback, Action dispose)
         {
-            _transaction = transaction;
-            _repository = repository;
-        }
-
-        /// <summary>
-        /// 釋放 Transaction 並清空 Repository 的 Transaction 欄位
-        /// </summary>
-        public void Dispose()
-        {
-            _transaction.Dispose();
-            _repository.Transaction = null;
+            _commit = commit;
+            _rollback = rollback;
+            _dispose = dispose;
         }
 
         public void Commit()
         {
-            _transaction.Commit();
+            ObjectDisposedException.ThrowIf(_disposed != 0, this);
+            _commit();
         }
 
         public void Rollback()
         {
-            _transaction.Rollback();
+            ObjectDisposedException.ThrowIf(_disposed != 0, this);
+            _rollback();
+        }
+
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) == 0) { _dispose(); }
         }
     }
 }

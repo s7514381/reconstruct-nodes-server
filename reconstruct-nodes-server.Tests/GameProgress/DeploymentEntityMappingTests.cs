@@ -10,26 +10,27 @@ namespace ReconstructNodesServer.Tests.GameProgress
         public void TableAttribute_UsesRenamedTableNames()
         {
             Assert.AreEqual("Deployment", CommonUtility.GetTableAttribute<Deployment>());
-            Assert.AreEqual("DeploymentSkill", CommonUtility.GetTableAttribute<DeploymentSkill>());
-            Assert.AreEqual("DeploymentSkillNode", CommonUtility.GetTableAttribute<DeploymentSkillNode>());
+            Assert.AreEqual("CharacterSkillTree", CommonUtility.GetTableAttribute<CharacterSkillTree>());
+            Assert.AreEqual("CharacterSkillNode", CommonUtility.GetTableAttribute<CharacterSkillNode>());
             Assert.AreEqual("BattlefieldRoad", CommonUtility.GetTableAttribute<BattlefieldRoad>());
         }
 
         [TestMethod]
         public void RelationAttribute_ResolvesToRenamedForeignKeyProperties()
         {
-            Assert.AreEqual("DeploymentId", CommonUtility.GetForeignKeyField<DeploymentSkill, Deployment>());
-            Assert.AreEqual("DeploymentSkillId", CommonUtility.GetForeignKeyField<DeploymentSkillNode, DeploymentSkill>());
+            Assert.AreEqual("CharacterId", CommonUtility.GetForeignKeyField<CharacterSkillTree, Character>());
+            Assert.AreEqual("CharacterSkillTreeId", CommonUtility.GetForeignKeyField<CharacterSkillNode, CharacterSkillTree>());
+            Assert.AreEqual("CharacterId", CommonUtility.GetForeignKeyField<Deployment, Character>());
         }
 
         [TestMethod]
         public void ForeignKeyProperties_UseRenamedColumnNames()
         {
             // Dapper.Contrib 以屬性名稱對應欄位，因此屬性名即資料表欄位名。
-            Assert.IsNotNull(typeof(DeploymentSkill).GetProperty("DeploymentId"));
-            Assert.IsNull(typeof(DeploymentSkill).GetProperty("GameProgressDeploymentId"));
-            Assert.IsNotNull(typeof(DeploymentSkillNode).GetProperty("DeploymentSkillId"));
-            Assert.IsNull(typeof(DeploymentSkillNode).GetProperty("GameProgressDeploymentSkillId"));
+            Assert.IsNotNull(typeof(Deployment).GetProperty("CharacterId"));
+            Assert.IsNull(typeof(Deployment).GetProperty("WeaponEntryKey"));
+            Assert.IsNull(typeof(Deployment).GetProperty("CharacterName"));
+            Assert.IsNotNull(typeof(CharacterSkillNode).GetProperty("CharacterSkillTreeId"));
         }
     }
 }

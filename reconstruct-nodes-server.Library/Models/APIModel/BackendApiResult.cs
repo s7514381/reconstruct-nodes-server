@@ -1,22 +1,28 @@
 using System;
+using System.Collections.Generic;
 
 namespace ReconstructNodesServer.Library.Models
 {
-    /// <summary>對應前端 BackendApiResult 的 { Status, Success, Message, Data } 格式。</summary>
+    /// <summary>系統訊息由前端依 MessageKey 與 MessageArgs 翻譯。</summary>
     public class BackendApiResult<T>
     {
         public int Status { get; set; }
         public bool Success { get; set; }
-        public string Message { get; set; } = string.Empty;
+        public string MessageKey { get; set; } = string.Empty;
+        public Dictionary<string, string> MessageArgs { get; set; } = new();
         public T Data { get; set; }
 
-        public static BackendApiResult<T> Create(int status, string message = "", T data = default)
+        public static BackendApiResult<T> Create(int status, string messageKey = "", T data = default)
+            => Create(status, new ApiMessage(messageKey), data);
+
+        public static BackendApiResult<T> Create(int status, ApiMessage message, T data = default)
         {
             return new BackendApiResult<T>
             {
                 Status = status,
                 Success = status >= 200 && status < 300,
-                Message = message,
+                MessageKey = message.Key,
+                MessageArgs = new Dictionary<string, string>(message.Arguments),
                 Data = data,
             };
         }

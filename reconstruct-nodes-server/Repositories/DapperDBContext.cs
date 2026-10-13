@@ -1,5 +1,6 @@
 ﻿using System.Data;
 using System.Data.SqlClient;
+using System.Data.Common;
 
 namespace ReconstructNodesServer.Repositories
 {
@@ -14,28 +15,19 @@ namespace ReconstructNodesServer.Repositories
             _connectionString = connectionString;
         }
 
-        public IDbConnection GetOpenConnection()
+        public virtual DbConnection CreateConnection()
         {
             if (string.IsNullOrEmpty(_connectionString))
             {
                 throw new InvalidOperationException("未設定資料庫連線字串 (DefaultConnection)。");
             }
 
-            IDbConnection conn = SQLType switch
+            return SQLType switch
             {
                 SQLType.SQLSERVER => new SqlConnection(_connectionString),
                 _ => throw new NotSupportedException($"不支援的 SQLType: {SQLType}")
             };
 
-            conn.Open();
-            return conn;
-        }
-
-        public IDbConnection ReConnection(IDbConnection conn)
-        {
-            conn?.Close();
-            conn?.Dispose();
-            return GetOpenConnection();
         }
 
     }

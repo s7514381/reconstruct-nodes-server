@@ -16,29 +16,13 @@ namespace ReconstructNodesServer
         {
         }
 
-        public virtual DbSet<Equipment> Equipment { get; set; }
-        public virtual DbSet<Modifier> Modifier { get; set; }
-        public virtual DbSet<Character> Character { get; set; }
         public virtual DbSet<Player> Player { get; set; }
-        public virtual DbSet<Ability> Ability { get; set; }
-        public virtual DbSet<AbilityCard> AbilityCard { get; set; }
-        public virtual DbSet<AbilitySetting> AbilitySetting { get; set; }
-        public virtual DbSet<AbilityCardSetting> AbilityCardSetting { get; set; }
-        public virtual DbSet<AbilityProficiencySetting> AbilityProficiencySetting { get; set; }
-        public virtual DbSet<Map> Map { get; set; }
-        public virtual DbSet<MapSetting> MapSetting { get; set; }
-        public virtual DbSet<SettingVersion> SettingVersion { get; set; }
         public virtual DbSet<Achievement> Achievement { get; set; }
-        public virtual DbSet<AchievementSetting> AchievementSetting { get; set; }
         public virtual DbSet<AchievementDetail> AchievementDetail { get; set; }
-        public virtual DbSet<AchievementDetailSetting> AchievementDetailSetting { get; set; }
         public virtual DbSet<AchievementCollected> AchievementCollected { get; set; }
-        public virtual DbSet<GameCollection> GameCollection { get; set; }
         public virtual DbSet<EmailVerify> EmailVerify { get; set; }
         public virtual DbSet<SystemConfig> SystemConfig { get; set; }
         public virtual DbSet<ManyToMany> ManyToMany { get; set; }
-        public virtual DbSet<AbilitySelect> AbilitySelect { get; set; }
-        public virtual DbSet<MonsterSetting> MonsterSetting { get; set; }
         public virtual DbSet<PlayerParams> PlayerParams { get; set; }
         public virtual DbSet<Item> Item { get; set; }
         public virtual DbSet<Weapon> Weapon { get; set; }
@@ -46,10 +30,11 @@ namespace ReconstructNodesServer
         public virtual DbSet<WeaponAffixValue> WeaponAffixValue { get; set; }
         public virtual DbSet<WeaponUniqueValue> WeaponUniqueValue { get; set; }
         public virtual DbSet<Deployment> Deployment { get; set; }
-        public virtual DbSet<DeploymentSkill> DeploymentSkill { get; set; }
-        public virtual DbSet<DeploymentSkillNode> DeploymentSkillNode { get; set; }
+        public virtual DbSet<Character> Character { get; set; }
+        public virtual DbSet<CharacterSkillTree> CharacterSkillTree { get; set; }
+        public virtual DbSet<CharacterSkillNode> CharacterSkillNode { get; set; }
+        public virtual DbSet<EconomyRequest> EconomyRequest { get; set; }
         public virtual DbSet<BattlefieldRoad> BattlefieldRoad { get; set; }
-        public virtual DbSet<CharacterWeapon> CharacterWeapon { get; set; }
         public virtual DbSet<Talent> Talent { get; set; }
         public virtual DbSet<TalentAcquired> TalentAcquired { get; set; }
         public virtual DbSet<TalentLegacyCategory> TalentLegacyCategory { get; set; }
@@ -126,10 +111,20 @@ namespace ReconstructNodesServer
                 .HasFilter("[Status] <> -1");
 
             // 角色裝備每位玩家每個角色只有一列，以唯一索引保證併發寫入時不會產生重複列。
-            modelBuilder.Entity<CharacterWeapon>()
-                .HasIndex(b => new { b.CreateUserId, b.CharacterKind })
+            modelBuilder.Entity<Character>()
+                .HasIndex(b => new { b.CreateUserId, b.Kind })
                 .IsUnique()
                 .HasFilter("[Status] <> -1");
+
+            modelBuilder.Entity<Character>()
+                .Property(b => b.WeaponEntryKey).HasMaxLength(450);
+            modelBuilder.Entity<Character>()
+                .HasIndex(b => new { b.CreateUserId, b.WeaponEntryKey })
+                .IsUnique()
+                .HasFilter("[Status] <> -1 AND [WeaponEntryKey] IS NOT NULL");
+
+            modelBuilder.Entity<EconomyRequest>()
+                .HasIndex(row => new { row.CreateUserId, row.RequestId }).IsUnique();
 
             // 天賦每位玩家只有一列父資料，以唯一索引保證併發寫入時不會產生重複列。
             modelBuilder.Entity<Talent>()

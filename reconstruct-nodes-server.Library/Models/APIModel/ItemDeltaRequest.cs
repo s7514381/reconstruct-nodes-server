@@ -10,10 +10,8 @@ namespace ReconstructNodesServer.Library.Models
         public int Delta { get; set; }
 
         /// <summary>
-        /// 顯示名稱與分類；僅在列建立時或名稱仍為空白時寫入，既有名稱不被覆寫
+        /// 分類；僅在列建立時或分類仍為空白時寫入
         /// </summary>
-        public string? Name { get; set; }
-
         public string? Category { get; set; }
     }
 }

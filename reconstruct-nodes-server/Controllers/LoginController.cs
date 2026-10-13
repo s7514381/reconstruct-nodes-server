@@ -24,10 +24,10 @@ namespace ReconstructNodesServer.Controllers
         public async Task<IActionResult> Index(LoginRequest model)
         {
             if (model.ClientId == null
-                || !model.Type.HasValue) { return BadRequest(); }
+                || !model.Type.HasValue) { return BadRequest(BackendApiResult<object>.Create(400, ApiMessageKeys.RequestInvalid)); }
 
             // Google 必須由後端驗證 ID Token 後取得 sub；客戶端傳入的 GoogleId 不可信，改由 GoogleAuth/Login 處理
-            if (model.Type == ELoginType.Google) { return BadRequest("Google 登入請改用 GoogleAuth/Login"); }
+            if (model.Type == ELoginType.Google) { return BadRequest(BackendApiResult<object>.Create(400, ApiMessageKeys.AuthGoogleRequired)); }
 
             ResultModel<LoginResponse> result = new();
             result.Data = new();

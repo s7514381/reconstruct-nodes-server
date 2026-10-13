@@ -1,3 +1,4 @@
+using System;
 using System.Text.Json;
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
@@ -10,6 +11,10 @@ namespace ReconstructNodesServer.Library.Models
     /// </summary>
     public class GameProgressModel
     {
+        [JsonPropertyName("request_id")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public Guid? RequestId { get; set; }
+
         [JsonPropertyName("version")]
         public int Version { get; set; }
 
@@ -42,12 +47,6 @@ namespace ReconstructNodesServer.Library.Models
 
         [JsonPropertyName("progression")]
         public Dictionary<string, JsonElement> Progression { get; set; } = new();
-
-        /// <summary>
-        /// 鍵為角色種類（tower kind 的整數字串）
-        /// </summary>
-        [JsonPropertyName("character_weapons")]
-        public Dictionary<string, GameProgressEquipmentModel> CharacterWeapons { get; set; } = new();
 
         /// <summary>
         /// 前端沒有戰場時整個欄位不輸出，因此為 null 時不寫入 JSON

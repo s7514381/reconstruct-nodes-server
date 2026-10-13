@@ -1,5 +1,4 @@
 using Microsoft.AspNetCore.Mvc;
-using Newtonsoft.Json;
 using ReconstructNodesServer.Library.DBModel;
 using ReconstructNodesServer.Library.GameModel;
 using ReconstructNodesServer.Library.Models;
@@ -23,31 +22,19 @@ namespace ReconstructNodesServer.Controllers
         }
 
         [HttpPost]
-        public async Task<string?> GetCompressCompleteModel()
-        {
-            if (!service._playerId.HasValue) { return null; }
-
-            PlayerCompleteModel? model = await service.GetCompleteModel();
-            string originalString = JsonConvert.SerializeObject(model);
-            string compressString = StringCompressor.Compress(originalString);
-
-            return compressString;
-        }
-
-        [HttpPost]
         public async Task<IActionResult> Bind(LoginRequest model)
         {
             if (model.ClientId == null
-                || !model.Type.HasValue) { return BadRequest(); }
+                || !model.Type.HasValue) { return BadRequest(BackendApiResult<object>.Create(400, ApiMessageKeys.RequestInvalid)); }
 
             // 拒絕訪客→Google 的綁定遷移：Google 身分必須經 GoogleAuth/Login 驗證，且不得覆寫既有訪客進度
-            if (model.Type == ELoginType.Google) { return BadRequest("Google 登入請改用 GoogleAuth/Login，不支援綁定遷移"); }
+            if (model.Type == ELoginType.Google) { return BadRequest(BackendApiResult<object>.Create(400, ApiMessageKeys.AuthGoogleRequired)); }
 
             ResultModel<LoginResponse> result = new();
             LoginResponse response = result.Data = new();
 
             Player? player = await service.GetData(service._playerId ?? throw new InvalidOperationException("未取得登入者 Id。"));
-            if (player == null) { return BadRequest(); }
+            if (player == null) { return BadRequest(BackendApiResult<object>.Create(400, ApiMessageKeys.AuthInvalid)); }
 
             switch (model.Type)
             {

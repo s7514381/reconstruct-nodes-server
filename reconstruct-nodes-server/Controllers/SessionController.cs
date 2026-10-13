@@ -17,7 +17,7 @@ namespace ReconstructNodesServer.Controllers
             var player = playerService.Player;
             if (player == null)
             {
-                return StatusCode(401, BackendApiResult<BackendSessionInfo>.Create(401, "身份驗證失敗"));
+                return StatusCode(401, BackendApiResult<BackendSessionInfo>.Create(401, ApiMessageKeys.AuthInvalid));
             }
 
             // IsClientLogin 為權威來源：舊版可能把 GoogleId 寫到訪客列，訪客列不得被回報為 google

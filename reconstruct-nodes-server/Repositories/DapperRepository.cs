@@ -1,115 +1,278 @@
-﻿using Dapper;
+using Dapper;
 using Dapper.Contrib.Extensions;
-using System.Collections.Generic;
 using System.Data;
-using System.Diagnostics;
-using System.Threading.Tasks;
+using System.Data.Common;
+using ReconstructNodesServer.Services;
+using Lease = ReconstructNodesServer.Services.SemaphoreSlimService.SemaphoreSlimLease;
 
 namespace ReconstructNodesServer.Repositories
 {
     public class DapperRepository : IDapperRepository
     {
-        public IDbConnection Connection { get; protected set; }
+        private readonly DbConnection _connection;
+        private readonly DbConnectionLimitService _connectionLimit;
+        private readonly DbOperateLimitService _operationLimit;
+        private readonly SemaphoreSlim _gate = new(1, 1);
+        private Lease? _connectionLease;
+        private ManagedGridReader? _reader;
+        private ManagedTransaction? _managedTransaction;
+        private bool _disposed;
 
-        /// <summary>
-        /// 當前正在使用的 Transaction
-        /// </summary>
-        public IDbTransaction? Transaction { get; set; }
-        public DapperDBContext _dbContext { get; protected set; }
+        public IDbConnection Connection => _connection;
+        public IDbTransaction? Transaction { get; private set; }
 
-        public DapperRepository(DapperDBContext dbContext)
+        public DapperRepository(DapperDBContext dbContext,
+            DbConnectionLimitService connectionLimit, DbOperateLimitService operationLimit)
         {
-            _dbContext = dbContext;
-            Connection = dbContext.GetOpenConnection();
+            _connection = dbContext.CreateConnection();
+            _connectionLimit = connectionLimit;
+            _operationLimit = operationLimit;
         }
 
         public void Dispose()
         {
-            Transaction?.Dispose();
-            Connection?.Close();
-            Connection?.Dispose();
-        }
-
-        public ManagedTransaction OpenTransaction()
-        {
-            BaseFunction.SpeedDebug(() => {
-                Connection = _dbContext.ReConnection(Connection);
-                Transaction = Connection.BeginTransaction();
-            });
-            return new ManagedTransaction(Transaction ?? throw new InvalidOperationException("無法開啟 Transaction。"), this);
-        }
-
-        public void ClearTransaction()
-        {
-            if (Transaction != null)
+            try { _reader?.Dispose(); }
+            finally
             {
-                Transaction = null;
+                try { _managedTransaction?.Dispose(); }
+                finally { DisposeConnection(); }
             }
         }
 
-        public IEnumerable<T> Query<T>(string sql, object? param = null)
+        private void DisposeConnection()
         {
-            return Connection.Query<T>(sql, param, Transaction);
+            _gate.Wait();
+            try
+            {
+                if (_disposed) { return; }
+                _disposed = true;
+                try { CloseConnection(); }
+                finally { _connection.Dispose(); }
+            }
+            finally { _gate.Release(); }
         }
 
-        public Task<IEnumerable<T>> QueryAsync<T>(string sql, object? param = null)
+        private void CloseConnection()
         {
-            return Connection.QueryAsync<T>(sql, param, Transaction);
+            try { _connection.Close(); }
+            finally
+            {
+                _connectionLease?.Dispose();
+                _connectionLease = null;
+            }
         }
 
-        public T QueryFirst<T>(string sql, object? param = null)
+        private OperationScope Acquire()
         {
-            return Connection.QueryFirst<T>(sql, param, Transaction);
+            _gate.Wait();
+            var scope = new OperationScope(this);
+            try
+            {
+                ObjectDisposedException.ThrowIf(_disposed, this);
+                if (_connectionLease == null) { _connectionLease = _connectionLimit.Acquire(); }
+                scope.OperationLease = _operationLimit.Acquire();
+                if (_connection.State != ConnectionState.Open)
+                {
+                    EnsureNoBrokenTransaction();
+                    _connection.Open();
+                }
+                return scope;
+            }
+            catch
+            {
+                scope.Dispose();
+                throw;
+            }
         }
 
-        public Task<T> QueryFirstAsync<T>(string sql, object? param = null)
+        private async Task<OperationScope> AcquireAsync()
         {
-            return Connection.QueryFirstAsync<T>(sql, param, Transaction);
+            await _gate.WaitAsync().ConfigureAwait(false);
+            var scope = new OperationScope(this);
+            try
+            {
+                ObjectDisposedException.ThrowIf(_disposed, this);
+                if (_connectionLease == null)
+                {
+                    _connectionLease = await _connectionLimit.AcquireAsync().ConfigureAwait(false);
+                }
+                scope.OperationLease = await _operationLimit.AcquireAsync().ConfigureAwait(false);
+                if (_connection.State != ConnectionState.Open)
+                {
+                    EnsureNoBrokenTransaction();
+                    await _connection.OpenAsync().ConfigureAwait(false);
+                }
+                return scope;
+            }
+            catch
+            {
+                scope.Dispose();
+                throw;
+            }
         }
 
-        public T QueryFirstOrDefault<T>(string sql, object? param = null)
+        private void EnsureNoBrokenTransaction()
         {
-            return Connection.QueryFirstOrDefault<T>(sql, param, Transaction);
+            if (Transaction != null)
+            {
+                throw new InvalidOperationException("交易連線已中斷，不能重新開啟連線繼續交易。");
+            }
         }
 
-        public Task<T> QueryFirstOrDefaultAsync<T>(string sql, object? param = null)
+        private T Run<T>(Func<T> action)
         {
-            return Connection.QueryFirstOrDefaultAsync<T>(sql, param, Transaction);
+            using var scope = Acquire();
+            return action();
         }
 
-        public int Execute(string sql, object? param = null)
+        private async Task<T> RunAsync<T>(Func<Task<T>> action)
         {
-            return Connection.Execute(sql, param, Transaction);
+            using var scope = await AcquireAsync().ConfigureAwait(false);
+            return await action().ConfigureAwait(false);
         }
 
-        public Task<int> ExecuteAsync(string sql, object? param = null)
+        private sealed class OperationScope(DapperRepository repository) : IDisposable
         {
-            return Connection.ExecuteAsync(sql, param, Transaction);
+            public Lease? OperationLease { get; set; }
+            private int _disposed;
+
+            public void Dispose()
+            {
+                if (Interlocked.Exchange(ref _disposed, 1) != 0) { return; }
+                try
+                {
+                    if (repository.Transaction == null) { repository.CloseConnection(); }
+                }
+                finally
+                {
+                    OperationLease?.Dispose();
+                    repository._gate.Release();
+                }
+            }
         }
 
-        public long Insert<T>(T entityToInsert) where T : class
+        public ManagedTransaction OpenTransaction() => Run(() =>
         {
-            return Connection.Insert(entityToInsert, Transaction);
+            if (Transaction != null)
+            {
+                throw new InvalidOperationException("Repository 已有進行中的交易。");
+            }
+            Transaction = _connection.BeginTransaction();
+            _managedTransaction = new ManagedTransaction(
+                () => RunTransactionAction(transaction => transaction.Commit()),
+                () => RunTransactionAction(transaction => transaction.Rollback()),
+                EndTransaction);
+            return _managedTransaction;
+        });
+
+        private void RunTransactionAction(Action<IDbTransaction> action)
+        {
+            if (_reader != null)
+            {
+                throw new InvalidOperationException("提交或回滾前必須先釋放目前的多結果 reader。");
+            }
+            Run(() =>
+            {
+                action(Transaction ?? throw new InvalidOperationException("Repository 沒有進行中的交易。"));
+                return true;
+            });
         }
 
-        public Task<int> InsertAsync<T>(T entityToInsert) where T : class
+        private void EndTransaction()
         {
-            return Connection.InsertAsync(entityToInsert, Transaction);
+            try { _reader?.Dispose(); }
+            finally
+            {
+                // Cleanup must not reopen a broken transaction connection.
+                _gate.Wait();
+                try
+                {
+                    using var lease = _operationLimit.Acquire();
+                    try { Transaction?.Dispose(); }
+                    finally
+                    {
+                        Transaction = null;
+                        _managedTransaction = null;
+                        CloseConnection();
+                    }
+                }
+                finally
+                {
+                    _gate.Release();
+                }
+            }
         }
 
-        public Task<bool> UpdateAsync<T>(T entity) where T : class
+        public IEnumerable<T> Query<T>(string sql, object? param = null) =>
+            Run(() => _connection.Query<T>(sql, param, Transaction));
+
+        public Task<IEnumerable<T>> QueryAsync<T>(string sql, object? param = null) =>
+            RunAsync(() => _connection.QueryAsync<T>(sql, param, Transaction));
+
+        public T QueryFirst<T>(string sql, object? param = null) =>
+            Run(() => _connection.QueryFirst<T>(sql, param, Transaction));
+
+        public Task<T> QueryFirstAsync<T>(string sql, object? param = null) =>
+            RunAsync(() => _connection.QueryFirstAsync<T>(sql, param, Transaction));
+
+        public T QueryFirstOrDefault<T>(string sql, object? param = null) =>
+            Run(() => _connection.QueryFirstOrDefault<T>(sql, param, Transaction))!;
+
+        public Task<T> QueryFirstOrDefaultAsync<T>(string sql, object? param = null) =>
+            RunAsync(() => _connection.QueryFirstOrDefaultAsync<T>(sql, param, Transaction))!;
+
+        public int Execute(string sql, object? param = null) =>
+            Run(() => _connection.Execute(sql, param, Transaction));
+
+        public Task<int> ExecuteAsync(string sql, object? param = null) =>
+            RunAsync(() => _connection.ExecuteAsync(sql, param, Transaction));
+
+        public long Insert<T>(T entityToInsert) where T : class =>
+            Run(() => _connection.Insert(entityToInsert, Transaction));
+
+        public Task<int> InsertAsync<T>(T entityToInsert) where T : class =>
+            RunAsync(() => _connection.InsertAsync(entityToInsert, Transaction));
+
+        public Task<bool> UpdateAsync<T>(T entity) where T : class =>
+            RunAsync(() => _connection.UpdateAsync(entity, Transaction));
+
+        public ManagedGridReader QueryMultiple(string sql, object? param = null)
         {
-            return Connection.UpdateAsync(entity, Transaction);
+            var scope = Acquire();
+            try
+            {
+                _reader = new ManagedGridReader(_connection.QueryMultiple(sql, param, Transaction),
+                    () => ReleaseReader(scope));
+                return _reader;
+            }
+            catch
+            {
+                scope.Dispose();
+                throw;
+            }
         }
 
-        public SqlMapper.GridReader QueryMultiple(string sql, object? param = null)
+        public async Task<ManagedGridReader> QueryMultipleAsync(string sql, object? param = null)
         {
-            return Connection.QueryMultiple(sql, param, Transaction);
+            var scope = await AcquireAsync().ConfigureAwait(false);
+            try
+            {
+                _reader = new ManagedGridReader(
+                    await _connection.QueryMultipleAsync(sql, param, Transaction).ConfigureAwait(false),
+                    () => ReleaseReader(scope));
+                return _reader;
+            }
+            catch
+            {
+                scope.Dispose();
+                throw;
+            }
         }
 
-        public Task<SqlMapper.GridReader> QueryMultipleAsync(string sql, object? param = null)
+        private void ReleaseReader(OperationScope scope)
         {
-            return Connection.QueryMultipleAsync(sql, param, Transaction);
+            _reader = null;
+            scope.Dispose();
         }
     }
 }

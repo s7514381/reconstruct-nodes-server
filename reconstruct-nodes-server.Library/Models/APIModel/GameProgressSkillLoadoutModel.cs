@@ -6,7 +6,7 @@ using System.Linq;
 namespace ReconstructNodesServer.Library.Models
 {
     /// <summary>
-    /// 技能配置的一個槽位。auxiliary_nodes 同時包含輔助與主動節點，
+    /// 角色的一棵技能樹。auxiliary_nodes 同時包含輔助與主動節點，
     /// auxiliary_gem_ids 由輔助節點推導，只用於輸出，不會被儲存。
     /// </summary>
     public class GameProgressSkillLoadoutModel

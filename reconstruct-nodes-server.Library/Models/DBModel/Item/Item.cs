@@ -10,8 +10,6 @@ namespace ReconstructNodesServer.Library.DBModel
 
         public int Amount { get => Get<int>(); set => Set(value); }
 
-        public string Name { get => Get<string>(); set => Set(value); }
-
         public string Category { get => Get<string>(); set => Set(value); }
     }
 }

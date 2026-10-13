@@ -10,12 +10,24 @@ using ReconstructNodesServer.Auth;
 using ReconstructNodesServer.Repositories;
 using ReconstructNodesServer.Services;
 using ReconstructNodesServer.Utility;
+using Microsoft.AspNetCore.Mvc;
+using ReconstructNodesServer.Library.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 IServiceCollection services = builder.Services;
-services.AddControllers();
+services.AddControllers().ConfigureApiBehaviorOptions(options =>
+{
+    options.InvalidModelStateResponseFactory = context =>
+    {
+        context.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>()
+            .CreateLogger("ApiValidation").LogWarning("Invalid API request at {Path}", context.HttpContext.Request.Path);
+        return new BadRequestObjectResult(BackendApiResult<object>.Create(400, ApiMessageKeys.RequestInvalid));
+    };
+});
+services.AddExceptionHandler<ApiExceptionHandler>();
+services.AddProblemDetails();
 
 services.AddMvc().AddJsonOptions(options => options.JsonSerializerOptions.PropertyNamingPolicy = null);
 
@@ -27,18 +39,23 @@ services.AddSingleton<ILoggerFactory, LoggerFactory>();
 string? sqlConnString = builder.Configuration.GetConnectionString("DefaultConnection");
 
 services.AddDbContext<ApplicationDbContext>(options => options.UseSqlServer(sqlConnString));
+services.AddDatabaseConcurrency(builder.Configuration);
 
 services.AddScoped<IDapperRepository>(x =>
 {
     var dapperDBContext = new DapperDBContext(sqlConnString) { SQLType = SQLType.SQLSERVER };
-    return new DapperRepository(dapperDBContext);
+    return new DapperRepository(dapperDBContext,
+        x.GetRequiredService<DbConnectionLimitService>(),
+        x.GetRequiredService<DbOperateLimitService>());
 });
 
 var serviceList = Assembly.GetExecutingAssembly().ExportedTypes
                 .Where(x => x.Namespace?.StartsWith($"ReconstructNodesServer.Argument") == true
                          || x.Namespace?.StartsWith($"ReconstructNodesServer.Services") == true
                          || x.Namespace?.StartsWith($"ReconstructNodesServer.Filter") == true)
-                .Where(x => x.IsClass && x.IsPublic && !x.IsAbstract);
+                .Where(x => x.IsClass && x.IsPublic && !x.IsAbstract)
+                .Where(x => !typeof(SemaphoreSlimService).IsAssignableFrom(x)
+                         && x != typeof(DatabaseConcurrencyOptions));
 if (serviceList != null) 
 {
     foreach (Type type in serviceList) { services.AddScoped(type); }
@@ -80,6 +97,7 @@ if (app.Environment.IsDevelopment())
 	app.UseSwaggerUI();
 }
 
+app.UseExceptionHandler();
 app.UseMiddleware<APIRequest>();
 
 app.UseHttpsRedirection();

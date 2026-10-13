@@ -8,15 +8,6 @@ namespace ReconstructNodesServer.Services
     public class AchievementService(BaseServiceArgument argument) : _ModelService<Achievement, AchievementModel>(argument)
     {
 
-        public virtual async Task<IEnumerable<Guid>> GetCompleteIdList()
-        {
-            string sql = $@"SELECT AchievementSettingId
-                              FROM {_tableName} 
-                             WHERE Status != -1
-                               AND CreateUserId = @CreateUserId";
-            return await QueryAsync<Guid>(sql, new { CreateUserId = _playerId });
-        }
-
         protected override async Task SetModel(AchievementModel viewModel)
         {
             await base.SetModel(viewModel);

@@ -14,7 +14,7 @@ namespace ReconstructNodesServer.Controllers
         public virtual async Task<IActionResult> GetSnapshot()
         {
             TalentModel? talent = await service.GetSnapshot();
-            if (talent == null) { return StatusCode(404, BackendApiResult<string>.Create(404, "尚無天賦樹存檔")); }
+            if (talent == null) { return StatusCode(404, BackendApiResult<string>.Create(404, ApiMessageKeys.TalentMissing)); }
             return Ok(BackendApiResult<TalentModel>.Create(200, string.Empty, talent));
         }
 
@@ -24,12 +24,12 @@ namespace ReconstructNodesServer.Controllers
         [HttpPost]
         public virtual async Task<IActionResult> Save(TalentModel model)
         {
-            (bool success, string? message) = await TransactionFunc(async () =>
+            (bool success, ApiMessage? message) = await TransactionFunc(async () =>
             {
                 await service.Save(model);
             });
 
-            if (!success) { return StatusCode(400, BackendApiResult<string>.Create(400, message ?? "天賦樹儲存失敗")); }
+            if (!success) { return StatusCode(400, BackendApiResult<string>.Create(400, message ?? ApiMessageKeys.TalentSaveFailed)); }
             return Ok(BackendApiResult<string>.Create(200, string.Empty, string.Empty));
         }
     }

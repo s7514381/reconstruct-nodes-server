@@ -22,10 +22,31 @@ namespace ReconstructNodesServer.Controllers
 			_lazy = argument.LazyServiceArgument;
         }
 
-        protected virtual async Task<(bool, string?)> TransactionFunc(Func<Task> func, Func<Task>? exceptionFunc = null)
+        protected virtual async Task<(bool, ApiMessage?)> TransactionFunc(Func<Task> func, Func<Task>? exceptionFunc = null)
         {
             (bool isSuccess, Exception? ex) = await _lazy.BaseService.Value.TransactionFunc(func, exceptionFunc);
-            return (isSuccess, ex?.Message);
+            if (isSuccess) { return (true, null); }
+            if (ex is IApiBusinessError businessError)
+            {
+                _logger.LogWarning(ex, "API transaction rejected");
+                return (false, businessError.ApiMessage);
+            }
+            _logger.LogError(ex, "API transaction failed");
+            return (false, new ApiMessage(ApiMessageKeys.ErrorUnexpected));
+        }
+
+        protected async Task<IActionResult> TransactionResultAsync<T>(
+            Func<Task<T>> action, string failureMessage, string? notFoundMessage = null) where T : class?
+        {
+            T? result = null;
+            (bool success, ApiMessage? message) = await TransactionFunc(async () => result = await action());
+            if (!success) { return StatusCode(400, BackendApiResult<string>.Create(400, message ?? failureMessage)); }
+            if (result == null)
+            {
+                if (notFoundMessage != null) { return StatusCode(404, BackendApiResult<string>.Create(404, notFoundMessage)); }
+                throw new InvalidOperationException("交易完成但沒有回傳結果");
+            }
+            return Ok(BackendApiResult<T>.Create(200, string.Empty, result));
         }
 
         /// <summary>
@@ -36,7 +57,7 @@ namespace ReconstructNodesServer.Controllers
             if (string.IsNullOrWhiteSpace(key)) { return StatusCode(400, BackendApiResult<int>.Create(400, emptyMessage)); }
 
             int rows = 0;
-            (bool success, string? message) = await TransactionFunc(async () =>
+            (bool success, ApiMessage? message) = await TransactionFunc(async () =>
             {
                 rows = await deleteFunc(key);
             });
@@ -66,4 +87,3 @@ namespace ReconstructNodesServer.Argument
 
 	}
 }
-

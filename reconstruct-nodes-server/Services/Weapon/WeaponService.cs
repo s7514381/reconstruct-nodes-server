@@ -91,7 +91,7 @@ namespace ReconstructNodesServer.Services
         {
             if (string.IsNullOrWhiteSpace(model.Id) || string.IsNullOrWhiteSpace(model.WeaponId))
             {
-                throw new ArgumentException("武器實例代碼與武器代碼不可為空");
+                throw new BusinessArgumentException(ApiMessageKeys.WeaponKeysRequired);
             }
         }
 
@@ -139,7 +139,7 @@ namespace ReconstructNodesServer.Services
         }
 
         /// <summary>
-        /// 刪除前先鎖玩家再檢查參照，與進度寫入序列化，避免參照與刪除交錯。子表保留，會因父表 Status 被過濾
+        /// 刪除前先鎖玩家再檢查角色裝備，避免裝備寫入與刪除交錯。子表保留，會因父表 Status 被過濾
         /// </summary>
         public override async Task<int> DeleteByNaturalKey(string naturalKey)
         {
@@ -149,20 +149,15 @@ namespace ReconstructNodesServer.Services
         }
 
         /// <summary>
-        /// 檢查武器是否仍被角色或部署裝備參照；參照表與進度讀取一致，不過濾 Status
+        /// 部署使用角色目前裝備，只需檢查有效角色的引用。
         /// </summary>
         private async Task EnsureNotEquippedAsync(string entryKey)
         {
-            string sql = $@"SELECT (SELECT COUNT(1)
-                                      FROM {nameof(CharacterWeapon)}
-                                     WHERE CreateUserId = @CreateUserId
-                                       AND EntryKey = @EntryKey)
-                                 + (SELECT COUNT(1)
-                                      FROM {nameof(Deployment)}
-                                     WHERE CreateUserId = @CreateUserId
-                                       AND WeaponEntryKey = @EntryKey)";
+            string sql = $@"SELECT COUNT(1) FROM {nameof(Character)}
+                            WHERE CreateUserId = @CreateUserId
+                              AND Status != -1 AND WeaponEntryKey = @EntryKey";
             int count = await QueryFirstAsync<int>(sql, new { CreateUserId = _playerId, EntryKey = entryKey });
-            if (count > 0) { throw new ArgumentException("武器仍被角色或部署裝備中，無法刪除"); }
+            if (count > 0) { throw new BusinessArgumentException(ApiMessageKeys.WeaponInUse); }
         }
 
         private async Task DeleteChildrenAsync(Guid weaponId)

@@ -112,22 +112,22 @@ namespace ReconstructNodesServer.Services
         /// </summary>
         public virtual async Task ClaimReward(string achievementItemId)
         {
-            if (string.IsNullOrWhiteSpace(achievementItemId)) { throw new ArgumentException("成就項目 id 不可為空"); }
+            if (string.IsNullOrWhiteSpace(achievementItemId)) { throw new BusinessArgumentException(ApiMessageKeys.AchievementIdRequired); }
 
             List<Achievement> groups = await QueryGroupsAsync(lockRows: true);
-            if (groups.Count == 0) { throw new InvalidOperationException("尚無成就進度"); }
+            if (groups.Count == 0) { throw new BusinessOperationException(ApiMessageKeys.AchievementMissing); }
 
             string sql = $@"SELECT TOP 1 *
                               FROM {DetailTable} WITH (UPDLOCK, HOLDLOCK)
                              WHERE Name = @Name
                                AND CreateUserId = @CreateUserId";
             AchievementDetail? detail = await QueryFirstAsync<AchievementDetail?>(sql, new { Name = achievementItemId, CreateUserId = _playerId });
-            if (detail == null) { throw new InvalidOperationException("成就項目不存在"); }
-            if (detail.IsReward) { throw new InvalidOperationException("成就獎勵已領取"); }
+            if (detail == null) { throw new BusinessOperationException(ApiMessageKeys.AchievementItemMissing); }
+            if (detail.IsReward) { throw new BusinessOperationException(ApiMessageKeys.AchievementClaimed); }
 
             Achievement? group = groups.FirstOrDefault(g => g.Id == detail.AchievementId);
-            if (group == null) { throw new InvalidOperationException("成就群組不存在"); }
-            if ((group.Total ?? 0) < detail.Target) { throw new InvalidOperationException("成就尚未達成"); }
+            if (group == null) { throw new BusinessOperationException(ApiMessageKeys.AchievementGroupMissing); }
+            if ((group.Total ?? 0) < detail.Target) { throw new BusinessOperationException(ApiMessageKeys.AchievementIncomplete); }
 
             detail.IsReward = true;
             detail.RewardDate = DateTime.Now;
@@ -172,22 +172,22 @@ namespace ReconstructNodesServer.Services
             {
                 if (string.IsNullOrWhiteSpace(group.Name) || !groupNames.Add(group.Name))
                 {
-                    throw new ArgumentException("成就群組名稱不可為空或重複");
+                    throw new BusinessArgumentException(ApiMessageKeys.AchievementGroupInvalid);
                 }
                 if (!float.IsFinite(group.Total) || group.Total < 0)
                 {
-                    throw new ArgumentException($"成就群組 {group.Name} 的進度格式錯誤");
+                    throw new BusinessArgumentException(ApiMessageKeys.AchievementProgressInvalid);
                 }
 
                 foreach (AchievementItemModel item in group.Items ?? new())
                 {
                     if (string.IsNullOrWhiteSpace(item.Name) || !itemNames.Add(item.Name))
                     {
-                        throw new ArgumentException($"成就群組 {group.Name} 的項目名稱不可為空或重複");
+                        throw new BusinessArgumentException(ApiMessageKeys.AchievementItemsInvalid);
                     }
                     if (item.Target <= 0)
                     {
-                        throw new ArgumentException($"成就項目 {item.Name} 的目標數值必須大於 0");
+                        throw new BusinessArgumentException(ApiMessageKeys.AchievementTargetInvalid);
                     }
                 }
 
@@ -196,7 +196,7 @@ namespace ReconstructNodesServer.Services
                 {
                     if (string.IsNullOrWhiteSpace(name) || !collected.Add(name))
                     {
-                        throw new ArgumentException($"成就群組 {group.Name} 的收集紀錄不可為空或重複");
+                        throw new BusinessArgumentException(ApiMessageKeys.AchievementCollectionInvalid);
                     }
                 }
             }

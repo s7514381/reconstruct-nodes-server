@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using ReconstructNodesServer.Library.GameModel;
 using ReconstructNodesServer.Argument;
 using ReconstructNodesServer.Services;
+using ReconstructNodesServer.Library.Models;
 
 namespace ReconstructNodesServer.Controllers
 {
@@ -13,9 +14,9 @@ namespace ReconstructNodesServer.Controllers
 
 		[HttpGet]
 		[Route("/")]
-		public async Task<string> Get()
+		public BackendApiResult<object> Get()
 		{
-            return $"歡迎來到Unity的第一個家";
+            return BackendApiResult<object>.Create(200, ApiMessageKeys.HomeWelcome);
 		}
 
     }

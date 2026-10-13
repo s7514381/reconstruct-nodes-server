@@ -23,16 +23,16 @@ namespace ReconstructNodesServer.Controllers
         {
             if (string.IsNullOrWhiteSpace(request.ItemKey) || request.Delta == 0)
             {
-                return StatusCode(400, BackendApiResult<int>.Create(400, "物品代碼不可為空，且增量不可為 0"));
+                return StatusCode(400, BackendApiResult<int>.Create(400, ApiMessageKeys.ItemDeltaInvalid));
             }
 
             int amount = 0;
-            (bool success, string? message) = await TransactionFunc(async () =>
+            (bool success, ApiMessage? message) = await TransactionFunc(async () =>
             {
-                amount = await service.AdjustAmount(request.ItemKey, request.Delta, request.Name, request.Category);
+                amount = await service.AdjustAmount(request.ItemKey, request.Delta, request.Category);
             });
 
-            if (!success) { return StatusCode(400, BackendApiResult<int>.Create(400, message ?? "物品數量更新失敗")); }
+            if (!success) { return StatusCode(400, BackendApiResult<int>.Create(400, message ?? ApiMessageKeys.ItemUpdateFailed)); }
             return Ok(BackendApiResult<int>.Create(200, string.Empty, amount));
         }
 
@@ -41,6 +41,6 @@ namespace ReconstructNodesServer.Controllers
         /// </summary>
         [HttpPost]
         public virtual Task<IActionResult> Delete(ItemKeyRequest request)
-            => DeleteByKeyAsync(request.ItemKey, "物品代碼不可為空", "物品刪除失敗", service.DeleteByNaturalKey);
+            => DeleteByKeyAsync(request.ItemKey, ApiMessageKeys.ItemKeyRequired, ApiMessageKeys.ItemDeleteFailed, service.DeleteByNaturalKey);
     }
 }

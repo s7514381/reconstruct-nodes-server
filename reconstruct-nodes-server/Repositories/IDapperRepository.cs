@@ -13,7 +13,7 @@ namespace ReconstructNodesServer.Repositories
         /// <summary>
         /// 當前正在使用的 Transaction
         /// </summary>
-        IDbTransaction? Transaction { get; set; }
+        IDbTransaction? Transaction { get; }
 
         /// <summary>
         /// 開始一個新的 Transaction
@@ -43,8 +43,8 @@ namespace ReconstructNodesServer.Repositories
 
         Task<bool> UpdateAsync<T>(T entity) where T : class;
 
-        SqlMapper.GridReader QueryMultiple(string sql, object? param = null);
+        ManagedGridReader QueryMultiple(string sql, object? param = null);
 
-        Task<SqlMapper.GridReader> QueryMultipleAsync(string sql, object? param = null);
+        Task<ManagedGridReader> QueryMultipleAsync(string sql, object? param = null);
     }
 }

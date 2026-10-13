@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc.Filters;
 using Newtonsoft.Json;
 using System.Text;
 using ReconstructNodesServer.Utility;
+using ReconstructNodesServer.Library.Models;
 
 namespace ReconstructNodesServer.Filter
 {
@@ -23,11 +24,9 @@ namespace ReconstructNodesServer.Filter
 
             void reject()
             {
-                context.Result = new ContentResult
+                context.Result = new ObjectResult(BackendApiResult<object>.Create(401, ApiMessageKeys.AuthEncodeInvalid))
                 {
                     StatusCode = 401,
-                    Content = "加密驗證失敗",
-                    ContentType = "text/plain"
                 };
             }
         }

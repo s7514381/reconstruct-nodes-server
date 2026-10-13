@@ -97,40 +97,6 @@ namespace ReconstructNodesServer.Services
             return result;
         }
 
-        protected override async Task SetModel(PlayerModel viewModel)
-        {
-            await base.SetModel(viewModel);
-
-            viewModel.SettingVersionList = (await _lazy.SettingVersionService.Value.GetModelList()).ToList();
-        }
-
-        protected override async Task ModelSave(PlayerModel viewModel)
-        {
-            await base.ModelSave(viewModel);
-
-            await _lazy.SettingVersionService.Value.UpdateDetail(viewModel, viewModel.SettingVersionList);
-        }
-
-        public async Task<PlayerCompleteModel?> GetCompleteModel() 
-        {
-            List<Task> tasks = new List<Task>();
-            PlayerCompleteModel model = await QueryFirstAsync<PlayerCompleteModel>(SqlData(), new { Id = _playerId });
-            if (model == null) { return null; }
-
-            tasks.AddTask(async () => { await SetModel(model); });
-            tasks.AddTask(async () => { model.MapList = (await _lazy.MapService.Value.GetModelList()).ToList(); });
-            tasks.AddTask(async () => { model.AchievementList = (await _lazy.AchievementService.Value.GetModelList()).ToList(); });
-            tasks.AddTask(async () => { model.EquipmentList = (await _lazy.EquipmentService.Value.GetModelList()).ToList(); });
-            tasks.AddTask(async () => { model.AbilityList = (await _lazy.AbilityService.Value.GetModelList()).ToList(); });
-            tasks.AddTask(async () => { model.CharacterList = (await _lazy.CharacterService.Value.GetModelList()).ToList(); });
-            tasks.AddTask(async () => { model.AbilitySelectList = (await _lazy.AbilitySelectService.Value.GetModelList()).ToList(); });
-            tasks.AddTask(async () => { model.GameCollectionList = (await _lazy.GameCollectionService.Value.GetModelList()).ToList(); });
-            tasks.AddTask(async () => { model.PlayerParamsList = (await _lazy.PlayerParamsService.Value.GetModelList()).ToList(); });
-            await Task.WhenAll(tasks);
-
-            return model;
-        }
-
         public async Task<Player?> GetDataByLogin(LoginRequest model)
         {
             string subWhere = " where 1=1 ";

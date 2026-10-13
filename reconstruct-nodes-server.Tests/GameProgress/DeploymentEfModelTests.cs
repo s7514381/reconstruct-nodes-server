@@ -23,8 +23,8 @@ namespace ReconstructNodesServer.Tests.GameProgress
             using var context = CreateContext();
 
             Assert.AreEqual("Deployment", context.Model.FindEntityType(typeof(Deployment))!.GetTableName());
-            Assert.AreEqual("DeploymentSkill", context.Model.FindEntityType(typeof(DeploymentSkill))!.GetTableName());
-            Assert.AreEqual("DeploymentSkillNode", context.Model.FindEntityType(typeof(DeploymentSkillNode))!.GetTableName());
+            Assert.AreEqual("CharacterSkillTree", context.Model.FindEntityType(typeof(CharacterSkillTree))!.GetTableName());
+            Assert.AreEqual("CharacterSkillNode", context.Model.FindEntityType(typeof(CharacterSkillNode))!.GetTableName());
             Assert.AreEqual("BattlefieldRoad", context.Model.FindEntityType(typeof(BattlefieldRoad))!.GetTableName());
         }
 
@@ -46,8 +46,8 @@ namespace ReconstructNodesServer.Tests.GameProgress
             using var context = CreateContext();
 
             Assert.AreEqual("PK_Deployment", context.Model.FindEntityType(typeof(Deployment))!.FindPrimaryKey()!.GetName());
-            Assert.AreEqual("PK_DeploymentSkill", context.Model.FindEntityType(typeof(DeploymentSkill))!.FindPrimaryKey()!.GetName());
-            Assert.AreEqual("PK_DeploymentSkillNode", context.Model.FindEntityType(typeof(DeploymentSkillNode))!.FindPrimaryKey()!.GetName());
+            Assert.AreEqual("PK_CharacterSkillTree", context.Model.FindEntityType(typeof(CharacterSkillTree))!.FindPrimaryKey()!.GetName());
+            Assert.AreEqual("PK_CharacterSkillNode", context.Model.FindEntityType(typeof(CharacterSkillNode))!.FindPrimaryKey()!.GetName());
             Assert.AreEqual("PK_BattlefieldRoad", context.Model.FindEntityType(typeof(BattlefieldRoad))!.FindPrimaryKey()!.GetName());
         }
 
@@ -56,13 +56,13 @@ namespace ReconstructNodesServer.Tests.GameProgress
         {
             using var context = CreateContext();
 
-            var skill = context.Model.FindEntityType(typeof(DeploymentSkill))!;
-            Assert.IsNotNull(skill.FindProperty("DeploymentId"));
-            Assert.IsNull(skill.FindProperty("GameProgressDeploymentId"));
+            var skill = context.Model.FindEntityType(typeof(CharacterSkillTree))!;
+            Assert.IsNotNull(skill.FindProperty("CharacterId"));
+            Assert.IsNull(skill.FindProperty("DeploymentId"));
 
-            var node = context.Model.FindEntityType(typeof(DeploymentSkillNode))!;
-            Assert.IsNotNull(node.FindProperty("DeploymentSkillId"));
-            Assert.IsNull(node.FindProperty("GameProgressDeploymentSkillId"));
+            var node = context.Model.FindEntityType(typeof(CharacterSkillNode))!;
+            Assert.IsNotNull(node.FindProperty("CharacterSkillTreeId"));
+            Assert.IsNull(node.FindProperty("DeploymentSkillId"));
         }
 
         [TestMethod]
@@ -70,9 +70,9 @@ namespace ReconstructNodesServer.Tests.GameProgress
         {
             using var context = CreateContext();
 
-            AssertIndexNames(context, typeof(Deployment), "IX_Deployment_CreateUserId");
-            AssertIndexNames(context, typeof(DeploymentSkill), "IX_DeploymentSkill_CreateUserId", "IX_DeploymentSkill_DeploymentId");
-            AssertIndexNames(context, typeof(DeploymentSkillNode), "IX_DeploymentSkillNode_CreateUserId", "IX_DeploymentSkillNode_DeploymentSkillId");
+            AssertIndexNames(context, typeof(Deployment), "IX_Deployment_CreateUserId", "IX_Deployment_CharacterId");
+            AssertIndexNames(context, typeof(CharacterSkillTree), "IX_CharacterSkillTree_CreateUserId", "IX_CharacterSkillTree_CharacterId");
+            AssertIndexNames(context, typeof(CharacterSkillNode), "IX_CharacterSkillNode_CreateUserId", "IX_CharacterSkillNode_CharacterSkillTreeId");
             AssertIndexNames(context, typeof(BattlefieldRoad), "IX_BattlefieldRoad_CreateUserId");
         }
 

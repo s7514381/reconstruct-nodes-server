@@ -20,20 +20,20 @@ namespace ReconstructNodesServer.Controllers
         [HttpPost]
         public virtual async Task<IActionResult> Save(WeaponInstanceModel model)
         {
-            (bool success, string? message) = await TransactionFunc(async () =>
+            (bool success, ApiMessage? message) = await TransactionFunc(async () =>
             {
                 await service.Save(model);
             });
 
-            if (!success) { return StatusCode(400, BackendApiResult<string>.Create(400, message ?? "武器儲存失敗")); }
+            if (!success) { return StatusCode(400, BackendApiResult<string>.Create(400, message ?? ApiMessageKeys.WeaponSaveFailed)); }
             return Ok(BackendApiResult<string>.Create(200, string.Empty, model.Id));
         }
 
         /// <summary>
-        /// 軟刪除武器；仍被角色或部署裝備參照時回傳 400
+        /// 軟刪除武器；仍被角色裝備參照時回傳 400
         /// </summary>
         [HttpPost]
         public virtual Task<IActionResult> Delete(EntryKeyRequest request)
-            => DeleteByKeyAsync(request.EntryKey, "武器實例代碼不可為空", "武器刪除失敗", service.DeleteByNaturalKey);
+            => DeleteByKeyAsync(request.EntryKey, ApiMessageKeys.WeaponIdRequired, ApiMessageKeys.WeaponDeleteFailed, service.DeleteByNaturalKey);
     }
 }

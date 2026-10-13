@@ -19,7 +19,7 @@ namespace ReconstructNodesServer.Tests.GameProgress
         {
             "version", "deployment_log", "wave", "gold", "max_wave_reached",
             "unlocked_bullet_kinds", "unlocked_auxiliary_kinds", "unlocked_character_kinds",
-            "skill_suffixes", "refine_item_counts", "progression", "character_weapons",
+            "skill_suffixes", "refine_item_counts", "progression",
             "difficulty", "lifetime_enemies_defeated", "infinite_level", "cleared_waves",
             "wave_completed",
         };
@@ -77,7 +77,7 @@ namespace ReconstructNodesServer.Tests.GameProgress
                 {
                   "version": 3,
                   "deployment_log": [
-                    { "spot_index": 2, "character_name": "tester", "wave": 5, "kind": 1, "skill_loadout": [], "cell": [1, 2] }
+                    { "spot_index": 2, "character_id": "11111111-1111-1111-1111-111111111111", "wave": 5, "cell": [1, 2] }
                   ],
                   "wave": 5,
                   "gold": 120,
@@ -88,7 +88,6 @@ namespace ReconstructNodesServer.Tests.GameProgress
                   "skill_suffixes": {},
                   "refine_item_counts": {},
                   "progression": {},
-                  "character_weapons": {},
                   "difficulty": 1,
                   "lifetime_enemies_defeated": 42,
                   "infinite_level": 0,
@@ -108,7 +107,7 @@ namespace ReconstructNodesServer.Tests.GameProgress
             Assert.IsNull(model.Battlefield);
             Assert.HasCount(1, model.DeploymentLog);
             Assert.AreEqual(2, model.DeploymentLog[0].SpotIndex);
-            Assert.AreEqual("tester", model.DeploymentLog[0].CharacterName);
+            Assert.AreEqual(Guid.Parse("11111111-1111-1111-1111-111111111111"), model.DeploymentLog[0].CharacterId);
             CollectionAssert.AreEqual(new List<int> { 1, 2 }, model.DeploymentLog[0].Cell);
         }
 
@@ -119,7 +118,10 @@ namespace ReconstructNodesServer.Tests.GameProgress
             using var document = JsonDocument.Parse(json);
             var keys = document.RootElement.EnumerateObject().Select(p => p.Name).ToHashSet();
 
-            Assert.IsTrue(keys.IsSupersetOf(new[] { "spot_index", "character_name", "wave", "kind", "skill_loadout" }));
+            Assert.IsTrue(keys.IsSupersetOf(new[] { "spot_index", "character_id", "wave" }));
+            Assert.DoesNotContain("skill_loadout", keys);
+            Assert.DoesNotContain("kind", keys);
+            Assert.DoesNotContain("weapon_entry_id", keys);
             Assert.DoesNotContain("cell", keys);
             Assert.DoesNotContain("weapon_quality_version", keys);
         }

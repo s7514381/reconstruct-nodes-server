@@ -12,6 +12,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
 using ReconstructNodesServer.Services;
+using ReconstructNodesServer.Library.Models;
 
 namespace ReconstructNodesServer.Filter
 {
@@ -42,11 +43,9 @@ namespace ReconstructNodesServer.Filter
 
             void reject() 
             {
-                context.Result = new ContentResult
+                context.Result = new ObjectResult(BackendApiResult<object>.Create(401, ApiMessageKeys.AuthInvalid))
                 {
                     StatusCode = 401,
-                    Content = "身份驗證失敗",
-                    ContentType = "text/plain"
                 };
             }
         }

@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Caching.Memory;
 using ReconstructNodesServer.Filter;
+using ReconstructNodesServer.Library.Models;
 
 namespace ReconstructNodesServer.Tests.Auth
 {
@@ -61,9 +62,12 @@ namespace ReconstructNodesServer.Tests.Auth
             });
 
             Assert.IsFalse(nextCalled);
-            var result = executing.Result as ContentResult;
+            var result = executing.Result as ObjectResult;
             Assert.IsNotNull(result);
             Assert.AreEqual(401, result.StatusCode);
+            var envelope = result.Value as BackendApiResult<object>;
+            Assert.IsNotNull(envelope);
+            Assert.AreEqual(ApiMessageKeys.AuthInvalid, envelope.MessageKey);
         }
     }
 }

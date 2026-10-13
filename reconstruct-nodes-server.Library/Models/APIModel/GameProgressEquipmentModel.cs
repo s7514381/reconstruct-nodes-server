@@ -5,7 +5,7 @@ using System.Text.Json.Serialization;
 namespace ReconstructNodesServer.Library.Models
 {
     /// <summary>
-    /// 單一角色或部署所持有的武器快照；欄位與前端 WeaponInstance.serialize_equipment 相同。
+    /// 角色裝備的 API 欄位；寫入只使用 weapon_entry_id，其餘由目前武器資料補出。
     /// 空武器時 weapon_id 與 weapon_entry_id 為空字串，weapon_affixes 為空陣列，weapon_unique 為空字典。
     /// </summary>
     public class GameProgressEquipmentModel

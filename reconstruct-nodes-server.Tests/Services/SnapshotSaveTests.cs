@@ -141,7 +141,7 @@ namespace ReconstructNodesServer.Tests.Services
             await Assert.ThrowsAsync<ArgumentException>(() => new TalentService(argument).Save(new TalentModel { TalentPoints = -1 }));
             await Assert.ThrowsAsync<ArgumentException>(() => new GameProgressService(argument).Save(new GameProgressModel
             {
-                CharacterWeapons = new() { ["not-an-integer"] = new GameProgressEquipmentModel() },
+                DeploymentLog = [new GameProgressDeploymentModel()],
             }));
             await Assert.ThrowsAsync<ArgumentException>(() => new AchievementProgressService(argument, new ItemService(argument))
                 .Save(new AchievementProgressModel { Groups = [new AchievementGroupModel { Name = "" }] }));
@@ -156,8 +156,161 @@ namespace ReconstructNodesServer.Tests.Services
             Assert.AreEqual("QueryAsync", repository.Calls[0].Name);
             Assert.Contains("Player WITH (UPDLOCK, HOLDLOCK)", repository.Calls[0].Sql!);
             Assert.AreEqual(PlayerId, Property(repository.Calls[0].Value!, "PlayerId"));
-            Assert.AreEqual("ExecuteAsync", repository.Calls[1].Name);
+            var deletion = repository.Calls.First(call => call.Name == "ExecuteAsync");
+            Assert.Contains("CreateUserId = @CreateUserId", deletion.Sql!);
+            Assert.IsFalse(repository.Calls.Where(call => call.Name == "ExecuteAsync")
+                .Any(call => call.Sql!.Contains("Character")));
+        }
+
+        [TestMethod]
+        public async Task Character_NotDeployed_SavesEquipmentAndSkillTree()
+        {
+            var (argument, repository) = CreateArgument();
+            repository.QueryRows[typeof(Guid)] = new[] { Guid.NewGuid() };
+            Character existing = new() { Kind = 0, CreateUserId = PlayerId };
+            repository.Existing = existing;
+            repository.QueryRows[typeof(Character)] = new[] { existing };
+            repository.QueryRows[typeof(PlayerParams)] = new[]
+            {
+                new PlayerParams { Group = "game_progress.unlocked_auxiliary_kinds", Name = "auxiliary_gem", Value = "true" },
+            };
+            CharacterModel model = new()
+            {
+                Id = existing.Id, Kind = 0, WeaponEntryId = "entry",
+                SkillTrees = [new GameProgressSkillLoadoutModel
+                {
+                    Kind = 5, AuxiliaryNodes =
+                    [
+                        new GameProgressSkillNodeModel { Type = "active", Kind = 0 },
+                        new GameProgressSkillNodeModel { Type = "auxiliary", LootId = "auxiliary_gem" },
+                    ],
+                }],
+            };
+            await new CharacterService(argument).Save(model);
+            Character row = repository.Calls.Select(call => call.Value).OfType<Character>().Single();
+            Assert.AreEqual(row.Id, model.Id);
+            Assert.AreEqual(PlayerId, row.CreateUserId);
+            Assert.AreEqual("entry", row.WeaponEntryKey);
+            CharacterSkillTree tree = repository.Calls.Select(call => call.Value).OfType<CharacterSkillTree>().Single();
+            Assert.AreEqual(row.Id, tree.CharacterId);
+            var nodes = repository.Calls.Select(call => call.Value).OfType<CharacterSkillNode>().ToList();
+            Assert.HasCount(2, nodes);
+            Assert.IsTrue(nodes.All(node => node.CharacterSkillTreeId == tree.Id && node.CreateUserId == PlayerId));
+            Assert.AreEqual(1, nodes[1].Sequence);
+            Assert.IsFalse(repository.Calls.Any(call => call.Sql?.Contains("Deployment") == true));
+        }
+
+        [TestMethod]
+        public async Task Character_Update_PreservesId_AndReplacesOnlyOwnSkills()
+        {
+            var (argument, repository) = CreateArgument();
+            Character existing = new() { Kind = 3, CreateUserId = PlayerId };
+            repository.Existing = existing;
+            repository.QueryRows[typeof(Character)] = new[] { existing };
+            CharacterModel model = new() { Id = existing.Id, Kind = 3 };
+            await new CharacterService(argument).Save(model);
+            Assert.AreEqual(existing.Id, model.Id);
+            Assert.IsNull(existing.WeaponEntryKey);
+            Assert.AreEqual(3, existing.Kind);
+            var deletions = repository.Calls.Where(call => call.Sql?.StartsWith("DELETE") == true).ToList();
+            Assert.HasCount(2, deletions);
+            Assert.IsTrue(deletions.All(call => call.Sql!.Contains("CreateUserId = @CreateUserId")));
+            Assert.IsFalse(deletions.Any(call => call.Sql!.Contains("Deployment")));
+        }
+
+        [TestMethod]
+        [DataRow("missing-character")]
+        [DataRow("changed-kind")]
+        [DataRow("missing-weapon")]
+        [DataRow("equipped-weapon")]
+        public async Task Character_InvalidReferences_RejectBeforeWrites(string reason)
+        {
+            var (argument, repository) = CreateArgument();
+            Character existing = new() { Kind = 3, CreateUserId = PlayerId };
+            repository.Existing = existing;
+            repository.QueryRows[typeof(Character)] = new[] { existing };
+            CharacterModel model = new() { Id = existing.Id, Kind = 3 };
+            if (reason is "missing-character" or "changed-kind")
+            {
+                model.Id = Guid.NewGuid();
+                repository.QueryRows[typeof(Character)] = Array.Empty<Character>();
+                if (reason == "changed-kind")
+                {
+                    repository.QueryRows[typeof(Character)] = new[] { new Character { Id = model.Id.Value, Kind = 4 } };
+                }
+            }
+            else
+            {
+                model.WeaponEntryId = "entry";
+                if (reason == "equipped-weapon")
+                {
+                    repository.QueryRows[typeof(Guid)] = new[] { Guid.NewGuid() };
+                    repository.QueryRows[typeof(int)] = new[] { 4 };
+                }
+            }
+            await Assert.ThrowsAsync<ArgumentException>(() => new CharacterService(argument).Save(model));
+            Assert.IsFalse(repository.Calls.Any(call => call.Name is "InsertAsync" or "UpdateAsync" or "ExecuteAsync"));
+            Assert.IsTrue(repository.Calls.All(call => call.Sql!.Contains("@CreateUserId") || call.Sql.Contains("@PlayerId")));
+        }
+
+        [TestMethod]
+        [DataRow("unknown", null, null)]
+        [DataRow("active", null, null)]
+        [DataRow("auxiliary", null, null)]
+        public async Task Character_InvalidSkillNode_RejectsBeforeRepository(string type, string? lootId, int? kind)
+        {
+            var (argument, repository) = CreateArgument();
+            CharacterModel model = new()
+            {
+                Id = Guid.NewGuid(),
+                SkillTrees = [new GameProgressSkillLoadoutModel
+                {
+                    AuxiliaryNodes = [new GameProgressSkillNodeModel { Type = type, LootId = lootId, Kind = kind }],
+                }],
+            };
+            await Assert.ThrowsAsync<ArgumentException>(() => new CharacterService(argument).Save(model));
+            Assert.HasCount(0, repository.Calls);
+        }
+
+        [TestMethod]
+        [DataRow(false)]
+        [DataRow(true)]
+        public async Task GameProgress_ValidatesOwnedCharacterBeforeReplacingDeployments(bool exists)
+        {
+            var (argument, repository) = CreateArgument();
+            Guid id = Guid.NewGuid();
+            if (exists) { repository.QueryRows[typeof(Guid)] = new[] { id }; }
+            var model = new GameProgressModel { RequestId = Guid.NewGuid(), DeploymentLog = [new GameProgressDeploymentModel { CharacterId = id }] };
+            if (!exists)
+            {
+                await Assert.ThrowsAsync<ArgumentException>(() => new GameProgressService(argument).Save(model));
+                Assert.IsFalse(repository.Calls.Any(call => call.Name == "ExecuteAsync"));
+                return;
+            }
+            await new GameProgressService(argument).Save(model);
+            var row = repository.Calls.Select(call => call.Value).OfType<Deployment>().Single();
+            Assert.AreEqual(id, row.CharacterId);
+            Assert.AreEqual(PlayerId, row.CreateUserId);
             Assert.Contains("CreateUserId = @CreateUserId", repository.Calls[1].Sql!);
+        }
+
+        [TestMethod]
+        public async Task Character_GetList_UsesCurrentWeaponAndIndependentSkills()
+        {
+            var (argument, repository) = CreateArgument();
+            Character row = new() { Kind = 3, WeaponEntryKey = "entry" };
+            CharacterSkillTree tree = new() { CharacterId = row.Id, Kind = 7 };
+            repository.QueryRows[typeof(Character)] = new[] { row };
+            repository.QueryRows[typeof(CharacterSkillTree)] = new[] { tree };
+            repository.QueryRows[typeof(CharacterSkillNode)] = new[]
+            {
+                new CharacterSkillNode { CharacterSkillTreeId = tree.Id, NodeType = "active", Kind = 8 },
+            };
+            repository.QueryRows[typeof(Weapon)] = new[] { new Weapon { EntryKey = "entry", WeaponKey = "updated", Rarity = "rare" } };
+            argument.LazyServiceArgument.WeaponService = new Lazy<WeaponService>(() => new WeaponService(argument));
+            CharacterModel model = (await new CharacterService(argument).GetList()).Single();
+            Assert.AreEqual("updated", model.WeaponId);
+            Assert.AreEqual(8, model.SkillTrees[0].AuxiliaryNodes[0].Kind);
         }
 
         [TestMethod]
@@ -212,9 +365,14 @@ namespace ReconstructNodesServer.Tests.Services
 
         private static Lazy<T> UnusedLazy<T>() => new(() => throw new InvalidOperationException($"Unexpected dependency: {typeof(T).Name}"));
 
-        private static (BaseServiceArgument, RecordingRepository) CreateArgument()
+        internal static (BaseServiceArgument, RecordingRepository) CreateArgument()
         {
             IDapperRepository repository = DispatchProxy.Create<IDapperRepository, RecordingRepository>();
+            return (CreateServiceArgument(repository, PlayerId), (RecordingRepository)repository);
+        }
+
+        internal static BaseServiceArgument CreateServiceArgument(IDapperRepository repository, Guid playerId)
+        {
             var configuration = new ConfigurationBuilder().AddInMemoryCollection(
                 new Dictionary<string, string?> { ["SmtpConfig:Password"] = "test-only" }).Build();
             ConstructorInfo constructor = typeof(LazyServiceArgument).GetConstructors().Single();
@@ -224,14 +382,17 @@ namespace ReconstructNodesServer.Tests.Services
             var lazy = (LazyServiceArgument)constructor.Invoke(dependencies);
             lazy.MailSender = new Lazy<MailSender>(() => new MailSender(configuration));
             var argument = new BaseServiceArgument(lazy, repository, configuration);
-            lazy.PlayerService = new Lazy<PlayerService>(() => new PlayerService(argument) { Player = new Player { Id = PlayerId } });
-            return (argument, (RecordingRepository)repository);
+            lazy.PlayerService = new Lazy<PlayerService>(() => new PlayerService(argument) { Player = new Player { Id = playerId } });
+            lazy.WeaponService = new Lazy<WeaponService>(() => new WeaponService(argument));
+            lazy.GoldService = new Lazy<GoldService>(() => new GoldService(argument));
+            return argument;
         }
 
         public class RecordingRepository : DispatchProxy
         {
             public List<(string Name, string? Sql, object? Value)> Calls { get; } = new();
             public object? Existing { get; set; }
+            public Dictionary<Type, object> FirstRows { get; } = new();
             public Dictionary<Type, object> QueryRows { get; } = new();
             public bool FailInsert { get; set; }
 
@@ -245,7 +406,8 @@ namespace ReconstructNodesServer.Tests.Services
                 if (name == "InsertAsync" && FailInsert) { throw new InvalidOperationException("Insert failed"); }
                 object? result = name switch
                 {
-                    "QueryFirstOrDefaultAsync" => Existing,
+                    "QueryFirstOrDefaultAsync" => FirstRows.TryGetValue(targetMethod.GetGenericArguments()[0], out object? first)
+                        ? first : Existing,
                     "QueryAsync" => QueryRows.TryGetValue(targetMethod.GetGenericArguments()[0], out object? rows)
                         ? rows : Array.CreateInstance(targetMethod.GetGenericArguments()[0], 0),
                     "InsertAsync" or "ExecuteAsync" => 1,

@@ -127,11 +127,11 @@ namespace ReconstructNodesServer.Services
         {
             if (model.Version < 0 || model.PointsRecalculationVersion < 0)
             {
-                throw new ArgumentException("天賦存檔版本欄位不可為負數");
+                throw new BusinessArgumentException(ApiMessageKeys.TalentVersionInvalid);
             }
             if (model.TalentPoints < 0 || model.TotalSpentPoints < 0)
             {
-                throw new ArgumentException("天賦點數不可為負數");
+                throw new BusinessArgumentException(ApiMessageKeys.TalentPointsInvalid);
             }
 
             ValidateNodes(model.AcquiredTalents, IsNonNegativeInteger, "已取得天賦");
@@ -144,14 +144,14 @@ namespace ReconstructNodesServer.Services
             {
                 if (string.IsNullOrWhiteSpace(treeId) || nodes == null)
                 {
-                    throw new ArgumentException($"{label}的樹資料不完整");
+                    throw new BusinessArgumentException(ApiMessageKeys.TalentTreeInvalid);
                 }
 
                 foreach ((string nodeId, JsonElement value) in nodes)
                 {
                     if (string.IsNullOrWhiteSpace(nodeId) || !isValidValue(value))
                     {
-                        throw new ArgumentException($"{label} {treeId}/{nodeId} 的資料格式錯誤");
+                        throw new BusinessArgumentException(ApiMessageKeys.TalentNodeInvalid);
                     }
                 }
             }

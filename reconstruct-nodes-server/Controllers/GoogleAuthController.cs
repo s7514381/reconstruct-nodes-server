@@ -31,7 +31,7 @@ namespace ReconstructNodesServer.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Google 登入發生未預期例外");
-                return StatusCode(500, BackendApiResult<BackendLoginData>.Create(500, "登入失敗，請稍後再試"));
+                return StatusCode(500, BackendApiResult<BackendLoginData>.Create(500, ApiMessageKeys.AuthLoginFailed));
             }
         }
 
@@ -55,7 +55,7 @@ namespace ReconstructNodesServer.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Google 原生登入發生未預期例外");
-                return StatusCode(500, BackendApiResult<BackendLoginData>.Create(500, "登入失敗，請稍後再試"));
+                return StatusCode(500, BackendApiResult<BackendLoginData>.Create(500, ApiMessageKeys.AuthLoginFailed));
             }
         }
 
@@ -63,12 +63,12 @@ namespace ReconstructNodesServer.Controllers
         {
             (int status, string message) = ex switch
             {
-                GoogleAuthNotConfiguredException => (503, "Google 登入尚未設定，請使用訪客登入"),
-                GoogleLoginInputException => (400, ex.Message),
-                GoogleAuthorizationRejectedException => (401, ex.Message),
-                GoogleIdTokenInvalidException => (401, "Google 身分驗證失敗，請重新登入"),
-                GoogleUpstreamException => (502, "無法連線 Google 驗證服務，請稍後再試"),
-                _ => (500, "登入失敗，請稍後再試"),
+                GoogleAuthNotConfiguredException => (503, ApiMessageKeys.AuthGoogleNotConfigured),
+                GoogleLoginInputException => (400, ApiMessageKeys.AuthGoogleInputInvalid),
+                GoogleAuthorizationRejectedException => (401, ApiMessageKeys.AuthGoogleRejected),
+                GoogleIdTokenInvalidException => (401, ApiMessageKeys.AuthGoogleInvalid),
+                GoogleUpstreamException => (502, ApiMessageKeys.AuthGoogleUnavailable),
+                _ => (500, ApiMessageKeys.AuthLoginFailed),
             };
             return StatusCode(status, BackendApiResult<BackendLoginData>.Create(status, message));
         }

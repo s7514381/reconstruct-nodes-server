@@ -11,12 +11,8 @@ namespace ReconstructNodesServer.Controllers
         /// 讀取目前玩家的遊戲進度；尚未儲存過時回傳 404 封包（前端據此判定為 MISSING）
         /// </summary>
         [HttpPost]
-        public virtual async Task<IActionResult> Get()
-        {
-            GameProgressModel? progress = await service.Get();
-            if (progress == null) { return StatusCode(404, BackendApiResult<string>.Create(404, "尚無遊戲進度")); }
-            return Ok(BackendApiResult<GameProgressModel>.Create(200, string.Empty, progress));
-        }
+        public virtual Task<IActionResult> Get() =>
+            TransactionResultAsync<GameProgressModel?>(() => service.Get(), ApiMessageKeys.ProgressReadFailed, ApiMessageKeys.ProgressMissing);
 
         /// <summary>
         /// 以整份遊戲進度快照覆寫目前玩家的資料
@@ -24,12 +20,12 @@ namespace ReconstructNodesServer.Controllers
         [HttpPost]
         public virtual async Task<IActionResult> Save(GameProgressModel model)
         {
-            (bool success, string? message) = await TransactionFunc(async () =>
+            (bool success, ApiMessage? message) = await TransactionFunc(async () =>
             {
                 await service.Save(model);
             });
 
-            if (!success) { return StatusCode(400, BackendApiResult<string>.Create(400, message ?? "遊戲進度儲存失敗")); }
+            if (!success) { return StatusCode(400, BackendApiResult<string>.Create(400, message ?? ApiMessageKeys.ProgressSaveFailed)); }
             return Ok(BackendApiResult<string>.Create(200, string.Empty, string.Empty));
         }
     }

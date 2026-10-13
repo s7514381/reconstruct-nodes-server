@@ -38,7 +38,7 @@ namespace ReconstructNodesServer.Controllers
         [HttpPost]
         public virtual async Task<IActionResult> Save(ViewModel viewModel) 
         {
-            (bool success, string? message) = await TransactionFunc(async () =>
+            (bool success, ApiMessage? message) = await TransactionFunc(async () =>
             {
                 await service.Save(viewModel);
             });
@@ -50,7 +50,7 @@ namespace ReconstructNodesServer.Controllers
         [HttpPost]
         public virtual async Task<IActionResult> SaveList(List<ViewModel> list)
         {
-            (bool success, string? message) = await TransactionFunc(async () =>
+            (bool success, ApiMessage? message) = await TransactionFunc(async () =>
             {
                 await service.Save(list);
             });
@@ -62,7 +62,7 @@ namespace ReconstructNodesServer.Controllers
         [HttpPost]
         public virtual async Task<IActionResult> SaveData(DBModel viewModel)
         {
-            (bool success, string? message) = await TransactionFunc(async () =>
+            (bool success, ApiMessage? message) = await TransactionFunc(async () =>
             {
                 await service.SaveData(viewModel);
             });
@@ -74,7 +74,7 @@ namespace ReconstructNodesServer.Controllers
         [HttpPost]
         public virtual async Task<IActionResult> SaveDataList(List<DBModel> list)
         {
-            (bool success, string? message) = await TransactionFunc(async () =>
+            (bool success, ApiMessage? message) = await TransactionFunc(async () =>
             {
                 await service.SaveData(list);
             });
@@ -98,7 +98,7 @@ namespace ReconstructNodesServer.Controllers
         [HttpPost]
         public virtual async Task<IActionResult> Delete(ViewModel viewModel) 
         {
-            (bool success, string? message) = await TransactionFunc(async () =>
+            (bool success, ApiMessage? message) = await TransactionFunc(async () =>
             {
                 await service.DeleteModel(viewModel);
             });
@@ -112,7 +112,7 @@ namespace ReconstructNodesServer.Controllers
         {
             if (list.Count == 0) { return BadRequest(); }
 
-            (bool success, string? message) = await TransactionFunc(async () =>
+            (bool success, ApiMessage? message) = await TransactionFunc(async () =>
             {
                 await service.DeleteModel(list);
             });
@@ -125,7 +125,7 @@ namespace ReconstructNodesServer.Controllers
         [HttpPost]
         public virtual async Task<IActionResult> TestSave()
         {
-            (bool success, string? message) = await TransactionFunc(async () =>
+            (bool success, ApiMessage? message) = await TransactionFunc(async () =>
             {
                 await service.TestSave();
             });
@@ -137,7 +137,7 @@ namespace ReconstructNodesServer.Controllers
         [HttpPost]
         public virtual async Task<IActionResult> TestSaveList()
         {
-            (bool success, string? message) = await TransactionFunc(async () =>
+            (bool success, ApiMessage? message) = await TransactionFunc(async () =>
             {
                 await service.TestSaveList();
             });
@@ -149,7 +149,7 @@ namespace ReconstructNodesServer.Controllers
         [HttpPost]
         public virtual async Task<IActionResult> TestDelete()
         {
-            (bool success, string? message) = await TransactionFunc(async () =>
+            (bool success, ApiMessage? message) = await TransactionFunc(async () =>
             {
                 await service.TestDelete();
             });

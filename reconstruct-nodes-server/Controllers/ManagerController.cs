@@ -21,13 +21,13 @@ namespace ReconstructNodesServer.Controllers
         {
             if (string.IsNullOrWhiteSpace(request.Account) || string.IsNullOrEmpty(request.Password))
             {
-                return StatusCode(400, Result<BackendLoginData>(400, "帳號或密碼不可為空"));
+                return StatusCode(400, Result<BackendLoginData>(400, ApiMessageKeys.AuthCredentialsRequired));
             }
 
             Player? player = await playerService.GetDataByAccount(request.Account);
             if (player == null || !PasswordHasher.Verify(request.Password, player.Password))
             {
-                return StatusCode(401, Result<BackendLoginData>(401, "帳號或密碼錯誤"));
+                return StatusCode(401, Result<BackendLoginData>(401, ApiMessageKeys.AuthCredentialsInvalid));
             }
 
             // 每次登入重置 Token，舊 Token 立即失效（與 LoginController 行為一致）
@@ -46,7 +46,7 @@ namespace ReconstructNodesServer.Controllers
             Player? player = playerService.Player;
             if (player?.Token == null)
             {
-                return StatusCode(401, Result<BackendLoginData>(401, "身份驗證失敗"));
+                return StatusCode(401, Result<BackendLoginData>(401, ApiMessageKeys.AuthInvalid));
             }
 
             return Ok(Result(200, "", new BackendLoginData(player.Token.Value, player.Name)));

@@ -22,14 +22,14 @@ namespace ReconstructNodesServer.Controllers
         {
             if (string.IsNullOrWhiteSpace(request.ClientId))
             {
-                return StatusCode(400, BackendApiResult<BackendLoginData>.Create(400, "裝置識別碼不可為空"));
+                return StatusCode(400, BackendApiResult<BackendLoginData>.Create(400, ApiMessageKeys.AuthDeviceRequired));
             }
 
             string clientId = request.ClientId;
             BackendLoginData? data = null;
             try
             {
-                (bool isSuccess, string? error) = await TransactionFunc(async () =>
+                (bool isSuccess, ApiMessage? error) = await TransactionFunc(async () =>
                 {
                     Player player = await playerService.FindOrCreateGuest(clientId);
 
@@ -46,13 +46,13 @@ namespace ReconstructNodesServer.Controllers
                 if (!isSuccess || data == null)
                 {
                     _logger.LogError("裝置登入失敗: {Error}", error);
-                    return StatusCode(500, BackendApiResult<BackendLoginData>.Create(500, "登入失敗，請稍後再試"));
+                    return StatusCode(500, BackendApiResult<BackendLoginData>.Create(500, ApiMessageKeys.AuthLoginFailed));
                 }
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "裝置登入發生例外");
-                return StatusCode(500, BackendApiResult<BackendLoginData>.Create(500, "登入失敗，請稍後再試"));
+                return StatusCode(500, BackendApiResult<BackendLoginData>.Create(500, ApiMessageKeys.AuthLoginFailed));
             }
 
             return Ok(BackendApiResult<BackendLoginData>.Create(200, string.Empty, data));

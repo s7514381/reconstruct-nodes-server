@@ -13,10 +13,6 @@ namespace ReconstructNodesServer.Host
         {
             while (!stoppingToken.IsCancellationRequested)
             {
-                //using var scope = scopeFactory.CreateScope();
-                //var service = scope.ServiceProvider.GetRequiredService<AchievementSettingService>();
-                //var q = await service.GetModelList();
-
                 //foreach (var item in AuthorizeFilter.playerDic)
                 //{
                 //    if (item.Value?.ExpireTime < DateTime.Now)

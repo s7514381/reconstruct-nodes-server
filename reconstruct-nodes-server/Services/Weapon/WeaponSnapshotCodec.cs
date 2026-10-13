@@ -1,3 +1,4 @@
+using ReconstructNodesServer.Library.Models;
 using System.Globalization;
 using System.Text.Json;
 
@@ -32,7 +33,7 @@ namespace ReconstructNodesServer.Services
                 return new WeaponAffixSnapshot(id.GetString()!, true, ReadValues(values));
             }
 
-            throw new FormatException("詞綴格式錯誤");
+            throw new BusinessFormatException(ApiMessageKeys.WeaponAffixInvalid);
         }
 
         public static JsonElement WriteAffix(WeaponAffixSnapshot affix)
@@ -54,7 +55,7 @@ namespace ReconstructNodesServer.Services
             string? uniqueKey = raw.TryGetValue("unique_id", out JsonElement id) ? id.GetString() : null;
             if (string.IsNullOrEmpty(uniqueKey) || !raw.TryGetValue("values", out JsonElement values))
             {
-                throw new FormatException("武器特殊屬性格式錯誤");
+                throw new BusinessFormatException(ApiMessageKeys.WeaponUniqueInvalid);
             }
             return new WeaponUniqueSnapshot(uniqueKey, ReadValues(values));
         }
