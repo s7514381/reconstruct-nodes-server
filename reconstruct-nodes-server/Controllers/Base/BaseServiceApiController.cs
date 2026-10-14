@@ -44,7 +44,7 @@ namespace ReconstructNodesServer.Controllers
             });
 
             if (success) { return Ok(); }
-            else { return BadRequest(); }
+            else { return TransactionFailure(message); }
         }
 
         [HttpPost]
@@ -56,7 +56,7 @@ namespace ReconstructNodesServer.Controllers
             });
 
             if (success) { return Ok(); }
-            else { return BadRequest(); }
+            else { return TransactionFailure(message); }
         }
 
         [HttpPost]
@@ -68,7 +68,7 @@ namespace ReconstructNodesServer.Controllers
             });
 
             if (success) { return Ok(); }
-            else { return BadRequest(); }
+            else { return TransactionFailure(message); }
         }
 
         [HttpPost]
@@ -80,7 +80,7 @@ namespace ReconstructNodesServer.Controllers
             });
 
             if (success) { return Ok(); }
-            else { return BadRequest(); }
+            else { return TransactionFailure(message); }
         }
 
         [HttpPost]
@@ -104,13 +104,13 @@ namespace ReconstructNodesServer.Controllers
             });
 
             if (success) { return Ok(); }
-            else { return BadRequest(); }
+            else { return TransactionFailure(message); }
         }
 
         [HttpPost]
         public virtual async Task<IActionResult> DeleteList(List<ViewModel> list)
         {
-            if (list.Count == 0) { return BadRequest(); }
+            if (list.Count == 0) { return BadRequest(BackendApiResult<object>.Create(400, ApiMessageKeys.RequestInvalid)); }
 
             (bool success, ApiMessage? message) = await TransactionFunc(async () =>
             {
@@ -118,7 +118,7 @@ namespace ReconstructNodesServer.Controllers
             });
 
             if (success) { return Ok(); }
-            else { return BadRequest(); }
+            else { return TransactionFailure(message); }
         }
 
 #if DEBUG
@@ -131,7 +131,7 @@ namespace ReconstructNodesServer.Controllers
             });
 
             if (success) { return Ok(); }
-            else { return BadRequest(); }
+            else { return TransactionFailure(message); }
         }
 
         [HttpPost]
@@ -143,7 +143,7 @@ namespace ReconstructNodesServer.Controllers
             });
 
             if (success) { return Ok(); }
-            else { return BadRequest(); }
+            else { return TransactionFailure(message); }
         }
 
         [HttpPost]
@@ -155,7 +155,7 @@ namespace ReconstructNodesServer.Controllers
             });
 
             if (success) { return Ok(); }
-            else { return BadRequest(); }
+            else { return TransactionFailure(message); }
         }
 
         [HttpPost]
@@ -168,4 +168,3 @@ namespace ReconstructNodesServer.Controllers
 
     }
 }
-

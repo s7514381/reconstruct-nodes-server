@@ -7,49 +7,25 @@ namespace ReconstructNodesServer.Services
 {
     public class WeaponService(BaseServiceArgument argument) : _SnapshotService<Weapon, WeaponInstanceModel>(argument)
     {
-        private const string AffixTable = nameof(WeaponAffix);
-        private const string AffixValueTable = nameof(WeaponAffixValue);
-        private const string UniqueValueTable = nameof(WeaponUniqueValue);
-
         protected override string? NaturalKeyField => "EntryKey";
 
         public virtual async Task<IEnumerable<WeaponInstanceModel>> GetInstanceList()
         {
-            string weaponSql = $@"SELECT *
-                                    FROM {_tableName}
-                                   WHERE Status != -1
-                                     AND CreateUserId = @CreateUserId
-                                ORDER BY CreateDate";
-            List<Weapon> weapons = (await QueryAsync<Weapon>(weaponSql, new { CreateUserId = _playerId })).ToList();
+            List<Weapon> weapons = await QuerySnapshotRowsAsync<Weapon>(orderBy: row => row.CreateDate);
             if (weapons.Count == 0) { return []; }
 
             List<Guid> weaponIds = weapons.Select(w => w.Id).ToList();
 
-            string affixSql = $@"SELECT *
-                                   FROM {AffixTable}
-                                  WHERE WeaponId IN @WeaponIds
-                                    AND CreateUserId = @CreateUserId
-                               ORDER BY Sequence";
-            List<WeaponAffix> affixes = (await QueryAsync<WeaponAffix>(affixSql, new { WeaponIds = weaponIds, CreateUserId = _playerId })).ToList();
+            List<WeaponAffix> affixes = await QuerySnapshotChildrenAsync<WeaponAffix, Weapon>(weaponIds);
 
             List<WeaponAffixValue> affixValues = [];
             List<Guid> affixIds = affixes.Select(a => a.Id).ToList();
             if (affixIds.Count > 0)
             {
-                string valueSql = $@"SELECT *
-                                       FROM {AffixValueTable}
-                                      WHERE WeaponAffixId IN @AffixIds
-                                        AND CreateUserId = @CreateUserId
-                                   ORDER BY Sequence";
-                affixValues = (await QueryAsync<WeaponAffixValue>(valueSql, new { AffixIds = affixIds, CreateUserId = _playerId })).ToList();
+                affixValues = await QuerySnapshotChildrenAsync<WeaponAffixValue, WeaponAffix>(affixIds, activeParentsOnly: false);
             }
 
-            string uniqueSql = $@"SELECT *
-                                    FROM {UniqueValueTable}
-                                   WHERE WeaponId IN @WeaponIds
-                                     AND CreateUserId = @CreateUserId
-                                ORDER BY Sequence";
-            List<WeaponUniqueValue> uniqueValues = (await QueryAsync<WeaponUniqueValue>(uniqueSql, new { WeaponIds = weaponIds, CreateUserId = _playerId })).ToList();
+            List<WeaponUniqueValue> uniqueValues = await QuerySnapshotChildrenAsync<WeaponUniqueValue, Weapon>(weaponIds);
 
             ILookup<Guid?, WeaponAffix> affixesByWeapon = affixes.ToLookup(a => a.WeaponId);
             ILookup<Guid?, WeaponAffixValue> valuesByAffix = affixValues.ToLookup(v => v.WeaponAffixId);
@@ -108,7 +84,8 @@ namespace ReconstructNodesServer.Services
                 row.WeaponFamilyKey = model.WeaponFamilyId;
                 row.Rarity = model.Rarity;
                 row.UniqueKey = unique?.UniqueKey;
-            }, model.Id, UpdateSnapshotParentAsync);
+            }, model.Id, row => UpdateSnapshotFieldsAsync(row,
+                w => w.WeaponKey, w => w.WeaponFamilyKey, w => w.Rarity, w => w.UniqueKey));
 
             if (!isNew)
             {
@@ -116,26 +93,6 @@ namespace ReconstructNodesServer.Services
             }
 
             await InsertChildrenAsync(weapon.Id, affixes, unique);
-        }
-
-        private async Task UpdateSnapshotParentAsync(Weapon weapon)
-        {
-            string updateSql = $@"UPDATE {_tableName}
-                                     SET WeaponKey = @WeaponKey,
-                                         WeaponFamilyKey = @WeaponFamilyKey,
-                                         Rarity = @Rarity,
-                                         UniqueKey = @UniqueKey
-                                   WHERE Id = @Id
-                                     AND CreateUserId = @CreateUserId";
-            await ExecuteAsync(updateSql, new
-            {
-                weapon.Id,
-                CreateUserId = _playerId,
-                weapon.WeaponKey,
-                weapon.WeaponFamilyKey,
-                weapon.Rarity,
-                weapon.UniqueKey,
-            });
         }
 
         /// <summary>
@@ -162,59 +119,36 @@ namespace ReconstructNodesServer.Services
 
         private async Task DeleteChildrenAsync(Guid weaponId)
         {
-            string deleteValuesSql = $@"DELETE FROM {AffixValueTable}
-                                         WHERE CreateUserId = @CreateUserId
-                                           AND WeaponAffixId IN (SELECT Id
-                                                                   FROM {AffixTable}
-                                                                  WHERE WeaponId = @WeaponId
-                                                                    AND CreateUserId = @CreateUserId)";
-            await ExecuteAsync(deleteValuesSql, new { CreateUserId = _playerId, WeaponId = weaponId });
-
-            await DeleteOwnedRowsAsync(AffixTable, "WeaponId", weaponId);
-            await DeleteOwnedRowsAsync(UniqueValueTable, "WeaponId", weaponId);
+            await DeleteSnapshotDescendantsAsync<WeaponAffixValue, WeaponAffix, Weapon>(weaponId);
+            await DeleteSnapshotChildrenAsync<WeaponAffix, Weapon>(weaponId);
+            await DeleteSnapshotChildrenAsync<WeaponUniqueValue, Weapon>(weaponId);
         }
 
         private async Task InsertChildrenAsync(Guid weaponId, IReadOnlyList<WeaponAffixSnapshot> affixes, WeaponUniqueSnapshot? unique)
         {
-            for (int i = 0; i < affixes.Count; i++)
-            {
-                WeaponAffixSnapshot snapshot = affixes[i];
-                WeaponAffix affix = new WeaponAffix
+            await InsertSnapshotRowsAsync(affixes, (snapshot, _) => new WeaponAffix
                 {
                     WeaponId = weaponId,
                     AffixKey = snapshot.AffixKey,
                     Rolled = snapshot.Rolled,
-                    Sequence = i,
-                    CreateUserId = _playerId,
-                };
-                await InsertAsync(affix);
-
-                for (int j = 0; j < snapshot.Values.Count; j++)
+                }, async (snapshot, affix) =>
                 {
-                    await InsertAsync(new WeaponAffixValue
+                    await InsertSnapshotRowsAsync(snapshot.Values, (value, j) => new WeaponAffixValue
                     {
                         WeaponAffixId = affix.Id,
                         ValueKey = j.ToString(CultureInfo.InvariantCulture),
-                        Value = WeaponSnapshotCodec.FormatValue(snapshot.Values[j]),
-                        Sequence = j,
-                        CreateUserId = _playerId,
+                        Value = WeaponSnapshotCodec.FormatValue(value),
                     });
-                }
-            }
+                });
 
             if (unique == null) { return; }
 
-            for (int j = 0; j < unique.Values.Count; j++)
-            {
-                await InsertAsync(new WeaponUniqueValue
+            await InsertSnapshotRowsAsync(unique.Values, (value, j) => new WeaponUniqueValue
                 {
                     WeaponId = weaponId,
                     ValueKey = j.ToString(CultureInfo.InvariantCulture),
-                    Value = WeaponSnapshotCodec.FormatValue(unique.Values[j]),
-                    Sequence = j,
-                    CreateUserId = _playerId,
+                    Value = WeaponSnapshotCodec.FormatValue(value),
                 });
-            }
         }
     }
 }

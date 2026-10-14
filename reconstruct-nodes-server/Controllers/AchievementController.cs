@@ -13,17 +13,18 @@ namespace ReconstructNodesServer.Controllers
     {
 
         [HttpPost]
-        public virtual async Task<List<AchievementDetail>> Reward(List<Guid> ids)
+        public virtual async Task<IActionResult> Reward(List<Guid> ids)
         {
             List<AchievementDetail> list = new List<AchievementDetail>();
 
-            if (ids == null || ids.Count == 0) { return list; }
+            if (ids == null || ids.Count == 0) { return Ok(list); }
 
             (bool success, ApiMessage? message) = await TransactionFunc(async () =>
             {
                 list = await detailService.Reward(ids);
             });
-            return list;
+            if (!success) { return TransactionFailure(message); }
+            return Ok(list);
         }
 
     }

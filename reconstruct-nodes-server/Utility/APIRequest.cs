@@ -74,17 +74,16 @@ namespace ReconstructNodesServer.Utility
             }
             finally 
             {
+                Guid? token = AuthorizeFilter.GetToken(context);
+                if (entity != null
+                    && token.HasValue)
+                {
+                    if (cache.TryGetValue(token.Value, out PlayerValidateModel? model)) { entity.Add("CreateUserId", model?.Id); }
+                    // 快取未命中時不得寫入原始 session Token（Azure 日誌可讀），只記錄遮蔽標記
+                    else { entity.Add("Token", "[REDACTED]"); }
+                }
                 _ = Task.Run(async () =>
                 {
-                    if (entity == null) { return; }
-
-                    Guid? token = AuthorizeFilter.GetToken(context);
-                    if (token.HasValue) 
-                    {
-                        if (cache.TryGetValue(token.Value, out PlayerValidateModel? model)) { entity.Add("CreateUserId", model?.Id); }
-                        // 快取未命中時不得寫入原始 session Token（Azure 日誌可讀），只記錄遮蔽標記
-                        else { entity.Add("Token", "[REDACTED]"); }
-                    }
                     await azureStoreService.Transfer(TableClientType.Log, entity).ConfigureAwait(false);
                 });
             }

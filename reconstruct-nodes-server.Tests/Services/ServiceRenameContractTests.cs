@@ -64,11 +64,13 @@ namespace ReconstructNodesServer.Tests.Services
             var adjust = DeclaredPublic(typeof(ItemService), "AdjustAmount");
             Assert.IsNotNull(adjust);
             var parameters = adjust.GetParameters();
-            Assert.HasCount(4, parameters);
+            Assert.HasCount(3, parameters);
             Assert.AreEqual(typeof(string), parameters[0].ParameterType);
             Assert.AreEqual(typeof(int), parameters[1].ParameterType);
             Assert.AreEqual(typeof(string), parameters[2].ParameterType);
-            Assert.AreEqual(typeof(string), parameters[3].ParameterType);
+            Assert.AreEqual("category", parameters[2].Name);
+            Assert.IsTrue(parameters[2].IsOptional);
+            Assert.IsNull(parameters[2].DefaultValue);
 
             Assert.IsNull(DeclaredPublic(typeof(ItemService), "GetItemList"));
             Assert.IsNull(DeclaredPublic(typeof(ItemService), "AddItem"));

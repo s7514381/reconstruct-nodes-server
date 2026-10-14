@@ -290,10 +290,19 @@ namespace ReconstructNodesServer.Services
         /// <summary>
         /// 硬刪除本人擁有的列，可選擇再以父鍵欄位限定範圍
         /// </summary>
-        protected async Task<int> DeleteOwnedRowsAsync(string tableName, string? parentColumn = null, Guid? parentId = null)
+        protected async Task<int> DeleteOwnedRowsAsync(string tableName, string? parentColumn = null, Guid? parentId = null,
+            string? ownedParentTable = null, string? ancestorColumn = null)
         {
             string sql = $"DELETE FROM {tableName} WHERE CreateUserId = @CreateUserId";
-            if (!string.IsNullOrEmpty(parentColumn)) { sql += $" AND {parentColumn} = @ParentId"; }
+            if (ownedParentTable != null)
+            {
+                if (string.IsNullOrEmpty(parentColumn) || string.IsNullOrEmpty(ancestorColumn))
+                {
+                    throw new ArgumentException("關聯刪除必須指定父鍵與祖先鍵");
+                }
+                sql += $" AND {parentColumn} IN (SELECT Id FROM {ownedParentTable} WHERE {ancestorColumn} = @ParentId AND CreateUserId = @CreateUserId)";
+            }
+            else if (!string.IsNullOrEmpty(parentColumn)) { sql += $" AND {parentColumn} = @ParentId"; }
 
             return await ExecuteAsync(sql, new { CreateUserId = _playerId, ParentId = parentId });
         }

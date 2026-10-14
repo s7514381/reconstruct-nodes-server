@@ -22,6 +22,20 @@ reconstruct-nodes（前端）→ HTTP → Controller → Service → BaseService
 
 詳細說明請見 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
 
+## API 系統訊息契約
+
+系統提示使用 `BackendApiResult<T>` 的 `Status`、`Success`、`MessageKey`、
+`MessageArgs`、`Data`；已移除 `Message`，不提供舊中文訊息相容分支。
+`MessageArgs` 是命名字串參數（例如金幣不足的 `cost`），沒有成功提示時
+key 為空字串、args 為空物件。前後端必須同步部署。
+
+後端以 `ApiMessageKeys` 與具型別業務例外選擇 key；前端負責翻譯及插值，
+玩家名稱與資料不屬於系統訊息。交易失敗（包含非預期交易例外）維持 HTTP 400；
+未處理例外回 500。未知錯誤只在伺服器記錄完整診斷，不對外傳例外文字。
+模型驗證與無效 JSON 回 400 key 封包，授權失敗回 401 key 封包。
+既有非提示型 CRUD 成功資料及舊登入的狀態資料維持原契約；
+它們的交易失敗不再回空回應或成功形狀。
+
 ## 本機啟動
 
 需要 .NET 10 SDK 與可連線的 SQL Server。先設定資料庫連線及下節的必要憑證：
@@ -113,6 +127,48 @@ Remove-Item Env:\DB_CONCURRENCY_SQL_TESTS
 Remove-Item Env:\DB_CONCURRENCY_SQL_CONNECTION
 ```
 
+## 核心 SQL／HTTP fixture 整合驗證（須明確授權）
+
+`CoreHttpIntegrationTests` 只允許本機 SQL Server，會建立一個隨機
+`core-http-fixture-*` 訪客，以自己的獨立埠 backend 與記憶體 Azurite 執行真實 HTTP。
+設定僅以子程序環境覆寫，不修改來源設定，不使用或停止共享服務，
+也不將 HTTP 日誌寫入正式 Azure。須先安裝 Node.js／Azurite 並建置 Debug 後端。
+**只有在已獲准使用該本機開發資料庫及精準刪除 fixture 資料後才可執行**；
+不要對共享／正式資料庫執行，亦不要將下列 opt-in 設為一般測試的永久環境設定。
+
+```powershell
+# 從 server repo 根目錄執行；連線字串只留在目前程序環境，不輸出、不寫檔。
+dotnet build .\reconstruct-nodes-server.sln --no-restore
+if ($LASTEXITCODE -ne 0) { throw "Build failed" }
+$config = Get-Content .\reconstruct-nodes-server\appsettings.json -Encoding UTF8 -Raw | ConvertFrom-Json
+$env:CHARACTER_SHOP_SQL_CONNECTION = $config.ConnectionStrings.DefaultConnection
+$env:CORE_HTTP_SQL_TESTS = "1"
+$env:CORE_HTTP_SERVER_DIRECTORY = (Resolve-Path .\reconstruct-nodes-server).Path
+$env:CORE_HTTP_AZURITE_TABLE_SCRIPT = Join-Path $env:APPDATA "npm\node_modules\azurite\dist\src\table\main.js"
+try {
+    dotnet test .\reconstruct-nodes-server.Tests\reconstruct-nodes-server.Tests.csproj --no-build --no-restore `
+      --filter "FullyQualifiedName~CoreHttpIntegrationTests" --logger "console;verbosity=detailed"
+} finally {
+    Remove-Item Env:\CORE_HTTP_SQL_TESTS,Env:\CORE_HTTP_SERVER_DIRECTORY,Env:\CORE_HTTP_AZURITE_TABLE_SCRIPT,Env:\CHARACTER_SHOP_SQL_CONNECTION -ErrorAction SilentlyContinue
+}
+```
+
+測試涵蓋：新訪客唯一核心 kind=3、初始火球 kind=1／空手、重讀 GUID 不變；
+只為該 fixture 透過 `WeaponService.Save` 的交易建立武器；
+HTTP 保存武器與技能節點、保存空技能、相同 ClientId 重登保持空配置、
+還原技能再重登保持 GUID／武器／技能。finally 先停止自有 PID，再以精確
+Player GUID 刪除 fixture 子資料、以 GUID＋ClientId＋訪客條件刪除玩家；
+驗證所有具 `CreateUserId` 欄位的實體表及該 ClientId 皆無殘留。
+Azurite 關閉即丟棄記憶體日誌。若測試程序被強制終止，finally 無法保證執行；
+須依測試輸出的 fixture ClientId／GUID 與自有 PID 做精準清理，不能廣泛刪玩家或停止同名程序。
+
+已有一般角色而尚無核心的取得路徑，由既有 SQL rollback fixture 驗證；
+使用已獲准的相同連線，在目前 shell 明確設定 `CHARACTER_SHOP_SQL_TESTS=1` 後，
+以完整方法 filter 執行
+`ReconstructNodesServer.Tests.Services.CharacterShopSqlTests.RealDatabase_DrawReplay_CharacterSkillsAndDeployment_PreserveGold`。
+不要以整個 SQL category 取代此聚焦測試。2026-10-14 在明確授權的本機開發 DB
+實際執行上述 SQL 與 HTTP 測試各 1 項，皆通過（包含 fixture 清理斷言）。
+
 ## API 概覽
 
 - 固定角色與道具名稱由遊戲翻譯資源提供，後端不保存或回傳 `Character.Name`、`Item.Name`、角色 DTO 的 `name` 或抽卡的 `character_name`；商店 Catalog 不提供名稱。前端以 `kind`／`ItemKey`／商店識別碼取得顯示文字，不再支援角色改名。
@@ -122,7 +178,10 @@ Remove-Item Env:\DB_CONCURRENCY_SQL_CONNECTION
 - 管理端登入與 session：`POST Manager/Login`、`POST Manager/GetSession`（原 `GetManagerSession`，已改名，見 docs/ARCHITECTURE.md 10.2 的 URL 改名表）。
 - 遊戲資料：`Shop`、`Character`、`GameProgress`、`Talent`、`Item`、`Weapon`、`AchievementProgress`。
 - `Character/GetList`、`Character/Get?id=<GUID>`、`Character/Save` 提供獨立角色配置；角色未部署也能裝備武器與技能樹。部署只使用 `character_id` 引用角色目前配置，進度覆寫不刪除角色。
-- 只有 `Shop/Draw` 能建立擁有角色：單抽 100 金幣、十連 900，新角色配發普通基礎武器，重複發碎片。`Character/Save` 不能建立角色。抽卡需穩定 `request_id`，重送不重複扣款。
+- 一般角色（kind 0～2）由 `Shop/Draw` 取得：單抽 100 金幣、十連 900，新角色配發普通基礎武器，重複發碎片。`Character/Save` 不能建立角色。抽卡需穩定 `request_id`，重送不重複扣款。
+- 核心沿用 `Character` 與相同 GUID／配置 DTO，固定 **kind = 3**，不新增核心 endpoint 或資料表。新舊帳號首次 `Character/GetList`（或 `Get`）在既有交易與玩家鎖內自動補齊唯一核心；無費用、無初始武器，初始技能樹為 `[{ "kind": 1, "auxiliary_nodes": [] }]`。火球值已核對遊戲 `BulletData.FIREBALL -> ActiveSkill.FIREBALL = 1`，不是 4。已存在核心不重設技能或武器，明確保存的空技能清單會保留。
+- 前端先讀 `Character/GetList` 取得核心真實 `id`，再用 `Character/Save` 保存相同 `id`、`kind: 3`、`skill_trees` 與可選 `weapon_entry_id`（空值表示卸下）；Save 回傳原 GUID。核心免費可用火球及既有通用基本技能，其他主動／輔助技能仍需解鎖；武器仍驗證本人擁有及跨角色唯一裝備。核心不進商店抽取池，不能放入 `GameProgress/Save.deployment_log`（沿用 `backend.progress.character_not_owned` 拒絕），沒有角色刪除／撤回 API。一般部署費不適用核心，核心常駐位置由前端接線；後端只保存核心配置。
+- 本次核心擴充不需 migration；不會主動批次改寫帳號或共享資料庫，未讀角色清單的帳號於下一次讀取時補齊。服務層直接呼叫 `GetList`／`Get` 也必須沿用既有 repository transaction，不能脫離交易使用玩家鎖。
 - 金幣仍由 `PlayerParams` 保存（`Group = game_progress`、`Name = gold`）。`GoldService` 只負責後端金幣交易，不使用獨立金幣表；`GameProgress/Save` 不採用請求的 `gold`，也不刪除既有金幣列。`Shop/GetGold` 讀取餘額。新增 `AddAuthoritativeGoldAndShopRequests` migration 僅建立冪等交易紀錄並檢查既有金幣資料；套用前須核對及備份。
 - `Economy/StartWave` 建立波次 session，`Economy/ReportKill` 驗證 session 與敵人索引並防重複領獎，`Economy/PurchaseSkill` 扣款解鎖技能。新增部署由 `GameProgress/Save` 每筆扣 60，需提供穩定 `request_id`；技能購買每次 100。金幣、波次 session 與技能解鎖參數不能經通用 CRUD 或進度快照繞過。
 - 角色／經濟已完成前後端新契約串接，通過單元、實際 SQL Server 與正式前端 AppShell 的 HTTP 整合驗證；不相容舊本機抽卡流程。前端依後端角色清單判定擁有權，交易後對帳金幣，不再自行抽卡或修改遠端餘額。

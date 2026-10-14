@@ -361,7 +361,8 @@ namespace ReconstructNodesServer.Tests.Services
             Id = "entry", WeaponId = "weapon", WeaponFamilyId = "family", Rarity = "rare",
         };
 
-        private static object? Property(object value, string name) => value.GetType().GetProperty(name)!.GetValue(value);
+        private static object? Property(object value, string name) => value is Dapper.DynamicParameters parameters
+            ? parameters.Get<object?>(name) : value.GetType().GetProperty(name)!.GetValue(value);
 
         private static Lazy<T> UnusedLazy<T>() => new(() => throw new InvalidOperationException($"Unexpected dependency: {typeof(T).Name}"));
 

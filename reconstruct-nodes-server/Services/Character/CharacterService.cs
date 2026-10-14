@@ -7,23 +7,34 @@ namespace ReconstructNodesServer.Services
 {
     public class CharacterService(BaseServiceArgument argument) : _SnapshotService<Character, CharacterModel>(argument)
     {
+        public const int CoreKind = 3;
+        // BulletData.FIREBALL -> ActiveSkill.FIREBALL（遊戲端穩定種類值）。
+        public const int CoreDefaultSkillKind = 1;
+
         protected override string? NaturalKeyField => nameof(Character.Kind);
 
         public virtual async Task<List<CharacterModel>> GetList()
         {
             await LockPlayerAsync();
-            List<Character> characters = (await QueryAsync<Character>(
-                "SELECT * FROM Character WHERE CreateUserId = @CreateUserId AND Status != -1 ORDER BY Kind",
-                new { CreateUserId = _playerId })).ToList();
-            if (characters.Count == 0) { return []; }
+            List<Character> characters = await QuerySnapshotRowsAsync<Character>(orderBy: row => row.Kind);
+            // GetList/Get 已由 controller 包在交易內，玩家鎖讓新舊帳號的首次讀取互斥。
+            // 只初始化不存在的核心；已保存的空技能與裝備都是有效配置。
+            if (!characters.Any(row => row.Kind == CoreKind))
+            {
+                Character core = new() { Kind = CoreKind };
+                await InsertSnapshotRowAsync(core);
+                await InsertSnapshotRowAsync(new CharacterSkillTree
+                {
+                    CharacterId = core.Id, Kind = CoreDefaultSkillKind, Sequence = 0,
+                });
+                characters.Add(core);
+            }
 
             Guid[] ids = characters.Select(row => row.Id).ToArray();
-            var trees = (await QueryAsync<CharacterSkillTree>(
-                "SELECT * FROM CharacterSkillTree WHERE CreateUserId = @CreateUserId AND Status != -1 AND CharacterId IN @Ids ORDER BY Sequence",
-                new { CreateUserId = _playerId, Ids = ids })).ToList();
-            var nodes = trees.Count == 0 ? new List<CharacterSkillNode>() : (await QueryAsync<CharacterSkillNode>(
-                "SELECT * FROM CharacterSkillNode WHERE CreateUserId = @CreateUserId AND Status != -1 AND CharacterSkillTreeId IN @Ids ORDER BY Sequence",
-                new { CreateUserId = _playerId, Ids = trees.Select(tree => tree.Id).ToArray() })).ToList();
+            var trees = await QuerySnapshotChildrenAsync<CharacterSkillTree, Character>(ids, activeChildrenOnly: true);
+            var nodes = trees.Count == 0 ? new List<CharacterSkillNode>() :
+                await QuerySnapshotChildrenAsync<CharacterSkillNode, CharacterSkillTree>(
+                    trees.Select(tree => tree.Id).ToArray(), activeChildrenOnly: true);
             var treesByCharacter = trees.ToLookup(tree => tree.CharacterId);
             var nodesByTree = nodes.ToLookup(node => node.CharacterSkillTreeId);
             var weapons = (await _lazy.WeaponService.Value.GetInstanceList()).ToDictionary(weapon => weapon.Id);
@@ -67,6 +78,7 @@ namespace ReconstructNodesServer.Services
 
         protected override void ValidateSnapshot(CharacterModel model)
         {
+            if (model.Kind is < 0 or > CoreKind) { throw new BusinessArgumentException(ApiMessageKeys.CharacterKindInvalid); }
             if (!model.Id.HasValue || model.Id == Guid.Empty) { throw new BusinessArgumentException(ApiMessageKeys.CharacterNotOwned); }
             if (model.WeaponEntryId is { Length: > 450 } ||
                 (!string.IsNullOrEmpty(model.WeaponEntryId) && string.IsNullOrWhiteSpace(model.WeaponEntryId)))
@@ -97,9 +109,7 @@ namespace ReconstructNodesServer.Services
             await LockPlayerAsync();
             if (model.Id.HasValue)
             {
-                var owned = (await QueryAsync<Character>(
-                    "SELECT * FROM Character WHERE Id = @Id AND CreateUserId = @CreateUserId AND Status != -1",
-                    new { model.Id, CreateUserId = _playerId })).SingleOrDefault();
+                var owned = (await QuerySnapshotRowsAsync<Character>(ids: [model.Id.Value])).SingleOrDefault();
                 if (owned == null) { throw new BusinessArgumentException(ApiMessageKeys.CharacterNotFound); }
                 if (owned.Kind != model.Kind) { throw new BusinessArgumentException(ApiMessageKeys.CharacterKindImmutable); }
             }
@@ -127,32 +137,23 @@ namespace ReconstructNodesServer.Services
             }, model.Kind.ToString(CultureInfo.InvariantCulture));
             if (!isNew)
             {
-                await ExecuteAsync(@"DELETE FROM CharacterSkillNode WHERE CreateUserId = @CreateUserId
-                    AND CharacterSkillTreeId IN (SELECT Id FROM CharacterSkillTree WHERE CreateUserId = @CreateUserId AND CharacterId = @CharacterId)",
-                    new { CreateUserId = _playerId, CharacterId = row.Id });
-                await DeleteOwnedRowsAsync(nameof(CharacterSkillTree), nameof(CharacterSkillTree.CharacterId), row.Id);
+                await DeleteSnapshotDescendantsAsync<CharacterSkillNode, CharacterSkillTree, Character>(row.Id);
+                await DeleteSnapshotChildrenAsync<CharacterSkillTree, Character>(row.Id);
             }
             List<GameProgressSkillLoadoutModel> trees = model.SkillTrees ?? new();
-            for (int treeIndex = 0; treeIndex < trees.Count; treeIndex++)
-            {
-                GameProgressSkillLoadoutModel input = trees[treeIndex];
-                CharacterSkillTree tree = new()
+            await InsertSnapshotRowsAsync(trees, (input, _) => new CharacterSkillTree
                 {
-                    CharacterId = row.Id, Kind = input.Kind, Sequence = treeIndex, CreateUserId = _playerId,
-                };
-                await InsertAsync(tree);
-                List<GameProgressSkillNodeModel> nodes = input.AuxiliaryNodes ?? new();
-                for (int index = 0; index < nodes.Count; index++)
+                    CharacterId = row.Id, Kind = input.Kind,
+                }, async (input, tree) =>
                 {
-                    GameProgressSkillNodeModel node = nodes[index];
-                    await InsertAsync(new CharacterSkillNode
+                    List<GameProgressSkillNodeModel> nodes = input.AuxiliaryNodes ?? new();
+                    await InsertSnapshotRowsAsync(nodes, (node, _) => new CharacterSkillNode
                     {
                         CharacterSkillTreeId = tree.Id, NodeType = node.Type,
                         LootId = string.IsNullOrEmpty(node.LootId) ? null : node.LootId,
-                        Kind = node.Kind, Sequence = index, CreateUserId = _playerId,
+                        Kind = node.Kind,
                     });
-                }
-            }
+                });
             model.Id = row.Id;
         }
 
@@ -161,7 +162,7 @@ namespace ReconstructNodesServer.Services
             if (model.SkillTrees == null || model.SkillTrees.Count == 0) { return; }
             int defaultSkill = model.Kind switch
             {
-                0 => 5, 1 => 0, 2 => 3,
+                0 => 5, 1 => 0, 2 => 3, CoreKind => CoreDefaultSkillKind,
                 _ => throw new BusinessArgumentException(ApiMessageKeys.CharacterKindInvalid),
             };
             var rows = await QueryAsync<PlayerParams>(

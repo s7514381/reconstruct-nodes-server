@@ -15,7 +15,6 @@ namespace ReconstructNodesServer.Services
         private const int RewardAmount = 1;
 
         private const string DetailTable = nameof(AchievementDetail);
-        private const string CollectedTable = nameof(AchievementCollected);
 
         /// <summary>
         /// 讀取目前玩家的成就進度，尚未儲存過時回傳 null
@@ -25,8 +24,8 @@ namespace ReconstructNodesServer.Services
             List<Achievement> groups = await QueryGroupsAsync(lockRows: false);
             if (groups.Count == 0) { return null; }
 
-            ILookup<Guid?, AchievementDetail> details = (await QueryChildrenAsync<AchievementDetail>(DetailTable)).ToLookup(d => d.AchievementId);
-            ILookup<Guid?, AchievementCollected> collected = (await QueryChildrenAsync<AchievementCollected>(CollectedTable)).ToLookup(c => c.AchievementId);
+            ILookup<Guid?, AchievementDetail> details = (await QuerySnapshotChildrenAsync<AchievementDetail, Achievement>()).ToLookup(d => d.AchievementId);
+            ILookup<Guid?, AchievementCollected> collected = (await QuerySnapshotChildrenAsync<AchievementCollected, Achievement>()).ToLookup(c => c.AchievementId);
 
             return new AchievementProgressModel
             {
@@ -57,54 +56,39 @@ namespace ReconstructNodesServer.Services
         {
             // 與 ClaimReward 相同的鎖順序（先群組、後項目），避免死結
             await QueryGroupsAsync(lockRows: true);
-            Dictionary<string, AchievementDetail> claimed = (await QueryChildrenAsync<AchievementDetail>(DetailTable))
+            Dictionary<string, AchievementDetail> claimed = (await QuerySnapshotChildrenAsync<AchievementDetail, Achievement>())
                 .Where(d => d.IsReward)
                 .ToDictionary(d => d.Name);
 
-            await DeleteOwnedRowsAsync(CollectedTable);
-            await DeleteOwnedRowsAsync(DetailTable);
-            await DeleteOwnedRowsAsync(_tableName!);
+            await DeleteSnapshotRowsAsync<AchievementCollected>();
+            await DeleteSnapshotRowsAsync<AchievementDetail>();
+            await DeleteSnapshotRowsAsync<Achievement>();
 
-            int groupSequence = 0;
-            foreach (AchievementGroupModel group in model.Groups ?? new())
-            {
-                Achievement row = new()
+            await InsertSnapshotRowsAsync(model.Groups ?? new(), (group, _) => new Achievement
                 {
                     Name = group.Name,
                     Total = group.Total,
-                    Sequence = groupSequence++,
-                    CreateUserId = _playerId,
-                };
-                await InsertAsync(row);
-
-                int itemSequence = 0;
-                foreach (AchievementItemModel item in group.Items ?? new())
+                }, async (group, row) =>
                 {
-                    claimed.TryGetValue(item.Name, out AchievementDetail? previous);
-                    await InsertAsync(new AchievementDetail
+                    await InsertSnapshotRowsAsync(group.Items ?? new(), (item, _) =>
                     {
-                        AchievementId = row.Id,
-                        Name = item.Name,
-                        Target = item.Target,
-                        IsReward = previous != null,
-                        RewardDate = previous?.RewardDate,
-                        Sequence = itemSequence++,
-                        CreateUserId = _playerId,
+                        claimed.TryGetValue(item.Name, out AchievementDetail? previous);
+                        return new AchievementDetail
+                        {
+                            AchievementId = row.Id,
+                            Name = item.Name,
+                            Target = item.Target,
+                            IsReward = previous != null,
+                            RewardDate = previous?.RewardDate,
+                        };
                     });
-                }
 
-                int collectedSequence = 0;
-                foreach (string name in group.Collected ?? new())
-                {
-                    await InsertAsync(new AchievementCollected
+                    await InsertSnapshotRowsAsync(group.Collected ?? new(), (name, _) => new AchievementCollected
                     {
                         AchievementId = row.Id,
                         Name = name,
-                        Sequence = collectedSequence++,
-                        CreateUserId = _playerId,
                     });
-                }
-            }
+                });
         }
 
         /// <summary>
@@ -135,31 +119,8 @@ namespace ReconstructNodesServer.Services
             await itemService.AdjustAmount(RewardItemKey, RewardAmount);
         }
 
-        private async Task<List<Achievement>> QueryGroupsAsync(bool lockRows)
-        {
-            string hint = lockRows ? "WITH (UPDLOCK, HOLDLOCK)" : string.Empty;
-            string sql = $@"SELECT *
-                              FROM {_tableName} {hint}
-                             WHERE Status != -1
-                               AND CreateUserId = @CreateUserId
-                          ORDER BY Sequence";
-            return (await QueryAsync<Achievement>(sql, new { CreateUserId = _playerId })).ToList();
-        }
-
-        /// <summary>
-        /// 只讀取仍有效群組底下的子表資料
-        /// </summary>
-        private async Task<List<T>> QueryChildrenAsync<T>(string table)
-        {
-            string sql = $@"SELECT c.*
-                              FROM {table} c
-                             INNER JOIN {_tableName} a ON a.Id = c.AchievementId
-                             WHERE a.Status != -1
-                               AND a.CreateUserId = @CreateUserId
-                               AND c.CreateUserId = @CreateUserId
-                          ORDER BY c.Sequence";
-            return (await QueryAsync<T>(sql, new { CreateUserId = _playerId })).ToList();
-        }
+        private Task<List<Achievement>> QueryGroupsAsync(bool lockRows) =>
+            QuerySnapshotRowsAsync<Achievement>(orderBy: row => row.Sequence, lockRows: lockRows);
 
         /// <summary>
         /// 寫入前檢查名稱與數值，避免空白或重複的成就資料進入資料庫

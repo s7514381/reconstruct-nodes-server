@@ -43,10 +43,14 @@ namespace ReconstructNodesServer.Controllers
                     data = new BackendLoginData(player.Token.Value, player.Name);
                 });
 
-                if (!isSuccess || data == null)
+                if (!isSuccess)
                 {
                     _logger.LogError("裝置登入失敗: {Error}", error);
-                    return StatusCode(500, BackendApiResult<BackendLoginData>.Create(500, ApiMessageKeys.AuthLoginFailed));
+                    return TransactionFailure(error);
+                }
+                if (data == null)
+                {
+                    throw new InvalidOperationException("Device login transaction completed without data");
                 }
             }
             catch (Exception ex)

@@ -19,12 +19,7 @@ var builder = WebApplication.CreateBuilder(args);
 IServiceCollection services = builder.Services;
 services.AddControllers().ConfigureApiBehaviorOptions(options =>
 {
-    options.InvalidModelStateResponseFactory = context =>
-    {
-        context.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>()
-            .CreateLogger("ApiValidation").LogWarning("Invalid API request at {Path}", context.HttpContext.Request.Path);
-        return new BadRequestObjectResult(BackendApiResult<object>.Create(400, ApiMessageKeys.RequestInvalid));
-    };
+    options.InvalidModelStateResponseFactory = ApiValidationResponse.Create;
 });
 services.AddExceptionHandler<ApiExceptionHandler>();
 services.AddProblemDetails();

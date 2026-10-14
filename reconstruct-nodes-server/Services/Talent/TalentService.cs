@@ -10,23 +10,16 @@ namespace ReconstructNodesServer.Services
     /// </summary>
     public class TalentService(BaseServiceArgument argument) : _SnapshotService<Talent, TalentModel>(argument)
     {
-        private const string AcquiredTable = nameof(TalentAcquired);
-        private const string LegacyCategoryTable = nameof(TalentLegacyCategory);
-
         /// <summary>
         /// 讀取目前玩家的天賦樹，沒有資料時回傳 null
         /// </summary>
         public virtual async Task<TalentModel?> GetSnapshot()
         {
-            string sql = $@"SELECT TOP 1 *
-                              FROM {_tableName}
-                             WHERE Status != -1
-                               AND CreateUserId = @CreateUserId";
-            Talent? talent = await QueryFirstAsync<Talent?>(sql, new { CreateUserId = _playerId });
+            Talent? talent = await QuerySnapshotParentAsync<Talent>();
             if (talent == null) { return null; }
 
-            List<TalentAcquired> acquired = await QueryChildrenAsync<TalentAcquired>(AcquiredTable, talent.Id);
-            List<TalentLegacyCategory> legacy = await QueryChildrenAsync<TalentLegacyCategory>(LegacyCategoryTable, talent.Id);
+            List<TalentAcquired> acquired = await QuerySnapshotChildrenAsync<TalentAcquired, Talent>([talent.Id]);
+            List<TalentLegacyCategory> legacy = await QuerySnapshotChildrenAsync<TalentLegacyCategory, Talent>([talent.Id]);
 
             return new TalentModel
             {
@@ -58,8 +51,8 @@ namespace ReconstructNodesServer.Services
 
             if (!isNew)
             {
-                await DeleteOwnedRowsAsync(AcquiredTable, "TalentId", talent.Id);
-                await DeleteOwnedRowsAsync(LegacyCategoryTable, "TalentId", talent.Id);
+                await DeleteSnapshotChildrenAsync<TalentAcquired, Talent>(talent.Id);
+                await DeleteSnapshotChildrenAsync<TalentLegacyCategory, Talent>(talent.Id);
             }
 
             await InsertNodesAsync(model.AcquiredTalents ?? new(), (treeId, nodeId, value) => new TalentAcquired
@@ -78,31 +71,12 @@ namespace ReconstructNodesServer.Services
             });
         }
 
-        private async Task<List<T>> QueryChildrenAsync<T>(string table, Guid talentId)
-        {
-            string sql = $@"SELECT *
-                              FROM {table}
-                             WHERE TalentId = @TalentId
-                               AND CreateUserId = @CreateUserId
-                          ORDER BY Sequence";
-            IEnumerable<T> rows = await QueryAsync<T>(sql, new { TalentId = talentId, CreateUserId = _playerId });
-            return rows.ToList();
-        }
-
         private async Task InsertNodesAsync<TNode>(Dictionary<string, Dictionary<string, JsonElement>> treeNodes, Func<string, string, string, TNode> create)
             where TNode : ModelBase
         {
-            int sequence = 0;
-            foreach ((string treeId, Dictionary<string, JsonElement> nodes) in treeNodes)
-            {
-                foreach ((string nodeId, JsonElement value) in nodes)
-                {
-                    TNode row = create(treeId, nodeId, value.GetRawText());
-                    row.Sequence = sequence++;
-                    row.CreateUserId = _playerId;
-                    await InsertAsync(row);
-                }
-            }
+            var nodes = treeNodes.SelectMany(tree => tree.Value.Select(node =>
+                (TreeId: tree.Key, NodeId: node.Key, Value: node.Value)));
+            await InsertSnapshotRowsAsync(nodes, (node, _) => create(node.TreeId, node.NodeId, node.Value.GetRawText()));
         }
 
         private static Dictionary<string, Dictionary<string, JsonElement>> ToNodeMap(IEnumerable<(string TreeId, string NodeId, string Value)> rows)

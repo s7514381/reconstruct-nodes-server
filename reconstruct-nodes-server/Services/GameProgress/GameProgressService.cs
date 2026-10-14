@@ -12,9 +12,6 @@ namespace ReconstructNodesServer.Services
     /// </summary>
     public class GameProgressService(BaseServiceArgument argument) : _SnapshotService<PlayerParams, GameProgressModel>(argument)
     {
-        private const string DeploymentTable = nameof(Deployment);
-        private const string RoadTable = nameof(BattlefieldRoad);
-
         private const string ProgressGroup = GameProgressParamGroups.Progress;
         private const string SettingGroupPrefix = GameProgressParamGroups.SettingPrefix;
 
@@ -72,8 +69,8 @@ namespace ReconstructNodesServer.Services
                 .Where(param => param.Group != ProgressGroup)
                 .ToLookup(param => param.Group);
 
-            List<Deployment> deploymentRows = await QueryOwnedAsync<Deployment>(DeploymentTable);
-            List<BattlefieldRoad> roadRows = await QueryOwnedAsync<BattlefieldRoad>(RoadTable);
+            List<Deployment> deploymentRows = await QuerySnapshotRowsAsync<Deployment>(orderBy: row => row.Sequence);
+            List<BattlefieldRoad> roadRows = await QuerySnapshotRowsAsync<BattlefieldRoad>(orderBy: row => row.Sequence);
 
             List<GameProgressDeploymentModel> deploymentLog = deploymentRows.Select(row =>
             {
@@ -121,7 +118,7 @@ namespace ReconstructNodesServer.Services
             // 與武器刪除共用玩家鎖，避免刪武器與寫入裝備參照交錯
             await LockPlayerAsync();
             await ValidateCharactersAsync(model.DeploymentLog ?? new());
-            var previous = await QueryOwnedAsync<Deployment>(DeploymentTable);
+            var previous = await QuerySnapshotRowsAsync<Deployment>(orderBy: row => row.Sequence);
             var previousKeys = previous.Select(row => (row.SpotIndex, row.CharacterId, row.CellX, row.CellY)).ToHashSet();
             int newDeployments = (model.DeploymentLog ?? new()).Count(row =>
                 !previousKeys.Contains((row.SpotIndex, row.CharacterId, row.Cell?[0], row.Cell?[1])));
@@ -153,19 +150,6 @@ namespace ReconstructNodesServer.Services
         }
 
         /// <summary>
-        /// 讀取此玩家在指定表的全部列，依 Sequence 排序
-        /// </summary>
-        private async Task<List<T>> QueryOwnedAsync<T>(string table)
-        {
-            string sql = $@"SELECT *
-                              FROM {table}
-                             WHERE Status != -1
-                               AND CreateUserId = @CreateUserId
-                          ORDER BY Sequence";
-            return (await QueryAsync<T>(sql, new { CreateUserId = _playerId })).ToList();
-        }
-
-        /// <summary>
         /// 寫入前檢查結構，避免格式錯誤造成資料不完整
         /// </summary>
         private static void ValidateProgress(GameProgressModel model)
@@ -193,7 +177,7 @@ namespace ReconstructNodesServer.Services
             Guid[] ids = deployments.Select(row => row.CharacterId).Distinct().ToArray();
             if (ids.Length == 0) { return; }
             var ownedIds = (await QueryAsync<Guid>(
-                "SELECT Id FROM Character WHERE CreateUserId = @CreateUserId AND Status != -1 AND Id IN @Ids",
+                "SELECT Id FROM Character WHERE CreateUserId = @CreateUserId AND Status != -1 AND Kind IN (0, 1, 2) AND Id IN @Ids",
                 new { CreateUserId = _playerId, Ids = ids })).ToHashSet();
             if (ids.Any(id => !ownedIds.Contains(id))) { throw new BusinessArgumentException(ApiMessageKeys.ProgressCharacterNotOwned); }
         }
@@ -203,10 +187,8 @@ namespace ReconstructNodesServer.Services
         /// </summary>
         private async Task DeleteProgressRowsAsync()
         {
-            foreach (string table in new[] { DeploymentTable, RoadTable })
-            {
-                await DeleteOwnedRowsAsync(table);
-            }
+            await DeleteSnapshotRowsAsync<Deployment>();
+            await DeleteSnapshotRowsAsync<BattlefieldRoad>();
 
             await ExecuteAsync($@"DELETE FROM {_tableName} WHERE CreateUserId = @CreateUserId
                 AND {ProgressRowFilter} AND NOT ([Group] = 'game_progress' AND Name = 'gold')
@@ -236,12 +218,11 @@ namespace ReconstructNodesServer.Services
 
         private async Task InsertScalarAsync(string name, object value)
         {
-            await InsertAsync(new PlayerParams
+            await InsertSnapshotRowAsync(new PlayerParams
             {
                 Group = ProgressGroup,
                 Name = name,
                 Value = Convert.ToString(value, CultureInfo.InvariantCulture),
-                CreateUserId = _playerId,
             });
         }
 
@@ -249,50 +230,31 @@ namespace ReconstructNodesServer.Services
         {
             foreach ((string group, Dictionary<string, JsonElement> values) in EnumerateSettingGroups(model))
             {
-                int position = 0;
-                foreach (KeyValuePair<string, JsonElement> entry in values)
+                await InsertSnapshotRowsAsync(values, (entry, _) => new PlayerParams
                 {
-                    await InsertSettingAsync(group, entry.Key, entry.Value, position);
-                    position++;
-                }
+                    Group = group, Name = entry.Key, Value = entry.Value.GetRawText(),
+                });
             }
 
             List<JsonElement> clearedWaves = model.ClearedWaves ?? new();
-            for (int index = 0; index < clearedWaves.Count; index++)
+            await InsertSnapshotRowsAsync(clearedWaves, (value, index) => new PlayerParams
             {
-                await InsertSettingAsync(ClearedWavesGroup, index.ToString(CultureInfo.InvariantCulture), clearedWaves[index], index);
-            }
-        }
-
-        private async Task InsertSettingAsync(string group, string name, JsonElement value, int sequence)
-        {
-            await InsertAsync(new PlayerParams
-            {
-                Group = group,
-                Name = name,
+                Group = ClearedWavesGroup,
+                Name = index.ToString(CultureInfo.InvariantCulture),
                 Value = value.GetRawText(),
-                Sequence = sequence,
-                CreateUserId = _playerId,
             });
         }
 
         private async Task InsertDeploymentsAsync(List<GameProgressDeploymentModel> deployments)
         {
-            for (int index = 0; index < deployments.Count; index++)
-            {
-                GameProgressDeploymentModel deployment = deployments[index];
-                Deployment row = new()
+            await InsertSnapshotRowsAsync(deployments, (deployment, _) => new Deployment
                 {
                     SpotIndex = deployment.SpotIndex,
                     CellX = deployment.Cell?[0],
                     CellY = deployment.Cell?[1],
                     CharacterId = deployment.CharacterId,
                     Wave = deployment.Wave,
-                    Sequence = index,
-                    CreateUserId = _playerId,
-                };
-                await InsertAsync(row);
-            }
+                });
         }
 
         private async Task InsertRoadsAsync(GameProgressBattlefieldModel? battlefield)
@@ -300,19 +262,13 @@ namespace ReconstructNodesServer.Services
             if (battlefield == null) { return; }
 
             List<GameProgressRoadModel> roads = battlefield.Roads ?? new();
-            for (int index = 0; index < roads.Count; index++)
-            {
-                GameProgressRoadModel road = roads[index];
-                await InsertAsync(new BattlefieldRoad
+            await InsertSnapshotRowsAsync(roads, (road, _) => new BattlefieldRoad
                 {
                     X = road.X,
                     Y = road.Y,
                     Corner = road.Corner,
                     Rotation = road.Rotation,
-                    Sequence = index,
-                    CreateUserId = _playerId,
                 });
-            }
         }
 
         private static IEnumerable<(string Group, Dictionary<string, JsonElement> Values)> EnumerateSettingGroups(GameProgressModel model)

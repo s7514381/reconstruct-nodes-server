@@ -32,7 +32,7 @@ namespace ReconstructNodesServer.Controllers
             ResultModel<LoginResponse> result = new();
             result.Data = new();
 
-            await TransactionFunc(async () =>
+            (bool success, ApiMessage? message) = await TransactionFunc(async () =>
             {
                 // 訪客由 PlayerService 統一查找或建立（與 DeviceAuth 共用），其餘登入方式維持原流程
                 Player? player = model.Type == ELoginType.訪客
@@ -111,6 +111,7 @@ namespace ReconstructNodesServer.Controllers
                     await playerService.UpdateAsync(player);
                 }
             });
+            if (!success) { return TransactionFailure(message); }
             return Json(result);
         }
 
@@ -120,7 +121,7 @@ namespace ReconstructNodesServer.Controllers
             ResultModel<LoginResponse> result = new();
             LoginResponse response = result.Data = new();
 
-            await TransactionFunc(async () =>
+            (bool success, ApiMessage? message) = await TransactionFunc(async () =>
             {
                 if (model.EmailVerifyId.HasValue)
                 {
@@ -157,6 +158,7 @@ namespace ReconstructNodesServer.Controllers
             // goto Final 的跳轉目標，標籤後必須接一個陳述式
             Final: { }
             });
+            if (!success) { return TransactionFailure(message); }
             return Json(result);
         }
 

@@ -35,6 +35,9 @@ namespace ReconstructNodesServer.Controllers
             return (false, new ApiMessage(ApiMessageKeys.ErrorUnexpected));
         }
 
+        protected IActionResult TransactionFailure(ApiMessage? message)
+            => BadRequest(BackendApiResult<object>.Create(400, message ?? new ApiMessage(ApiMessageKeys.ErrorUnexpected)));
+
         protected async Task<IActionResult> TransactionResultAsync<T>(
             Func<Task<T>> action, string failureMessage, string? notFoundMessage = null) where T : class?
         {

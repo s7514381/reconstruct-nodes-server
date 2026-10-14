@@ -56,7 +56,21 @@ namespace ReconstructNodesServer.Tests.Services
                     "SELECT COUNT(*) FROM Weapon WHERE CreateUserId=@playerId", new { playerId }));
 
                 var characters = new CharacterService(argument);
-                CharacterModel character = (await characters.GetList()).Single();
+                CharacterModel character = (await characters.GetList()).Single(row => row.Kind != CharacterService.CoreKind);
+                CharacterModel core = (await characters.GetList()).Single(row => row.Kind == CharacterService.CoreKind);
+                Assert.AreEqual(1, core.SkillTrees.Single().Kind);
+                Assert.IsTrue(string.IsNullOrEmpty(core.WeaponEntryId));
+                Assert.AreEqual(1100, await new GoldService(argument).GetBalance());
+                Assert.AreEqual(core.Id, (await characters.GetList()).Single(row => row.Kind == CharacterService.CoreKind).Id);
+                core.SkillTrees = [];
+                await characters.Save(core);
+                Assert.HasCount(0, (await characters.Get(core.Id!.Value))!.SkillTrees);
+                await Assert.ThrowsAsync<ArgumentException>(() => new GameProgressService(argument).Save(new GameProgressModel
+                {
+                    RequestId = Guid.NewGuid(),
+                    DeploymentLog = [new GameProgressDeploymentModel { CharacterId = core.Id.Value }],
+                }));
+                Assert.AreEqual(1100, await new GoldService(argument).GetBalance());
                 character.SkillTrees = [new GameProgressSkillLoadoutModel
                 {
                     Kind = 0, AuxiliaryNodes = [new GameProgressSkillNodeModel { Type = "active", Kind = 0 }],
@@ -72,12 +86,12 @@ namespace ReconstructNodesServer.Tests.Services
                 var restored = await progress.Get();
                 Assert.IsNotNull(restored);
                 Assert.AreEqual(character.Id, restored.DeploymentLog.Single().CharacterId);
-                Assert.AreEqual(0, (await characters.GetList()).Single().SkillTrees.Single().AuxiliaryNodes.Single().Kind);
+                Assert.AreEqual(0, (await characters.GetList()).Single(row => row.Kind != CharacterService.CoreKind).SkillTrees.Single().AuxiliaryNodes.Single().Kind);
 
                 await characters.Save(character);
                 Assert.AreEqual(character.Kind, (await characters.Get(character.Id.Value))!.Kind);
                 await progress.Save(new GameProgressModel { Version = 9 });
-                Assert.HasCount(1, await characters.GetList());
+                Assert.HasCount(2, await characters.GetList());
                 Assert.AreEqual(1040, await new GoldService(argument).GetBalance());
                 transaction.Rollback();
             }

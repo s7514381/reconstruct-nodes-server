@@ -33,7 +33,7 @@ Services
          └─ 一般實體 Service：AchievementService, AchievementDetailService,
             ManyToManyService, PlayerService, PlayerParamsService, EmailVerifyService,
             ItemService
-         └─ _SnapshotService<DB, Snapshot> （獨立快照 DTO 的 Save 與父表 upsert）
+         └─ _SnapshotService<DB, Snapshot> （獨立快照 DTO 的 Save 與共用強型別持久化）
               └─ CharacterService, GameProgressService, TalentService, WeaponService, AchievementProgressService
 ```
 
@@ -86,7 +86,7 @@ EF Core Migration、SqlClient 連線池與非 DB 的 semaphore 不受此機制�
 | `UpdateDetail<TParent>(parent, list)` | `public virtual` | 主從明細同步（新增、更新、刪除差集；刪除僅限本人資料），外鍵由 `CommonUtility.GetForeignKeyField` 推導 |
 | `DeleteModel(ViewModel)` / `DeleteModel(IEnumerable<ViewModel>)` | `public virtual` | 預設先以 `Status = -1` 軟刪除本人列，略過非本人 Id。會觸發 `ModelDelete`；另啟背景工作將請求模型轉存 Azure Table，轉存成功後硬刪除 SQL 列，未等待此背景工作完成 |
 | `DeleteByNaturalKey(string naturalKey)` | `public virtual` | 依自然鍵軟刪除本人資料，回傳受影響筆數。子類別需要前置檢查時 override 並呼叫 base（例：`WeaponService` 先鎖定玩家並檢查是否仍被裝備） |
-| `DeleteOwnedRowsAsync(tableName, parentColumn?, parentId?)` | `protected` | 硬刪除本人擁有的列，可再以父鍵限定範圍。使用端：`WeaponService`、`TalentService`、`AchievementProgressService`、`GameProgressService` |
+| `DeleteOwnedRowsAsync(tableName, parentColumn?, parentId?, ownedParentTable?, ancestorColumn?)` | `protected` | 共用硬刪除機制；可依父鍵限定，或以本人父列子查詢刪除孫列（內外層均檢查擁有權）。快照服務透過強型別包裝呼叫，不傳入外部 SQL 識別字 |
 | `LockPlayerAsync()` | `protected` | 交易內以 `UPDLOCK, HOLDLOCK` 鎖定目前玩家列，供進度寫入與武器刪除共用 |
 | `SqlDelete(subWhere)` | `public virtual` | 產生刪除用 SQL |
 
@@ -99,9 +99,59 @@ EF Core Migration、SqlClient 連線池與非 DB 的 semaphore 不受此機制�
 Weapon 的詞綴與特殊屬性仍在 `SaveSnapshot` 開始時完整解析，早於任何資料庫操作。
 
 `UpsertSnapshotParentAsync` 共用本人父列的 `UPDLOCK, HOLDLOCK` 查詢及新增／更新分支。
-Weapon 使用 EntryKey 定位並提供限定欄位 UPDATE；Talent 以玩家定位並使用 UpdateAsync。
+Weapon 使用 EntryKey 定位，透過 `UpdateSnapshotFieldsAsync` 僅更新 WeaponKey、WeaponFamilyKey、
+Rarity、UniqueKey，WHERE 保留 Id 與目前玩家；不更新 EntryKey、Status 或建立資訊。
+Talent 以玩家定位、Character 以 Kind 定位，仍使用完整 UpdateAsync。
 GameProgress 與 AchievementProgress 保留各自的整份覆寫策略，不使用父表 upsert。
 所有快照儲存仍需由 Controller 的交易包裝呼叫，不在 Service 新增交易。
+
+快照基類只集中持久化機制：表名與關聯鍵沿用 `CommonUtility` 的 Table／Relation metadata，
+排序與更新欄位使用直接屬性 expression；缺少 metadata 或無效欄位選取會明確失敗。
+衍生類別保留 DTO 轉換、領域驗證、父子依賴順序與鎖定編排，不以設定驅動通用 SQL 框架。
+
+| 快照方法（皆為 `protected`） | 責任與使用端 |
+|---|---|
+| `UpsertSnapshotParentAsync(map, naturalKey?, update?)` | 鎖定本人有效父列後新增／更新；Weapon、Talent、Character。新父列不刪明細，既有列先更新再由領域流程替換明細 |
+| `UpdateSnapshotFieldsAsync(row, fields)` | 強型別限定更新；拒絕 Id、CreateUserId、CreateDate、Status 與自然鍵，Weapon 使用 |
+| `QuerySnapshotRowsAsync<T>(orderBy?, lockRows?, ids?)` | 本人有效列查詢，可批次限定 Id；Weapon 依 CreateDate、Character 依 Kind、成就群組與進度道路／部署依 Sequence 排序。成就群組鎖仍為 UPDLOCK、HOLDLOCK |
+| `QuerySnapshotParentAsync<T>()` | 本人有效父列 TOP 1；Talent 無資料時仍回傳 null |
+| `QuerySnapshotChildrenAsync<TChild, TParent>(parentIds?, activeChildrenOnly?, activeParentsOnly?)` | 批次父子關聯、雙層擁有權、Sequence 排序；Weapon、Talent、Character、AchievementProgress 共用，不新增逐父查詢 |
+| `DeleteSnapshotRowsAsync<T>()` / `DeleteSnapshotChildrenAsync<TChild, TParent>(parentId)` | 型別安全的本人列／子列硬刪除，委派既有 DeleteOwnedRowsAsync |
+| `DeleteSnapshotDescendantsAsync<TChild, TParent, TAncestor>(ancestorId)` | Weapon 詞綴值與 Character 技能節點共用；先刪孫列再刪子列，內外層皆檢查 CreateUserId，清理時不排除停用列 |
+| `InsertSnapshotRowAsync<TRow>(row)` | 統一 CreateUserId，不變更 Sequence；進度純量仍保留 null 序號 |
+| `InsertSnapshotRowsAsync<TInput, TRow>(inputs, map, afterInsert?)` | 每個集合序號從零開始，設定本人擁有權；依序插入後才回呼寫入下一層。五個服務皆使用，父列 Id 與例外傳遞時機不變 |
+
+Character/GetList（Get 也委派 GetList）是核心取得入口：在 controller 交易內先取得
+Player 的 UPDLOCK/HOLDLOCK，再檢查本人有效 Character 清單；缺少 kind=3 才新增
+Character 與一棵 kind=1 火球技能樹，不發武器、不碰金幣。既有核心（包含空技能）
+完全不補預設。沿用既有玩家／Kind 唯一索引、GUID、技能子表及 Save 所有權驗證，
+不新增 schema 或獨立核心資料來源。GetList 因此是可能寫入的讀取，直接服務呼叫也須包交易。
+Save 對所有合法種類 0～3（即使空技能）先檢查種類，核心將火球視為免費預設技能；
+一般角色與技能解鎖規則不變。GameProgress 的角色引用查詢僅接受 kind 0～2，
+所以核心不能混入一般部署；拒絕發生在扣款、刪除或重寫進度之前。
+Shop Catalog 維持一般三職業，CharacterController 只公開 GetList/Get/Save，不提供角色移除。
+
+核心聚焦驗證：`CoreCharacterTests` 使用記憶體 repository／交易鎖替身驗證新舊帳號、
+並行首次讀取的單一 GUID、初始火球空手、既有空配置、技能解鎖及部署 SQL guard。
+`SnapshotSaveTests` 另覆蓋核心裝備所有權、跨角色重複裝備及空配置儲存；
+`CharacterShopSqlTests` 的 opt-in SQL 測試已補核心取得／空配置／禁止部署斷言，
+最初的離線驗證未執行 SQL；鎖替身不等同真實 SQL 隔離與回滾驗證。
+後續於 2026-10-14 獲明確授權後，已使用設定的本機開發 DB 執行該聚焦 SQL rollback
+測試，1/1 通過。新增 opt-in `CoreHttpIntegrationTests`，透過單一隨機訪客及自有
+HTTP backend／記憶體 Azurite 驗證核心初始配置、GUID、武器與技能保存、空技能與還原配置
+跨兩次真實重新登入皆保留，1/1 通過。武器只在 fixture 玩家下經 WeaponService
+交易建立；finally 停止自有程序、精準刪除該玩家與子資料，再查驗所有 CreateUserId
+實體表與 fixture ClientId 無殘留。未執行 migration、未使用既有帳號或停止共享服務。
+重跑命令、環境前提及強制終止限制見 README 的核心 SQL／HTTP fixture 整合驗證。
+
+讀取狀態語意：父列皆排除 Status = -1；Character 的技能樹與節點也排除停用列，
+Weapon／Talent／成就的明細則不額外過濾自身狀態。Weapon 詞綴值的父詞綴也不過濾狀態，
+但仍需屬於本人已讀取的詞綴。空集合與 null 快照語意不變。
+成就仍先鎖群組再讀已領取紀錄，保留伺服器 RewardDate／IsReward；
+GameProgress 仍先鎖玩家、驗證角色，再由 GoldService 的 RequestId 冪等流程扣款與替換，
+不刪寫 gold、伺服器掌管的子彈／輔助技能解鎖群組。
+`SnapshotSaveTests` 與 `SnapshotPersistenceTests` 使用 recording repository 驗證 SQL／參數、
+順序與轉換；真實 SQL Server 的鎖、隔離與回滾另需隔離資料庫整合測試，不能以 mock 結果代替。
 
 | Hook | 可見性 | 預設 | 典型用途 |
 |---|---|---|---|
@@ -136,7 +186,7 @@ GameProgress 與 AchievementProgress 保留各自的整份覆寫策略，不使�
 | `TestSave` / `TestSaveList` / `TestDelete` | 對應 `Test*` | **僅 `#if DEBUG`** |
 | `Seed()` | `Seed()` | **僅 `#if DEBUG`** |
 
-交易處理：寫入型端點皆透過 `BaseApiController.TransactionFunc` 包裝，成功回 `Ok()`，失敗回 `BadRequest()`。
+交易處理：寫入型端點皆透過 `BaseApiController.TransactionFunc` 包裝，成功回 `Ok()`，失敗透過 `TransactionFailure` 回 HTTP 400 key／args 封包。空刪除清單回 `backend.request.invalid`。
 
 例外是 DEBUG 的 `Seed`：直接呼叫 Service，不使用上述交易包裝。
 `BaseApiController.DeleteByKeyAsync` 共用空鍵檢查、交易與 `BackendApiResult<int>` 回應，
@@ -229,7 +279,7 @@ Step 4：依需要覆寫 `SetModel`、`ModelSave`、`ModelDelete`，或在 Contr
 
 | # | 項目 | 位置 | 影響 |
 |---|---|---|---|
-| 1 | 通用 CRUD 端點重複交易與 Ok／BadRequest 樣板，未將 message 放入回應；領域 API 則會使用錯誤訊息 | `BaseServiceApiController.cs`、領域 Controller | 可評估共用 helper，但需保留兩種回應契約；刪除自然鍵已有 `DeleteByKeyAsync` |
+| 1 | 通用 CRUD 端點仍重複交易與 Ok 樣板，失敗已共用 key／args 回應 | `BaseServiceApiController.cs`、領域 Controller | 保留成功資料契約；失敗使用 `TransactionFailure`，刪除自然鍵使用 `DeleteByKeyAsync` |
 | 2 | `GetData`、`GetModel`、`IsExist` 各自重複 `if (!request.Id.HasValue) return null;` | `BaseServiceApiController.cs` | 中：可抽成泛型 helper 或 `ResolveRequestId` hook |
 | 3 | `PlayerController.GetModel` 整段覆寫只為改 Id 來源 | `PlayerController.cs` | 中：應改為 hook，子類別只覆寫 Id 來源 |
 | 4 | `Save(IEnumerable)` 與 `SaveData(IEnumerable)` 的存在性查詢與分支邏輯完全相同，只差在 `UpdateModel`/`InsertModel` 與 `UpdateAsync`/`InsertAsync` | `ModelService.cs`（約第 172、199 行） | 中：可抽出 `private` 共用流程，以委派傳入差異 |
@@ -304,7 +354,8 @@ Step 4：依需要覆寫 `SetModel`、`ModelSave`、`ModelDelete`，或在 Contr
 ### 10.1 共通規則
 
 - 繼承 `BaseApiController` 的 API 在非 DEBUG 組建檢查 `Encode` header（`ApiFilter`）；DEBUG 直接略過。格式由 Library 的 [Encode.cs](../reconstruct-nodes-server.Library/Utility/Encode.cs) 定義，驗證拒絕早於伺服器目前時間超過 60 秒的值，沒有對未來時間設對稱上限；不要將其視為身分驗證。客戶端與伺服器應同步時鐘。
-- 下表的領域與 Manager API 使用 `BackendApiResult<T>`（`Status`、`Success`、`Message`、`Data`）；`Success` 依 Status 是否為 2xx 設定。通用 CRUD 與舊登入不全部使用此 envelope。
+- 下表的領域與 Manager API 使用 `BackendApiResult<T>`（`Status`、`Success`、`MessageKey`、`MessageArgs`、`Data`）；`Success` 依 Status 是否為 2xx 設定。成功無提示的 key 為空字串、args 為空物件。參數為命名字串（例如 `cost`），由前端既有 LocalizedMessage 與語系資源翻譯；不傳例外文字或後端中文名稱。移除 `Message` 是破壞性契約更新，兩端需同步部署，不提供相容分支。通用 CRUD 與舊登入保留成功資料契約，失敗統一使用 key／args envelope。
+- `IApiBusinessError` 帶出已知業務 key／args；交易中的未知例外記錄完整診斷並回 `backend.error.unexpected`，仍維持 HTTP 400。交易外未處理例外由 `ApiExceptionHandler` 回 HTTP 500，回應已開始時不改寫。MVC 模型驗證及無效 JSON 使用 `ApiValidationResponse` 回 HTTP 400；Filter 驗證失敗回 HTTP 401。
 - 需要 Token 的 endpoint 以 `Authorization` header 傳入原始 GUID，沒有 Bearer 前綴；空字串時回退到 `PlayerToken`。DEBUG 無 header 時會使用程式中的固定測試 Token，仍須能查到玩家。驗證結果快取 10 分鐘。
 - `ApiFilter`／`AuthorizeFilter` 拒絕時回 HTTP 401 與純文字，不使用 envelope；ASP.NET Core 模型繫結錯誤也不保證此 envelope。
 - `ManagerController` 直接繼承 `BaseController`，不套用 `ApiFilter`；只有 session 查詢套用 `AuthorizeFilter`。
@@ -321,7 +372,7 @@ Step 4：依需要覆寫 `SetModel`、`ModelSave`、`ModelDelete`，或在 Contr
 | `POST Session/Validate` | `AuthorizeApiController` | 是 | 回傳 `Data {LoginKind, Name}`，`LoginKind` 為 `google`／`guest`／`other`，以 `IsClientLogin` 為權威來源。 |
 | `POST GameProgress/Get` | `AuthorizeApiController` | 是 | 讀取遊戲進度；無資料回 404 envelope。 |
 | `POST GameProgress/Save` | `AuthorizeApiController` | 是 | Body `GameProgressModel`，覆寫進度、部署與道路；不更動角色及其配置。部署使用 `character_id` 引用本人角色。 |
-| `POST Character/GetList` | `AuthorizeApiController` | 是 | 讀取本人擁有角色，含目前武器與技能樹；無角色回 200 空陣列。 |
+| `POST Character/GetList` | `AuthorizeApiController` | 是 | 讀取本人擁有角色，含目前武器與技能樹；交易內冪等補齊 kind=3 核心（空手、初始火球 kind=1），故新帳號至少回傳核心。 |
 | `POST Character/Get?id=<GUID>` | `AuthorizeApiController` | 是 | 讀取本人單一角色；不存在或非本人角色回 404 envelope。 |
 | `POST Character/Save` | `AuthorizeApiController` | 是 | Body `CharacterModel`，只更新已擁有角色，必須指定 `id` 並驗證本人及種類；成功 Data 為穩定角色 GUID。不能任意建立角色。 |
 | `POST Shop/GetCatalog` | `AuthorizeApiController` | 是 | 回傳抽卡價格與角色／碎片／基礎武器對應，規則由後端持有。 |
@@ -361,7 +412,7 @@ Step 4：依需要覆寫 `SetModel`、`ModelSave`、`ModelDelete`，或在 Contr
 
 `Manager/Login`、`DeviceAuth/*`、`GoogleAuth/*`、`Session/Validate`、`AchievementProgress/ClaimReward` 等未在此表中，URL 不變。
 
-`/Login` 仍回傳舊的 `ResultModel`，供既有客戶端使用，格式不變。訪客查找邏輯與 `DeviceAuth/Login` 共用 `PlayerService.FindOrCreateGuest`。
+`/Login` 與 `Login/EmailVerification` 在交易成功時仍回傳舊的 `ResultModel` 狀態資料；交易失敗回 HTTP 400 key／args envelope，不再忽略失敗。訪客查找邏輯與 `DeviceAuth/Login` 共用 `PlayerService.FindOrCreateGuest`。
 
 ### 10.3 讀寫與冪等規則
 
