@@ -236,6 +236,37 @@ public class ApplicationBuilderFactoryTests
     }
 
     [TestMethod]
+    public void SmtpSettings_CompleteSectionLoadsWithoutAppsettingsSection()
+    {
+        WithGoogleSettingsRoot(root =>
+        {
+            File.WriteAllText(Path.Combine(root, "appsettings.json"), "{}");
+            File.WriteAllText(Path.Combine(root, "Secret", "smtp.json"),
+                """{"SmtpConfig":{"SenderName":"Test sender","Server":"smtp.example.invalid","Port":587,"Account":"test@example.invalid","Password":"test-password","Sender":"sender@example.invalid"}}""");
+            string? original = Environment.GetEnvironmentVariable("SmtpConfig__Password");
+            try
+            {
+                Environment.SetEnvironmentVariable("SmtpConfig__Password", null);
+                var builder = ApplicationBuilderFactory.CreateBuilder(
+                    ["--environment", "Production", "--contentRoot", root]);
+                using var app = builder.Build();
+                var sender = new MailSender(builder.Configuration);
+
+                Assert.AreEqual("Test sender", sender._config.SenderName);
+                Assert.AreEqual("smtp.example.invalid", sender._config.Server);
+                Assert.AreEqual(587, sender._config.Port);
+                Assert.AreEqual("test@example.invalid", sender._config.Account);
+                Assert.AreEqual("test-password", sender._config.Password);
+                Assert.AreEqual("sender@example.invalid", sender._config.Sender);
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("SmtpConfig__Password", original);
+            }
+        });
+    }
+
+    [TestMethod]
     [DataRow("{ invalid json")]
     [DataRow("""{"web":{"client_id":"id","client_secret":"secret"}}""")]
     [DataRow("""{"installed":{"client_id":"id"}}""")]

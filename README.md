@@ -134,12 +134,17 @@ Azure Storage 連線字串放在後端專案的 `Secret/azure-storage.json`：
 若所有來源皆未設定，AzureStoreService 會明確回報設定錯誤。
 已進入 Git 提交的金鑰必須另從提交歷史移除，並輪替真實金鑰。
 
-SMTP 密碼放在 `Secret/smtp.json`，其餘 SMTP 設定仍保留在 appsettings：
+完整的 `SmtpConfig` 區塊放在 `Secret/smtp.json`，appsettings 不保留 SMTP 設定：
 
 ```json
 {
   "SmtpConfig": {
-    "Password": "<SMTP password>"
+    "SenderName": "<sender display name>",
+    "Server": "<SMTP server>",
+    "Port": 587,
+    "Account": "<SMTP account>",
+    "Password": "<SMTP password>",
+    "Sender": "<sender email>"
   }
 }
 ```
