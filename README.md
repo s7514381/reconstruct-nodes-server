@@ -46,7 +46,7 @@ dotnet build .\reconstruct-nodes-server.sln
 dotnet run --project .\reconstruct-nodes-server --launch-profile https
 ```
 
-`https` profile 使用 `Development`，網址為 `https://localhost:7007`，與遊戲前端預設連線一致。
+`https` profile 在預設 Debug 組態使用 `Development`，網址為 `https://localhost:7007`，與遊戲前端預設連線一致。
 `http` profile 使用 `http://localhost:7007`，僅供明確選用 HTTP 的開發情境；兩個 profile 不可同時啟動佔用相同埠。
 Swagger UI 位於 `/swagger`，僅在 Development 啟用。
 若本機 HTTPS 憑證尚未受信任，可執行 `dotnet dev-certs https --trust`。
@@ -67,6 +67,86 @@ try {
 
 部署時以平台秘密設定或 `ConnectionStrings__DefaultConnection` 提供連線字串。
 本節命令是操作說明，不代表文件同步時已執行建置或資料庫更新。
+
+## 正式機組態
+
+未明確指定環境時，Debug 建置預設使用 `Development`，Release 建置預設使用
+`Production`。Visual Studio 的 http、https、IIS Express profile 不再固定環境，
+切換為 Release 後即使用 Production；既有 profile 仍會開啟 `/swagger`，但
+Production 不啟用 Swagger，因此該頁會回應 404。
+
+組態先載入 `appsettings.json`，再以 `appsettings.{Environment}.json` 覆寫同名鍵；
+環境檔未設定的鍵（包含同一區段內其他鍵）仍沿用基底值。
+`appsettings.Production.json` 初始為 `{}`，不重複基底設定，只在有正式機差異時加入，
+例如只調整連線上限：
+
+```json
+{
+  "DatabaseConcurrency": {
+    "MaxConnections": 20
+  }
+}
+```
+
+此例的 `MaxOperations` 仍繼承基底值。設定檔會隨建置與發佈複製到輸出，
+不會合併或改寫 `appsettings.json`。
+
+```powershell
+dotnet run --project .\reconstruct-nodes-server --configuration Release
+dotnet publish .\reconstruct-nodes-server --configuration Release
+```
+
+明確指定環境仍優先於建置組態預設，優先序為命令列 `--environment`、
+`DOTNET_ENVIRONMENT`、`ASPNETCORE_ENVIRONMENT`。
+例如 `dotnet run --project .\reconstruct-nodes-server -c Release -- --environment Staging`
+會改用 Staging。
+
+環境變數與命令列仍可覆寫 JSON 組態，例如 `ConnectionStrings__DefaultConnection`。
+目前基底連線字串指向本機 SQL Server；空的 Production 檔也會繼承它，
+**上線前務必由部署端提供正式機連線**。連線密碼、Google ClientSecret、SMTP 密碼等
+敏感值應由部署平台的秘密設定／環境變數提供，不要寫入版本控制；
+`user-secrets` 僅在 Development 自動載入。
+
+Google 桌面登入可將 Google 下載的 Desktop OAuth JSON 原檔放入後端專案的
+`Secret/google-desktop.json`；程式會讀取 `installed.client_id` 與 `installed.client_secret`。
+整個 `Secret` 資料夾由 Git 忽略，但只有指定的憑證檔會隨建置與發布複製，
+正式機可直接讀取。Android 登入的 Web OAuth JSON 放入 `Secret/google-web.json`，
+程式自動讀取 `web.client_id` 作為 `ServerClientId`，此檔也會隨發布複製。
+Android OAuth 原檔可保存為 `Secret/google-android.json`，但不載入、不發布。
+CI 發布需另外提供此檔案。其優先序高於一般／環境 appsettings，
+低於 Development User Secrets、環境變數與命令列。缺檔不改變原本行為。
+發布產物包含明文 secret，務必限制存取；格式及操作見 [Google 登入設定](docs/GOOGLE_AUTH.md)。
+
+Azure Storage 連線字串放在後端專案的 `Secret/azure-storage.json`：
+
+```json
+{
+  "AzureStorage": {
+    "ConnectionString": "<Azure Storage connection string>"
+  }
+}
+```
+
+此檔由 Git 忽略，但會隨建置與發布複製；CI 必須另外提供檔案，
+發布產物包含明文金鑰，請限制存取。載入優先序高於一般／環境 appsettings，
+低於 Development User Secrets、環境變數與命令列。
+也可使用 `AzureStorage__ConnectionString` 覆寫，不必提供檔案；
+若所有來源皆未設定，AzureStoreService 會明確回報設定錯誤。
+已進入 Git 提交的金鑰必須另從提交歷史移除，並輪替真實金鑰。
+
+SMTP 密碼放在 `Secret/smtp.json`，其餘 SMTP 設定仍保留在 appsettings：
+
+```json
+{
+  "SmtpConfig": {
+    "Password": "<SMTP password>"
+  }
+}
+```
+
+此檔的 Git 忽略、建置／發布複製及載入優先序與 Azure 設定檔相同。
+CI 需另外提供檔案，也可用 `SmtpConfig__Password` 覆寫。
+發布產物包含明文密碼，請限制存取；已提交的密碼仍須另從 Git 歷史移除。
 
 ## Dapper 資料庫併發上限
 

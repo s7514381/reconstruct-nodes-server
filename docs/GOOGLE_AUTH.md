@@ -16,14 +16,64 @@
 | 鍵 | 用途 | 規則 |
 | --- | --- | --- |
 | `ClientId` | 桌面 OAuth Client ID（公開值） | 桌面流程的 audience；未設定時 `Login` 回 503 |
-| `ServerClientId` | Web（server）OAuth Client ID | Android 的 audience；未設定時 `LoginIdToken` 回 503 |
-| `ClientSecret` | 桌面 OAuth Client Secret | **只允許** user-secrets 或環境變數 `GoogleAuth__ClientSecret`。不得寫入 appsettings、git 或客戶端。`Login` 需要；`LoginIdToken` 不使用 |
+| `ServerClientId` | Web（server）OAuth Client ID | 可由 `Secret/google-web.json` 的 `web.client_id` 提供；Android 的 audience，未設定時 `LoginIdToken` 回 503 |
+| `ClientSecret` | 桌面 OAuth Client Secret | 可由 Git 忽略的 `Secret/google-desktop.json`、user-secrets 或環境變數 `GoogleAuth__ClientSecret` 提供。不得寫入受版本控制的檔案或客戶端。`Login` 需要；`LoginIdToken` 不使用 |
 | `TokenEndpoint` | 預設 `https://oauth2.googleapis.com/token` | |
 | `JwksEndpoint` | 預設 `https://www.googleapis.com/oauth2/v3/certs` | ID Token 簽章公鑰 |
 | `ClockSkewSeconds` | 預設 60 | 時間驗證容許偏移 |
 | `JwksCacheMinutes` | 預設 60 | 公鑰快取時間 |
 
 兩條路徑互相獨立：只設定 `ServerClientId` 即可啟用 Android，不需要桌面的 secret；反之亦然。
+
+### 獨立設定檔與發布
+
+在後端專案根目錄建立 `Secret` 資料夾，將 Google Cloud Console 下載的
+**Desktop app OAuth 用戶端 JSON** 複製進去，固定命名為 `google-desktop.json`，
+不需要手動修改 Google 下載的內容：
+
+```powershell
+New-Item -ItemType Directory -Force .\reconstruct-nodes-server\Secret
+Copy-Item "<下載的 Desktop OAuth JSON 路徑>" .\reconstruct-nodes-server\Secret\google-desktop.json
+```
+
+```json
+{
+  "installed": {
+    "client_id": "<Desktop OAuth Client ID>",
+    "client_secret": "<Desktop OAuth Client Secret>"
+  }
+}
+```
+
+上例僅示意必要欄位，可保留原始下載檔案的其他欄位。
+程式只將 `installed.client_id`、`installed.client_secret` 映射至
+`GoogleAuth:ClientId`、`GoogleAuth:ClientSecret`；不從檔案讀取 endpoint，
+也不把桌面 ID 當成 Android 的 `ServerClientId`。
+
+Android 登入另將下載的 **Web application OAuth JSON** 放入
+`Secret/google-web.json`，程式僅將 `web.client_id` 映射為 `GoogleAuth:ServerClientId`。
+Web 憑證的 `client_secret` 不載入、不用於 Android ID Token 驗證，也不要求存在。
+Android 客戶端 Credential Manager 請使用同一個 Web client ID 作為 server client ID。
+
+Android OAuth 原始檔可另保存在 `Secret/google-android.json`；
+後端不載入、不發布該檔案，也不以其 client ID 驗證 Android ID Token。
+
+整個 `Secret` 資料夾由 `.gitignore` 忽略，但**只有 `google-desktop.json` 與 `google-web.json`**
+會隨建置與 `dotnet publish .\reconstruct-nodes-server -c Release` 複製，
+並保留 `Secret` 子目錄。部署完整發布目錄後，程式從 content root 載入該檔案，
+不需要在正式機另設 Google 環境變數。CI 或其他電腦需在發布前自行提供此檔案，
+Git clone 不會取得你的本機設定。
+
+優先序由低至高：`appsettings.json`、環境 appsettings、
+`Secret/google-desktop.json`／`Secret/google-web.json`（各提供不同鍵）、
+Development User Secrets、環境變數、命令列。
+缺少檔案仍沿用原本設定；缺少對應 Google 登入設定時維持既有 503 回應。
+JSON 格式錯誤、桌面檔不是 `installed`／Web 檔不是 `web` 格式或必要欄位缺漏會使啟動失敗；
+修改設定後需重啟程式。發布時請使用乾淨的發布目錄，避免舊憑證殘留。
+
+**Git 忽略不代表加密**：此檔案在本機、發布產物及正式機都是明文。
+限制檔案及備份的存取權限，不可放在 `wwwroot`、公開下載位置或客戶端，
+也不要將含憑證的發布產物上傳至公開儲存空間。
 
 ## 錯誤回應
 
@@ -80,5 +130,5 @@ dotnet test reconstruct-nodes-server.Tests --filter FullyQualifiedName~Auth
 ## 部署前必做
 
 1. 在正式庫執行重複與長度檢查 SQL，若有結果先人工處理。
-2. 設定 `ClientSecret`（若要使用桌面登入）與 `ServerClientId`（若要使用 Android 登入）。不得把任何值提交到 git。
+2. 填寫獨立設定檔或使用部署秘密設定，提供 `ClientId` 與 `ClientSecret`（桌面登入）或 `ServerClientId`（Android 登入），並確認發布產物包含所需設定。不得把憑證提交到 git。
 3. 執行遷移，並確認索引 `UX_Player_GoogleId_NonClient` 存在。

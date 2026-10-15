@@ -13,7 +13,7 @@ using ReconstructNodesServer.Utility;
 using Microsoft.AspNetCore.Mvc;
 using ReconstructNodesServer.Library.Models;
 
-var builder = WebApplication.CreateBuilder(args);
+var builder = ApplicationBuilderFactory.CreateBuilder(args);
 
 // Add services to the container.
 IServiceCollection services = builder.Services;
@@ -67,7 +67,7 @@ services.AddSingleton<FirebaseService>();
 
 services.AddMemoryCache();
 
-// Google 登入：設定以 GoogleAuth 區段讀取，ClientSecret 只允許來自 user-secrets 或環境變數，不寫入 appsettings
+// Secret 中的 Google 桌面與 Web 憑證隨發布部署；User Secrets、環境變數與命令列仍可覆寫。
 GoogleAuthOptions googleAuthOptions = builder.Configuration.GetSection(GoogleAuthOptions.SectionName).Get<GoogleAuthOptions>() ?? new GoogleAuthOptions();
 services.AddSingleton(googleAuthOptions);
 services.AddHttpClient("google-oauth", client => client.Timeout = TimeSpan.FromSeconds(15));

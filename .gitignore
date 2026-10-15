@@ -16,3 +16,4 @@ obj/
 /reconstruct-nodes-server/reconstruct-nodes-server.csproj.user
 /reconstruct-nodes-server/Properties/PublishProfiles
 /reconstruct-nodes-server/File/*firebase-adminsdk*.json
+/reconstruct-nodes-server/Secret
