@@ -14,6 +14,5 @@ obj/
 /reconstruct-nodes-server.Library/Properties/PublishProfiles/FolderProfile.pubxml.user
 /reconstruct-nodes-server.Library/reconstruct-nodes-server.Library.csproj.user
 /reconstruct-nodes-server/reconstruct-nodes-server.csproj.user
-/reconstruct-nodes-server/Properties/PublishProfiles
 /reconstruct-nodes-server/File/*firebase-adminsdk*.json
 /reconstruct-nodes-server/Secret
