@@ -50,9 +50,31 @@ namespace ReconstructNodesServer.Utility
                 context.Request.Body.Position = 0;
 
                 var sw = new Stopwatch();
+                // Keep the existing boundary: body buffering and Azure transfer are not timed.
+                using var timing = Environment.GetEnvironmentVariable("API_REQUEST_TIMING") == "1"
+                    ? new RequestTiming() : null;
+                string? timingId = timing == null ? null : Guid.NewGuid().ToString("N");
+                if (timingId != null) context.Response.Headers["X-Request-Timing-Id"] = timingId;
                 sw.Start();
-                await next(context).ConfigureAwait(false);
-                sw.Stop();
+                try
+                {
+                    await next(context).ConfigureAwait(false);
+                }
+                finally
+                {
+                    sw.Stop();
+                    if (timing != null)
+                    {
+                        // Server-generated correlation only; never trust/log an incoming request ID.
+                        Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(new
+                        {
+                            Kind = "RequestTiming", RequestId = timingId,
+                            ElapsedMs = sw.Elapsed.TotalMilliseconds,
+                            StatusCode = context.Response.StatusCode,
+                            Metrics = timing.Snapshot(),
+                        }));
+                    }
+                }
 
                 entity = new TableEntity(nameof(APIRequest), entityId)
                 {
@@ -62,6 +84,7 @@ namespace ReconstructNodesServer.Utility
                     { "IPAddress", context.Connection.RemoteIpAddress?.ToString() },
                     { "LoadTime", sw.ElapsedMilliseconds },
                 };
+                Console.WriteLine($"Request to {context.Request.Path} took {sw.ElapsedMilliseconds} ms");
             }
             catch (Exception ex)
             {
@@ -82,10 +105,13 @@ namespace ReconstructNodesServer.Utility
                     // 快取未命中時不得寫入原始 session Token（Azure 日誌可讀），只記錄遮蔽標記
                     else { entity.Add("Token", "[REDACTED]"); }
                 }
-                _ = Task.Run(async () =>
+                if (entity != null)
                 {
-                    await azureStoreService.Transfer(TableClientType.Log, entity).ConfigureAwait(false);
-                });
+                    _ = Task.Run(async () =>
+                    {
+                        await azureStoreService.Transfer(TableClientType.Log, entity).ConfigureAwait(false);
+                    });
+                }
             }
 
         }

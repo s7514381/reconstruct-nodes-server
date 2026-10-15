@@ -9,7 +9,7 @@ namespace ReconstructNodesServer.Library.Models
     /// 遊戲進度快照，欄位沿用前端 save_service 的 payload（snake_case）。
     /// 字典型欄位依 key 拆成子表，值保留為原始 JSON，因此不限制其內部型別。
     /// </summary>
-    public class GameProgressModel
+    public class GameProgressModel : RevisionedSnapshot
     {
         [JsonPropertyName("request_id")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

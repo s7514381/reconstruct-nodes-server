@@ -1,3 +1,4 @@
+#nullable enable
 using System;
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
@@ -20,6 +21,21 @@ namespace ReconstructNodesServer.Library.Models
         public long Gold { get; set; }
         [JsonPropertyName("results")]
         public List<ShopDrawReward> Results { get; set; } = new();
+        [JsonPropertyName("state")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public ShopDrawState? State { get; set; }
+    }
+
+    public class ShopDrawState
+    {
+        [JsonPropertyName("version")]
+        public int Version { get; set; } = 1;
+        [JsonPropertyName("characters")]
+        public List<CharacterModel> Characters { get; set; } = new();
+        [JsonPropertyName("weapons")]
+        public List<WeaponInstanceModel> Weapons { get; set; } = new();
+        [JsonPropertyName("shards")]
+        public Dictionary<string, int> Shards { get; set; } = new();
     }
 
     public class ShopDrawReward

@@ -36,14 +36,34 @@ namespace ReconstructNodesServer.Controllers
         }
 
         protected IActionResult TransactionFailure(ApiMessage? message)
-            => BadRequest(BackendApiResult<object>.Create(400, message ?? new ApiMessage(ApiMessageKeys.ErrorUnexpected)));
+        {
+            int status = FailureStatus(message);
+            var result = BackendApiResult<object>.Create(status, message ?? new ApiMessage(ApiMessageKeys.ErrorUnexpected));
+            return status == 400 ? BadRequest(result) : StatusCode(status, result);
+        }
+
+        protected static int FailureStatus(ApiMessage? message) =>
+            message?.Key is "concurrency.revision_conflict" or ApiMessageKeys.EconomyRequestConflict ? 409 : 400;
+
+        protected IActionResult SnapshotSaved<T>(IRevisionedSnapshot snapshot, T data)
+        {
+            if (snapshot.ExpectedRevision.HasValue && ControllerContext.HttpContext != null)
+            {
+                Response.Headers["X-State-Revision"] = snapshot.Revision.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            }
+            return Ok(BackendApiResult<T>.Create(200, string.Empty, data));
+        }
 
         protected async Task<IActionResult> TransactionResultAsync<T>(
             Func<Task<T>> action, string failureMessage, string? notFoundMessage = null) where T : class?
         {
             T? result = null;
             (bool success, ApiMessage? message) = await TransactionFunc(async () => result = await action());
-            if (!success) { return StatusCode(400, BackendApiResult<string>.Create(400, message ?? failureMessage)); }
+            if (!success)
+            {
+                int status = FailureStatus(message);
+                return StatusCode(status, BackendApiResult<string>.Create(status, message ?? failureMessage));
+            }
             if (result == null)
             {
                 if (notFoundMessage != null) { return StatusCode(404, BackendApiResult<string>.Create(404, notFoundMessage)); }

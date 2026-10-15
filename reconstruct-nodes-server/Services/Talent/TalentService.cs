@@ -15,6 +15,7 @@ namespace ReconstructNodesServer.Services
         /// </summary>
         public virtual async Task<TalentModel?> GetSnapshot()
         {
+            await LockPlayerAsync();
             Talent? talent = await QuerySnapshotParentAsync<Talent>();
             if (talent == null) { return null; }
 
@@ -23,6 +24,7 @@ namespace ReconstructNodesServer.Services
 
             return new TalentModel
             {
+                Revision = await Revisions.Read(nameof(TalentModel)),
                 Version = talent.Version,
                 TalentPoints = talent.TalentPoints,
                 TotalSpentPoints = talent.TotalSpentPoints,

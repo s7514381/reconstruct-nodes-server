@@ -36,7 +36,7 @@ namespace ReconstructNodesServer.Services
         private async Task RejectGoldMutation(IEnumerable<PlayerParams> rows)
         {
             if (rows.Any(row => (row.Group == "game_progress" && row.Name == "gold") ||
-                row.Group is "economy" or "game_progress.unlocked_bullet_kinds" or "game_progress.unlocked_auxiliary_kinds"))
+                row.Group is "economy" or RevisionService.RevisionGroup or "game_progress.unlocked_bullet_kinds" or "game_progress.unlocked_auxiliary_kinds"))
             {
                 throw new BusinessArgumentException(ApiMessageKeys.EconomyGoldManaged);
             }
@@ -45,7 +45,7 @@ namespace ReconstructNodesServer.Services
             var protectedIds = await QueryAsync<Guid>(
                 @"SELECT Id FROM PlayerParams WHERE CreateUserId = @CreateUserId AND Id IN @Ids
                   AND (([Group] = 'game_progress' AND Name = 'gold') OR [Group] IN
-                       ('economy', 'game_progress.unlocked_bullet_kinds', 'game_progress.unlocked_auxiliary_kinds'))",
+                       ('economy', 'server.revisions', 'game_progress.unlocked_bullet_kinds', 'game_progress.unlocked_auxiliary_kinds'))",
                 new { CreateUserId = _playerId, Ids = ids });
             if (protectedIds.Any()) { throw new BusinessArgumentException(ApiMessageKeys.EconomyGoldProtected); }
         }

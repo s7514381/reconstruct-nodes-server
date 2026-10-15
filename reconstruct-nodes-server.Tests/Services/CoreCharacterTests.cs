@@ -42,7 +42,7 @@ public class CoreCharacterTests
         Assert.HasCount(1, reads.SelectMany(rows => rows).Select(row => row.Id).Distinct().ToList());
         Assert.HasCount(1, repository.Rows.OfType<Character>().ToList());
         Assert.HasCount(2, repository.Inserted);
-        Assert.AreEqual(12, repository.LockCount);
+        Assert.AreEqual(24, repository.LockCount); // Character and nested Weapon reads share one transaction.
     }
 
     [TestMethod]
@@ -81,7 +81,7 @@ public class CoreCharacterTests
         {
             await new CharacterService(argument).Save(model);
             Assert.AreEqual(core.Id, model.Id);
-            Assert.AreEqual(skill, repository.Calls.Select(call => call.Value).OfType<CharacterSkillTree>().Single().Kind);
+            Assert.AreEqual(skill, SnapshotSaveTests.BatchRows<CharacterSkillTree>(repository, "Trees").Single().Kind);
         }
         else
         {
@@ -134,7 +134,7 @@ public class CoreCharacterTests
         if (unlocked)
         {
             await new CharacterService(argument).Save(model);
-            Assert.HasCount(2, repository.Calls.Select(call => call.Value).OfType<CharacterSkillNode>().ToList());
+            Assert.HasCount(2, SnapshotSaveTests.BatchRows<CharacterSkillNode>(repository, "Nodes"));
         }
         else
         {
@@ -163,7 +163,8 @@ public class CoreCharacterTests
         // Repository returns no deployable IDs: a core GUID is not an ordinary deployment.
         await Assert.ThrowsAsync<ArgumentException>(() => new GameProgressService(argument).Save(
             new GameProgressModel { DeploymentLog = [new GameProgressDeploymentModel { CharacterId = Guid.NewGuid() }] }));
-        Assert.Contains("Kind IN (0, 1, 2)", repository.Calls[1].Sql!);
+        Assert.HasCount(1, repository.Calls.Where(call =>
+            call.Sql?.Contains("Kind IN (0, 1, 2)") == true).ToList());
         Assert.IsFalse(repository.Calls.Any(call => call.Name is "InsertAsync" or "UpdateAsync" or "ExecuteAsync"));
         Assert.IsFalse(ShopService.Catalog.Characters.Any(offer => offer.Kind == CharacterService.CoreKind));
     }
@@ -177,6 +178,7 @@ public class CoreCharacterTests
 
     private static async Task<List<CharacterModel>> ReadTransaction(CharacterService service, CoreReadRepository repository)
     {
+        await repository.PlayerLock.WaitAsync();
         try { return await service.GetList(); }
         finally { repository.PlayerLock.Release(); }
     }
@@ -211,17 +213,25 @@ public class CoreCharacterTests
                 return typeof(CoreReadRepository).GetMethod(nameof(Query), BindingFlags.NonPublic | BindingFlags.Instance)!
                     .MakeGenericMethod(method.GetGenericArguments()).Invoke(this, null);
             }
+            if (method.Name == "QueryFirstOrDefaultAsync")
+            {
+                Assert.AreEqual(0, PlayerLock.CurrentCount);
+                return typeof(CoreReadRepository).GetMethod(nameof(First), BindingFlags.NonPublic | BindingFlags.Instance)!
+                    .MakeGenericMethod(method.GetGenericArguments()).Invoke(this, null);
+            }
             throw new InvalidOperationException($"Unexpected call: {method.Name}");
         }
 
         private async Task<IEnumerable<Guid>> Lock()
         {
-            await PlayerLock.WaitAsync();
+            // SQL transaction locks are reentrant, including nested snapshot reads.
+            Assert.AreEqual(0, PlayerLock.CurrentCount);
             LockCount++;
             await Task.Yield();
             return [];
         }
 
         private Task<IEnumerable<T>> Query<T>() => Task.FromResult<IEnumerable<T>>(Rows.OfType<T>().ToArray());
+        private Task<T?> First<T>() => Task.FromResult(Rows.OfType<T>().FirstOrDefault());
     }
 }

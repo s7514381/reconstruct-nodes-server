@@ -8,6 +8,10 @@ namespace ReconstructNodesServer.Controllers
     public class CharacterController(BaseApiArgument argument, CharacterService service) : AuthorizeApiController(argument)
     {
         [HttpPost]
+        public Task<IActionResult> EquipWeapon(WeaponEquipRequest request) =>
+            TransactionResultAsync(() => service.EquipWeapon(request), ApiMessageKeys.CharacterSaveFailed);
+
+        [HttpPost]
         public virtual Task<IActionResult> GetList() =>
             TransactionResultAsync<List<CharacterModel>>(() => service.GetList(), ApiMessageKeys.CharacterReadFailed);
 
@@ -20,7 +24,7 @@ namespace ReconstructNodesServer.Controllers
         {
             (bool success, ApiMessage? message) = await TransactionFunc(() => service.Save(model));
             if (!success) { return StatusCode(400, BackendApiResult<string>.Create(400, message ?? ApiMessageKeys.CharacterSaveFailed)); }
-            return Ok(BackendApiResult<Guid?>.Create(200, string.Empty, model.Id));
+            return SnapshotSaved(model, model.Id);
         }
     }
 }

@@ -29,7 +29,7 @@ namespace ReconstructNodesServer.Services
                 var owned = (await QueryAsync<Character>(
                     "SELECT * FROM Character WHERE CreateUserId = @CreateUserId AND Status != -1",
                     new { CreateUserId = _playerId })).ToDictionary(row => row.Kind);
-                ShopDrawResult result = new() { RequestId = request.RequestId, Gold = account.Balance };
+                ShopDrawResult result = new() { RequestId = request.RequestId, Gold = account.Balance, State = new() };
                 for (int index = 0; index < request.Count; index++)
                 {
                     CharacterOffer offer = Catalog.Characters[DrawIndex()];
@@ -37,7 +37,7 @@ namespace ReconstructNodesServer.Services
                     string weaponKey = "";
                     if (duplicate)
                     {
-                        await items.AdjustAmount(offer.ShardId, 1, "character_shard");
+                        result.State.Shards[offer.ShardId] = await items.AdjustAmount(offer.ShardId, 1, "character_shard");
                     }
                     else
                     {
@@ -53,6 +53,22 @@ namespace ReconstructNodesServer.Services
                             WeaponQualityVersion = 2, CreateUserId = _playerId,
                         };
                         await InsertAsync(character);
+                        int skillKind = offer.Kind switch { 0 => 5, 1 => 0, 2 => 3,
+                            _ => throw new InvalidOperationException("Unsupported shop character kind") };
+                        await InsertAsync(new CharacterSkillTree
+                        {
+                            CharacterId = character.Id, Kind = skillKind, Sequence = 0, CreateUserId = _playerId,
+                        });
+                        result.State.Characters.Add(new CharacterModel
+                        {
+                            Id = character.Id, Kind = offer.Kind, WeaponEntryId = weaponKey,
+                            WeaponId = offer.WeaponId, WeaponRarity = "common", WeaponQualityVersion = 2,
+                            SkillTrees = [new GameProgressSkillLoadoutModel { Kind = skillKind }],
+                        });
+                        result.State.Weapons.Add(new WeaponInstanceModel
+                        {
+                            Id = weaponKey, WeaponId = offer.WeaponId, WeaponFamilyId = offer.WeaponId, Rarity = "common",
+                        });
                         owned.Add(offer.Kind, character);
                     }
                     result.Results.Add(new ShopDrawReward

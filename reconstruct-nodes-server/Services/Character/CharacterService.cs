@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json;
 using ReconstructNodesServer.Argument;
 using ReconstructNodesServer.Library.DBModel;
 using ReconstructNodesServer.Library.Models;
@@ -39,10 +40,12 @@ namespace ReconstructNodesServer.Services
             var nodesByTree = nodes.ToLookup(node => node.CharacterSkillTreeId);
             var weapons = (await _lazy.WeaponService.Value.GetInstanceList()).ToDictionary(weapon => weapon.Id);
 
+            long revision = await Revisions.Read(nameof(CharacterModel));
             return characters.Select(row =>
             {
                 CharacterModel model = new()
                 {
+                    Revision = revision,
                     Id = row.Id,
                     Kind = row.Kind,
                     WeaponQualityVersion = row.WeaponQualityVersion,
@@ -76,15 +79,47 @@ namespace ReconstructNodesServer.Services
 
         public override Task Save(CharacterModel model) => base.Save(model);
 
+        public Task<CommandReceipt<CharacterModel>> EquipWeapon(WeaponEquipRequest request) =>
+            Revisions.ExecuteIntent(request, "character.equip_weapon", nameof(CharacterModel), request, async () =>
+            {
+                CharacterModel model = await Get(request.CharacterId)
+                    ?? throw new BusinessArgumentException(ApiMessageKeys.CharacterNotOwned);
+                model.WeaponEntryId = request.WeaponEntryId ?? "";
+                ValidateWeaponKey(model.WeaponEntryId);
+                string? weaponKey = string.IsNullOrEmpty(model.WeaponEntryId) ? null : model.WeaponEntryId;
+                await ValidateWeaponAsync(weaponKey, model.Kind);
+                // Update only equipment. Skill trees are never deleted/reinserted by this action.
+                await ExecuteAsync(
+                    "UPDATE Character SET WeaponEntryKey=@WeaponEntryKey, WeaponQualityVersion=@Quality WHERE Id=@Id AND CreateUserId=@CreateUserId AND Status != -1",
+                    new { model.Id, CreateUserId = _playerId, WeaponEntryKey = weaponKey, Quality = weaponKey == null ? (int?)null : 2 });
+                await Revisions.Advance(nameof(CharacterModel), [request.CharacterId.ToString("D")]);
+                return (await Get(request.CharacterId))!;
+            });
+
+        private static void ValidateWeaponKey(string? key)
+        {
+            if (key is { Length: > 450 } || (!string.IsNullOrEmpty(key) && string.IsNullOrWhiteSpace(key)))
+            { throw new BusinessArgumentException(ApiMessageKeys.WeaponIdInvalid); }
+        }
+
+        private async Task ValidateWeaponAsync(string? weaponKey, int kind)
+        {
+            if (weaponKey == null) { return; }
+            var weapons = await QueryAsync<Guid>(
+                "SELECT Id FROM Weapon WHERE CreateUserId=@CreateUserId AND Status != -1 AND EntryKey=@EntryKey",
+                new { CreateUserId = _playerId, EntryKey = weaponKey });
+            if (!weapons.Any()) { throw new BusinessArgumentException(ApiMessageKeys.WeaponNotOwned); }
+            var equipped = await QueryAsync<int>(
+                "SELECT Kind FROM Character WHERE CreateUserId=@CreateUserId AND Status != -1 AND WeaponEntryKey=@EntryKey AND Kind != @Kind",
+                new { CreateUserId = _playerId, EntryKey = weaponKey, Kind = kind });
+            if (equipped.Any()) { throw new BusinessArgumentException(ApiMessageKeys.WeaponAlreadyEquipped); }
+        }
+
         protected override void ValidateSnapshot(CharacterModel model)
         {
             if (model.Kind is < 0 or > CoreKind) { throw new BusinessArgumentException(ApiMessageKeys.CharacterKindInvalid); }
             if (!model.Id.HasValue || model.Id == Guid.Empty) { throw new BusinessArgumentException(ApiMessageKeys.CharacterNotOwned); }
-            if (model.WeaponEntryId is { Length: > 450 } ||
-                (!string.IsNullOrEmpty(model.WeaponEntryId) && string.IsNullOrWhiteSpace(model.WeaponEntryId)))
-            {
-                throw new BusinessArgumentException(ApiMessageKeys.WeaponIdInvalid);
-            }
+            ValidateWeaponKey(model.WeaponEntryId);
             foreach (GameProgressSkillLoadoutModel? tree in model.SkillTrees ?? new())
             {
                 if (tree == null) { throw new BusinessArgumentException(ApiMessageKeys.SkillTreeRequired); }
@@ -112,21 +147,14 @@ namespace ReconstructNodesServer.Services
                 var owned = (await QuerySnapshotRowsAsync<Character>(ids: [model.Id.Value])).SingleOrDefault();
                 if (owned == null) { throw new BusinessArgumentException(ApiMessageKeys.CharacterNotFound); }
                 if (owned.Kind != model.Kind) { throw new BusinessArgumentException(ApiMessageKeys.CharacterKindImmutable); }
+                // Legacy character snapshots still own skill configuration, never equipment.
+                model.WeaponEntryId = owned.WeaponEntryKey ?? "";
+                model.WeaponQualityVersion = owned.WeaponQualityVersion;
             }
             await ValidateSkillAccessAsync(model);
 
             string? weaponKey = string.IsNullOrEmpty(model.WeaponEntryId) ? null : model.WeaponEntryId;
-            if (weaponKey != null)
-            {
-                var weapons = await QueryAsync<Guid>(
-                    "SELECT Id FROM Weapon WHERE CreateUserId = @CreateUserId AND Status != -1 AND EntryKey = @EntryKey",
-                    new { CreateUserId = _playerId, EntryKey = weaponKey });
-                if (!weapons.Any()) { throw new BusinessArgumentException(ApiMessageKeys.WeaponNotOwned); }
-                var equippedKinds = await QueryAsync<int>(
-                    "SELECT Kind FROM Character WHERE CreateUserId = @CreateUserId AND Status != -1 AND WeaponEntryKey = @EntryKey AND Kind != @Kind",
-                    new { CreateUserId = _playerId, EntryKey = weaponKey, model.Kind });
-                if (equippedKinds.Any()) { throw new BusinessArgumentException(ApiMessageKeys.WeaponAlreadyEquipped); }
-            }
+            await ValidateWeaponAsync(weaponKey, model.Kind);
 
             (Character row, bool isNew) = await UpsertSnapshotParentAsync(character =>
             {
@@ -135,25 +163,52 @@ namespace ReconstructNodesServer.Services
                 character.WeaponEntryKey = weaponKey;
                 character.WeaponQualityVersion = weaponKey == null ? null : model.WeaponQualityVersion;
             }, model.Kind.ToString(CultureInfo.InvariantCulture));
-            if (!isNew)
+            List<CharacterSkillTree> trees = [];
+            List<CharacterSkillNode> nodes = [];
+            foreach (GameProgressSkillLoadoutModel input in model.SkillTrees ?? [])
             {
-                await DeleteSnapshotDescendantsAsync<CharacterSkillNode, CharacterSkillTree, Character>(row.Id);
-                await DeleteSnapshotChildrenAsync<CharacterSkillTree, Character>(row.Id);
-            }
-            List<GameProgressSkillLoadoutModel> trees = model.SkillTrees ?? new();
-            await InsertSnapshotRowsAsync(trees, (input, _) => new CharacterSkillTree
+                CharacterSkillTree tree = new()
                 {
-                    CharacterId = row.Id, Kind = input.Kind,
-                }, async (input, tree) =>
+                    CharacterId = row.Id, Kind = input.Kind, Sequence = trees.Count,
+                };
+                trees.Add(tree);
+                int sequence = 0;
+                foreach (GameProgressSkillNodeModel node in input.AuxiliaryNodes ?? [])
                 {
-                    List<GameProgressSkillNodeModel> nodes = input.AuxiliaryNodes ?? new();
-                    await InsertSnapshotRowsAsync(nodes, (node, _) => new CharacterSkillNode
+                    nodes.Add(new CharacterSkillNode
                     {
                         CharacterSkillTreeId = tree.Id, NodeType = node.Type,
                         LootId = string.IsNullOrEmpty(node.LootId) ? null : node.LootId,
-                        Kind = node.Kind,
+                        Kind = node.Kind, Sequence = sequence++,
                     });
-                });
+                }
+            }
+            await ExecuteAsync("""
+                IF @ReplaceChildren = 1
+                BEGIN
+                    DELETE FROM CharacterSkillNode WHERE CreateUserId = @CreateUserId
+                        AND CharacterSkillTreeId IN (
+                            SELECT Id FROM CharacterSkillTree
+                            WHERE CharacterId = @CharacterId AND CreateUserId = @CreateUserId);
+                    DELETE FROM CharacterSkillTree WHERE CharacterId = @CharacterId AND CreateUserId = @CreateUserId;
+                END;
+
+                INSERT INTO CharacterSkillTree (Id, Sequence, CreateDate, CreateUserId, Status, CharacterId, Kind)
+                SELECT Id, Sequence, CreateDate, @CreateUserId, Status, CharacterId, Kind
+                FROM OPENJSON(@Trees) WITH (
+                    Id uniqueidentifier, Sequence int, CreateDate datetime2, Status int,
+                    CharacterId uniqueidentifier, Kind int);
+
+                INSERT INTO CharacterSkillNode (Id, Sequence, CreateDate, CreateUserId, Status, CharacterSkillTreeId, NodeType, LootId, Kind)
+                SELECT Id, Sequence, CreateDate, @CreateUserId, Status, CharacterSkillTreeId, NodeType, LootId, Kind
+                FROM OPENJSON(@Nodes) WITH (
+                    Id uniqueidentifier, Sequence int, CreateDate datetime2, Status int,
+                    CharacterSkillTreeId uniqueidentifier, NodeType nvarchar(max), LootId nvarchar(max), Kind int);
+                """, new
+            {
+                CreateUserId = _playerId, CharacterId = row.Id, ReplaceChildren = !isNew,
+                Trees = JsonSerializer.Serialize(trees), Nodes = JsonSerializer.Serialize(nodes),
+            });
             model.Id = row.Id;
         }
 

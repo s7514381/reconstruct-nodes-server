@@ -25,6 +25,7 @@ namespace ReconstructNodesServer.Services
         /// </summary>
         public virtual async Task<int> AdjustAmount(string itemKey, int delta, string? category = null)
         {
+            await LockPlayerAsync();
             // UPDLOCK + HOLDLOCK 同時鎖住既有列與不存在時的鍵區間，避免並行增量遺失更新或重複插入
             string sql = $@"SELECT TOP 1 *
                               FROM {_tableName} WITH (UPDLOCK, HOLDLOCK)
@@ -48,7 +49,7 @@ namespace ReconstructNodesServer.Services
                 return delta;
             }
 
-            int amount = item.Amount + delta;
+            int amount = checked(item.Amount + delta);
             if (amount < 0) { throw new BusinessOperationException(ApiMessageKeys.ItemInsufficient); }
 
             if (amount == 0)

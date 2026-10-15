@@ -10,7 +10,8 @@ using ReconstructNodesServer.Services;
 namespace ReconstructNodesServer.Tests.Services;
 
 /// <summary>
-/// 明確授權才執行：一個隨機訪客、自己的 HTTP/Azurite 程序，finally 精準清除 fixture。
+/// 明確授權才執行：本機 SQL 的核心 HTTP fixture，或已授權專用測試 DB 的隔離 Godot GUI。
+/// 每次只用隨機訪客、自己的 HTTP/Azurite 程序，finally 精準清除 fixture。
 /// 不執行 migration、不使用既有訪客、不向正式 Azure 寫入 HTTP 日誌。
 /// </summary>
 [TestClass]
@@ -18,6 +19,76 @@ namespace ReconstructNodesServer.Tests.Services;
 [DoNotParallelize]
 public class CoreHttpIntegrationTests
 {
+    [TestMethod]
+    public async Task DedicatedTestDatabase_IsolatedGodotGui_AndCleanupFixture()
+    {
+        if (Environment.GetEnvironmentVariable("DUAL_PATH_GUI_TESTS") != "1")
+        {
+            Assert.Inconclusive("Requires DUAL_PATH_GUI_TESTS=1 and explicit dedicated test database authorization.");
+        }
+        Assert.AreEqual("dedicated-test-only", Required("DUAL_PATH_DATABASE_APPROVAL"));
+        string connection = Required("CHARACTER_SHOP_SQL_CONNECTION");
+        string project = Required("CORE_HTTP_SERVER_DIRECTORY");
+        string client = Required("DUAL_PATH_CLIENT_DIRECTORY");
+        string azuriteScript = Required("CORE_HTTP_AZURITE_TABLE_SCRIPT");
+        string clientId = $"dual-path-gui-{Guid.NewGuid():N}";
+        Process? backend = null;
+        Process? emulator = null;
+        Process? gui = null;
+        Console.WriteLine($"Fixture ClientId: {clientId}");
+        using var repository = Repository(connection);
+        Assert.AreEqual(0, await repository.QueryFirstAsync<int>(
+            "SELECT COUNT(*) FROM Player WHERE ClientId=@ClientId", new { ClientId = clientId }));
+        try
+        {
+            // 正式 GUI fixture 限定 5079，不能改用既有站台或其他玩家帳號。
+            using (var listener = new TcpListener(IPAddress.Loopback, 5079)) { listener.Start(); }
+            int tablePort = FreePort();
+            string key = Convert.ToBase64String(RandomNumberGenerator.GetBytes(64));
+            emulator = Start("node", project, new Dictionary<string, string>
+            {
+                ["AZURITE_ACCOUNTS"] = $"corefixture:{key}",
+            }, azuriteScript, "--inMemoryPersistence", "--silent", "--disableTelemetry",
+                "--skipApiVersionCheck", "--tableHost", "127.0.0.1", "--tablePort", tablePort.ToString());
+            await WaitForPort(emulator, tablePort);
+            backend = Start("dotnet", project, new Dictionary<string, string>
+            {
+                ["ASPNETCORE_ENVIRONMENT"] = "Development",
+                ["DOTNET_ENVIRONMENT"] = "Development",
+                ["ConnectionStrings__DefaultConnection"] = connection,
+                ["AzureStorage__ConnectionString"] =
+                    $"DefaultEndpointsProtocol=http;AccountName=corefixture;AccountKey={key};TableEndpoint=http://127.0.0.1:{tablePort}/corefixture;",
+                ["Logging__LogLevel__Default"] = "Warning",
+            }, Environment.GetEnvironmentVariable("CORE_HTTP_SERVER_DLL")
+                ?? Path.Combine(project, "bin", "Debug", "net10.0", "reconstruct-nodes-server.dll"),
+                "--urls", "http://127.0.0.1:5079");
+            using var http = new HttpClient { BaseAddress = new Uri("http://127.0.0.1:5079") };
+            await WaitForHttp(backend, http);
+            gui = Start("powershell.exe", client, new Dictionary<string, string>
+            {
+                ["BACKEND_E2E_URL"] = "http://127.0.0.1:5079",
+                ["BACKEND_E2E_CLIENT_ID"] = clientId,
+            }, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "scripts/tools/run_gut.ps1",
+                "-Config", "res://test/remote_authority_http.gutconfig.json", "-Gui", "-TimeoutSeconds", "240");
+            using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(6));
+            await gui.WaitForExitAsync(timeout.Token);
+            Assert.AreEqual(0, gui.ExitCode, "Isolated GUI acceptance failed; inspect client test/results evidence.");
+        }
+        finally
+        {
+            try { StopOwned(gui); }
+            finally
+            {
+                try { StopOwned(backend); }
+                finally
+                {
+                    try { StopOwned(emulator); }
+                    finally { await Cleanup(connection, clientId, null); }
+                }
+            }
+        }
+    }
+
     [TestMethod]
     public async Task RealHttp_CoreEquipmentSkillsAndRelogin_PreserveGuid_AndCleanupFixture()
     {
@@ -93,23 +164,31 @@ public class CoreHttpIntegrationTests
             Assert.AreEqual(coreId, repeated.Id);
             Console.WriteLine("PASS: new guest has exactly one CORE3, FIREBALL1, no weapon; repeated read preserves GUID.");
 
-            using (var seed = repository.OpenTransaction())
+            var acquire = new WeaponAcquireRequest
             {
-                var argument = SnapshotSaveTests.CreateServiceArgument(repository, fixtureId.Value);
-                await new WeaponService(argument).Save(new WeaponInstanceModel
+                RequestId = Guid.NewGuid(),
+                Weapon = new WeaponInstanceModel
                 {
                     Id = weaponEntry, WeaponId = "staff", WeaponFamilyId = "staff", Rarity = "common",
-                });
-                seed.Commit();
-            }
-            core.WeaponEntryId = weaponEntry;
-            core.WeaponQualityVersion = 2;
+                },
+            };
+            var acquired = await Post<CommandReceipt<WeaponInstanceModel>>(http, "Weapon/Acquire", acquire);
+            Assert.AreEqual(acquired.Revision,
+                (await Post<CommandReceipt<WeaponInstanceModel>>(http, "Weapon/Acquire", acquire)).Revision);
+            var equipped = await Post<CommandReceipt<CharacterModel>>(http, "Character/EquipWeapon", new WeaponEquipRequest
+            {
+                RequestId = Guid.NewGuid(), CharacterId = coreId, WeaponEntryId = weaponEntry,
+            });
+            core = equipped.Snapshot;
+            core.ExpectedRevision = equipped.Revision;
             core.SkillTrees[0].AuxiliaryNodes =
                 [new GameProgressSkillNodeModel { Type = "active", Kind = 0 }];
             Assert.AreEqual(coreId, await Post<Guid>(http, "Character/Save", core));
             await AssertPersisted(http, coreId, weaponEntry, emptySkills: false);
-            Console.WriteLine("PASS: fixture-only WeaponService seed; HTTP weapon and changed skill-node save/read.");
+            Console.WriteLine("PASS: HTTP acquire/replay/equip; legacy skill save preserves confirmed equipment.");
 
+            core = (await Post<List<CharacterModel>>(http, "Character/GetList", new { })).Single();
+            core.ExpectedRevision = core.Revision;
             core.SkillTrees = [];
             await Post<Guid>(http, "Character/Save", core);
             await AssertPersisted(http, coreId, weaponEntry, emptySkills: true);
@@ -119,6 +198,8 @@ public class CoreHttpIntegrationTests
             await AssertPersisted(http, coreId, weaponEntry, emptySkills: true);
             Console.WriteLine("PASS: intentionally empty skills and equipped weapon survive real same-ClientId relogin.");
 
+            core = (await Post<List<CharacterModel>>(http, "Character/GetList", new { })).Single();
+            core.ExpectedRevision = core.Revision;
             core.SkillTrees = [new GameProgressSkillLoadoutModel
             {
                 Kind = 1, AuxiliaryNodes = [new GameProgressSkillNodeModel { Type = "active", Kind = 0 }],
@@ -187,8 +268,20 @@ public class CoreHttpIntegrationTests
         if (expectedId.HasValue && players.Count == 1) { Assert.AreEqual(expectedId.Value, players[0]); }
         if (id.HasValue)
         {
+            Console.WriteLine($"CLEANUP fixture player GUID: {id.Value}");
             string[] tables = ["CharacterSkillNode", "CharacterSkillTree", "Deployment", "Character",
-                "WeaponAffixValue", "WeaponAffix", "WeaponUniqueValue", "Weapon", "EconomyRequest", "PlayerParams", "Item"];
+                "WeaponAffixValue", "WeaponAffix", "WeaponUniqueValue", "Weapon", "EconomyRequest", "PlayerParams", "Item",
+                "AchievementCollected", "AchievementDetail", "Achievement", "TalentAcquired", "TalentLegacyCategory", "Talent",
+                "BattlefieldRoad"];
+            // 檢查也必須在同一交易內：遇到新領域的殘留時保留 Player／ClientId，
+            // 不能先刪身份再發現無法精準重試清理。
+            var ownedTables = await repository.QueryAsync<string>(
+                """
+                SELECT QUOTENAME(s.name)+'.'+QUOTENAME(t.name)
+                FROM sys.tables t JOIN sys.schemas s ON s.schema_id=t.schema_id
+                JOIN sys.columns c ON c.object_id=t.object_id WHERE c.name='CreateUserId'
+                """, null);
+            int checkedTables = 0;
             using (var cleanup = repository.OpenTransaction())
             {
                 foreach (string table in tables)
@@ -198,22 +291,14 @@ public class CoreHttpIntegrationTests
                 await repository.ExecuteAsync(
                     "DELETE FROM Player WHERE Id=@PlayerId AND ClientId=@ClientId AND IsClientLogin=1",
                     new { PlayerId = id, ClientId = clientId });
+                foreach (string table in ownedTables)
+                {
+                    Assert.AreEqual(0, await repository.QueryFirstAsync<int>(
+                        $"SELECT COUNT(*) FROM {table} WHERE CreateUserId=@PlayerId", new { PlayerId = id }),
+                        $"Fixture residue in {table}");
+                    checkedTables++;
+                }
                 cleanup.Commit();
-            }
-            // 檢查所有具有 CreateUserId 的實體表，而不只檢查預期有寫入的表。
-            var ownedTables = await repository.QueryAsync<string>(
-                """
-                SELECT QUOTENAME(s.name)+'.'+QUOTENAME(t.name)
-                FROM sys.tables t JOIN sys.schemas s ON s.schema_id=t.schema_id
-                JOIN sys.columns c ON c.object_id=t.object_id WHERE c.name='CreateUserId'
-                """, null);
-            int checkedTables = 0;
-            foreach (string table in ownedTables)
-            {
-                Assert.AreEqual(0, await repository.QueryFirstAsync<int>(
-                    $"SELECT COUNT(*) FROM {table} WHERE CreateUserId=@PlayerId", new { PlayerId = id }),
-                    $"Fixture residue in {table}");
-                checkedTables++;
             }
             Console.WriteLine($"CLEANUP: zero fixture-owned rows across {checkedTables} ownership tables.");
         }

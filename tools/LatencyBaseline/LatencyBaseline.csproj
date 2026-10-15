@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <Baseline Condition="'$(Baseline)' == ''">$(MSBuildThisFileDirectory)../../artifacts/latency-baseline-20261015-225043</Baseline>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <Reference Include="$(Baseline)/*.dll" Exclude="$(Baseline)/System.Data.SqlClient.dll" />
+    <Reference Include="$(Baseline)/runtimes/win/lib/netcoreapp2.1/System.Data.SqlClient.dll" />
+    <Content Include="$(Baseline)/runtimes/win-x64/native/*.dll" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

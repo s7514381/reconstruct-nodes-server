@@ -45,6 +45,14 @@ namespace ReconstructNodesServer.Services
             if (requestId == Guid.Empty) { throw new BusinessArgumentException(ApiMessageKeys.EconomyRequestRequired); }
             await LockPlayerAsync();
             string json = JsonSerializer.Serialize(payload);
+            if (operation == "progress_save" && payload is GameProgressModel { ExpectedRevision: null, Revision: 0 })
+            {
+                // Keep pre-version rollout receipts replayable: those fields did not exist on the old wire.
+                var legacy = JsonSerializer.SerializeToNode(payload)!.AsObject();
+                legacy.Remove("revision");
+                legacy.Remove("expected_revision");
+                json = legacy.ToJsonString();
+            }
             EconomyRequest? existing = await QueryFirstAsync<EconomyRequest?>(
                 "SELECT * FROM EconomyRequest WHERE CreateUserId = @CreateUserId AND RequestId = @RequestId",
                 new { CreateUserId = _playerId, RequestId = requestId });

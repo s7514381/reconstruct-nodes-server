@@ -42,6 +42,14 @@ namespace ReconstructNodesServer.Tests.Services
             Assert.AreEqual(duplicates, result.Results.Count(reward => reward.IsDuplicate));
             Assert.HasCount(1, repository.Calls.Select(call => call.Value).OfType<Character>().ToList());
             Assert.HasCount(1, repository.Calls.Select(call => call.Value).OfType<Weapon>().ToList());
+            Assert.IsNotNull(result.State);
+            Assert.HasCount(1, result.State.Characters);
+            Assert.HasCount(1, result.State.Weapons);
+            Assert.AreEqual(5, result.State.Characters.Single().SkillTrees.Single().Kind);
+            Assert.AreEqual(result.Results[0].CharacterId, result.State.Characters.Single().Id);
+            Assert.AreEqual(result.Results[0].WeaponEntryId, result.State.Weapons.Single().Id);
+            Assert.AreEqual(duplicates, result.State.Shards.GetValueOrDefault("warrior_shard"));
+            Assert.AreEqual(5, repository.Calls.Select(call => call.Value).OfType<CharacterSkillTree>().Single().Kind);
             Assert.IsTrue(result.Results.All(reward => reward.CharacterId == result.Results[0].CharacterId));
             Assert.AreEqual(balance.ToString(), repository.Calls.Select(call => call.Value).OfType<PlayerParams>().Single().Value);
             Assert.HasCount(1, repository.Calls.Select(call => call.Value).OfType<EconomyRequest>().ToList());
@@ -71,6 +79,7 @@ namespace ReconstructNodesServer.Tests.Services
             Assert.AreEqual(77L, result.Gold);
             Assert.AreEqual(characterId, result.Results.Single().CharacterId);
             Assert.AreEqual("weapon", result.Results.Single().WeaponEntryId);
+            Assert.IsNull(result.State, "Old durable receipts remain replayable without inventing state");
             using var json = JsonDocument.Parse(JsonSerializer.Serialize(result));
             Assert.IsFalse(json.RootElement.GetProperty("results")[0].TryGetProperty("character_name", out _));
             Assert.IsFalse(repository.Calls.Any(call => call.Name is "InsertAsync" or "UpdateAsync" or "ExecuteAsync"));

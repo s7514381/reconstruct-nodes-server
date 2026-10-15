@@ -11,6 +11,7 @@ namespace ReconstructNodesServer.Services
 
         public virtual async Task<IEnumerable<WeaponInstanceModel>> GetInstanceList()
         {
+            await LockPlayerAsync();
             List<Weapon> weapons = await QuerySnapshotRowsAsync<Weapon>(orderBy: row => row.CreateDate);
             if (weapons.Count == 0) { return []; }
 
@@ -31,6 +32,7 @@ namespace ReconstructNodesServer.Services
             ILookup<Guid?, WeaponAffixValue> valuesByAffix = affixValues.ToLookup(v => v.WeaponAffixId);
             ILookup<Guid?, WeaponUniqueValue> uniqueByWeapon = uniqueValues.ToLookup(u => u.WeaponId);
 
+            long revision = await Revisions.Read(nameof(WeaponInstanceModel));
             return weapons.Select(weapon =>
             {
                 List<WeaponAffixSnapshot> affixSnapshots = affixesByWeapon[weapon.Id]
@@ -48,6 +50,7 @@ namespace ReconstructNodesServer.Services
 
                 return new WeaponInstanceModel
                 {
+                    Revision = revision,
                     Id = weapon.EntryKey,
                     WeaponId = weapon.WeaponKey,
                     WeaponFamilyId = weapon.WeaponFamilyKey,
@@ -63,12 +66,34 @@ namespace ReconstructNodesServer.Services
         /// </summary>
         public override Task Save(WeaponInstanceModel model) => base.Save(model);
 
+        // Only explicit commands may update existing instances. No client revision fence:
+        // the command ledger and player lock already protect this transaction.
+        internal async Task SaveForCommand(WeaponInstanceModel model, bool acquire = false)
+        {
+            await LockPlayerAsync();
+            ValidateSnapshot(model);
+            if (acquire)
+            {
+                int count = await QueryFirstAsync<int>(
+                    "SELECT COUNT(1) FROM Weapon WHERE CreateUserId=@CreateUserId AND EntryKey=@EntryKey",
+                    new { CreateUserId = _playerId, EntryKey = model.Id });
+                // Include tombstones: a late acquire must never resurrect a disassembled entry.
+                if (count != 0) { throw new BusinessArgumentException(ApiMessageKeys.EconomyRequestConflict); }
+            }
+            await SaveSnapshot(model);
+            await Revisions.Advance(nameof(WeaponInstanceModel), [model.Id]);
+        }
+
         protected override void ValidateSnapshot(WeaponInstanceModel model)
         {
-            if (string.IsNullOrWhiteSpace(model.Id) || string.IsNullOrWhiteSpace(model.WeaponId))
+            if (string.IsNullOrWhiteSpace(model.Id) || model.Id.Length > 450 ||
+                string.IsNullOrWhiteSpace(model.WeaponId) || model.WeaponId.Length > 450 ||
+                model.WeaponFamilyId?.Length > 450)
             {
                 throw new BusinessArgumentException(ApiMessageKeys.WeaponKeysRequired);
             }
+            WeaponSnapshotCodec.ReadAffixes(model.Affixes ?? new());
+            WeaponSnapshotCodec.ReadUnique(model.Unique);
         }
 
         protected override async Task SaveSnapshot(WeaponInstanceModel model)
@@ -99,6 +124,12 @@ namespace ReconstructNodesServer.Services
         /// 刪除前先鎖玩家再檢查角色裝備，避免裝備寫入與刪除交錯。子表保留，會因父表 Status 被過濾
         /// </summary>
         public override async Task<int> DeleteByNaturalKey(string naturalKey)
+        {
+            await Revisions.Check(nameof(WeaponInstanceModel), null);
+            return await DeleteForCommand(naturalKey);
+        }
+
+        internal async Task<int> DeleteForCommand(string naturalKey)
         {
             await LockPlayerAsync();
             await EnsureNotEquippedAsync(naturalKey);

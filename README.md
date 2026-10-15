@@ -2,6 +2,10 @@
 
 ASP.NET Core（net10.0）後端服務，提供 **reconstruct-nodes** 遊戲前端使用的 API。
 
+前景版本／原子命令契約與聚焦測試入口見 [FOREGROUND-CONTRACTS](docs/FOREGROUND-CONTRACTS.md)。
+武器取得／精煉／批次分解與角色穿卸裝已改為無 checkpoint 的業務 action，完整路由、
+request／receipt 型別與驗證限制見 [WEAPON-CONTRACTS](docs/WEAPON-CONTRACTS.md)。
+
 ## 前端專案
 
 前端是獨立倉庫 **`reconstruct-nodes`**（Godot 專案），與本後端分開維護，透過 HTTP 呼叫本後端的 API。本文件以本倉庫實作為準，不涵蓋前端倉庫內的設定與驗證。
@@ -214,7 +218,34 @@ Remove-Item Env:\DB_CONCURRENCY_SQL_CONNECTION
 
 ## 核心 SQL／HTTP fixture 整合驗證（須明確授權）
 
-`CoreHttpIntegrationTests` 只允許本機 SQL Server，會建立一個隨機
+#### 明確授權的專用測試資料庫 GUI／HTTP
+
+`CoreHttpIntegrationTests.DedicatedTestDatabase_IsolatedGodotGui_AndCleanupFixture`
+只在 `DUAL_PATH_GUI_TESTS=1` 且
+`DUAL_PATH_DATABASE_APPROVAL=dedicated-test-only` 時執行；這不是正式資料庫的授權。
+執行前須自行確認 `CHARACTER_SHOP_SQL_CONNECTION` 指向已授權的專用測試資料庫。
+另提供 `CORE_HTTP_SERVER_DIRECTORY`、`CORE_HTTP_AZURITE_TABLE_SCRIPT` 與
+`DUAL_PATH_CLIENT_DIRECTORY`（Godot 前端根目錄）。
+
+```powershell
+dotnet test .\reconstruct-nodes-server.Tests\reconstruct-nodes-server.Tests.csproj --no-restore `
+  --filter "FullyQualifiedName~DedicatedTestDatabase_IsolatedGodotGui" --logger "console;verbosity=detailed"
+```
+
+runner 使用自己的 5079 backend、記憶體 Azurite、隨機 `dual-path-gui-*` 訪客及前端既有
+`run_gut.ps1 -Gui` 隔離入口。5079 已被占用時失敗，不停止既有程序。
+不注入金幣或角色，不改前端正式 user://，不自行套用 migration。
+目前執行的是前端 `remote_authority_http` config，其通過不代表全部雙路徑用例已驗收。
+前端 `test/results/gameplay/<runId>` 保留 manifest、隔離結果與 user-data；
+測試框架只輸出 fixture ClientId／清理 GUID，不印 token、HTTP body 或連線字串。
+
+清理限定本次 ClientId／Player.Id，補齊成就、天賦與道路資料，並在同一交易內驗證所有
+`CreateUserId` 資料表均無本次殘留後才提交身份刪除；若新增領域未納入清理，整筆回滾，
+保留 ClientId 對應以供精準重試。結束後清除上述 opt-in 環境變數。
+
+#### 本機 SQL 的核心角色 HTTP fixture
+
+`CoreHttpIntegrationTests.RealHttp_CoreEquipmentSkillsAndRelogin_PreserveGuid_AndCleanupFixture` 只允許本機 SQL Server，會建立一個隨機
 `core-http-fixture-*` 訪客，以自己的獨立埠 backend 與記憶體 Azurite 執行真實 HTTP。
 設定僅以子程序環境覆寫，不修改來源設定，不使用或停止共享服務，
 也不將 HTTP 日誌寫入正式 Azure。須先安裝 Node.js／Azurite 並建置 Debug 後端。
@@ -239,8 +270,9 @@ try {
 ```
 
 測試涵蓋：新訪客唯一核心 kind=3、初始火球 kind=1／空手、重讀 GUID 不變；
-只為該 fixture 透過 `WeaponService.Save` 的交易建立武器；
-HTTP 保存武器與技能節點、保存空技能、相同 ClientId 重登保持空配置、
+只為該 fixture 透過 HTTP `Weapon/Acquire` 建立武器並重播同請求，再經
+`Character/EquipWeapon` 穿裝；legacy Character/Save 保存技能時保留權威武器引用。
+另驗證保存空技能、相同 ClientId 重登保持空配置、
 還原技能再重登保持 GUID／武器／技能。finally 先停止自有 PID，再以精確
 Player GUID 刪除 fixture 子資料、以 GUID＋ClientId＋訪客條件刪除玩家；
 驗證所有具 `CreateUserId` 欄位的實體表及該 ClientId 皆無殘留。
@@ -264,6 +296,7 @@ Azurite 關閉即丟棄記憶體日誌。若測試程序被強制終止，finall
 - 遊戲資料：`Shop`、`Character`、`GameProgress`、`Talent`、`Item`、`Weapon`、`AchievementProgress`。
 - `Character/GetList`、`Character/Get?id=<GUID>`、`Character/Save` 提供獨立角色配置；角色未部署也能裝備武器與技能樹。部署只使用 `character_id` 引用角色目前配置，進度覆寫不刪除角色。
 - 一般角色（kind 0～2）由 `Shop/Draw` 取得：單抽 100 金幣、十連 900，新角色配發普通基礎武器，重複發碎片。`Character/Save` 不能建立角色。抽卡需穩定 `request_id`，重送不重複扣款。
+- `Shop/Draw` 新收據包含 `state: {version: 1, characters, weapons, shards}`：characters／weapons 僅含本次首次建立的完整模型（新實例 revision 0），shards 為本批次各碎片提交後的絕對數量。新角色預設技能與武器、扣款、收據同交易提交，前端不需再次保存才可顯示結果。重播保留原始收據；舊紀錄省略 state，由客戶端讀取最新權威快照。重試或相關寫入競態不得以舊收據覆蓋最新配置／數量。Godot 編輯器測試版的單抽按鈕至完整結果繪製目標為 ≤1000ms，驗證入口見客戶端執行文件。
 - 核心沿用 `Character` 與相同 GUID／配置 DTO，固定 **kind = 3**，不新增核心 endpoint 或資料表。新舊帳號首次 `Character/GetList`（或 `Get`）在既有交易與玩家鎖內自動補齊唯一核心；無費用、無初始武器，初始技能樹為 `[{ "kind": 1, "auxiliary_nodes": [] }]`。火球值已核對遊戲 `BulletData.FIREBALL -> ActiveSkill.FIREBALL = 1`，不是 4。已存在核心不重設技能或武器，明確保存的空技能清單會保留。
 - 前端先讀 `Character/GetList` 取得核心真實 `id`，再用 `Character/Save` 保存相同 `id`、`kind: 3`、`skill_trees` 與可選 `weapon_entry_id`（空值表示卸下）；Save 回傳原 GUID。核心免費可用火球及既有通用基本技能，其他主動／輔助技能仍需解鎖；武器仍驗證本人擁有及跨角色唯一裝備。核心不進商店抽取池，不能放入 `GameProgress/Save.deployment_log`（沿用 `backend.progress.character_not_owned` 拒絕），沒有角色刪除／撤回 API。一般部署費不適用核心，核心常駐位置由前端接線；後端只保存核心配置。
 - 本次核心擴充不需 migration；不會主動批次改寫帳號或共享資料庫，未讀角色清單的帳號於下一次讀取時補齊。服務層直接呼叫 `GetList`／`Get` 也必須沿用既有 repository transaction，不能脫離交易使用玩家鎖。

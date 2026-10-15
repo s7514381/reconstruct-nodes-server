@@ -77,16 +77,17 @@ public class SnapshotPersistenceTests
             new WeaponAffixValue { WeaponAffixId = affix.Id, Value = "4", Status = (EStatus)(-1) },
         };
         await new WeaponService(argument).GetInstanceList();
-        Assert.HasCount(4, repository.Calls);
-        Assert.Contains("Status != -1 ORDER BY CreateDate", repository.Calls[0].Sql!);
-        foreach (var call in repository.Calls.Skip(1))
+        Assert.HasCount(6, repository.Calls);
+        Assert.Contains("Player WITH (UPDLOCK, HOLDLOCK)", repository.Calls[0].Sql!);
+        Assert.Contains("Status != -1 ORDER BY CreateDate", repository.Calls[1].Sql!);
+        foreach (var call in repository.Calls.Skip(2).Take(3))
         {
             Assert.Contains("p.CreateUserId = @CreateUserId AND c.CreateUserId = @CreateUserId", call.Sql!);
             Assert.Contains("IN @ParentIds", call.Sql!);
             Assert.Contains("ORDER BY c.Sequence", call.Sql!);
             Assert.DoesNotContain("c.Status", call.Sql!);
         }
-        Assert.DoesNotContain("p.Status", repository.Calls[2].Sql!);
+        Assert.DoesNotContain("p.Status", repository.Calls[3].Sql!);
     }
 
     [TestMethod]
@@ -106,7 +107,7 @@ public class SnapshotPersistenceTests
             Assert.Contains("ORDER BY c.Sequence", call.Sql!);
         }
         // 玩家鎖、角色、兩層技能、武器（無武器時提早返回）。
-        Assert.HasCount(5, repository.Calls);
+        Assert.HasCount(7, repository.Calls);
     }
 
     [TestMethod]
@@ -132,8 +133,9 @@ public class SnapshotPersistenceTests
         };
         TalentModel? model = await new TalentService(argument).GetSnapshot();
         Assert.AreEqual(2, model!.AcquiredTalents["tree"]["node"].GetInt32());
-        Assert.Contains("SELECT TOP 1", repository.Calls[0].Sql!);
-        foreach (var call in repository.Calls.Skip(1))
+        Assert.Contains("Player WITH (UPDLOCK, HOLDLOCK)", repository.Calls[0].Sql!);
+        Assert.Contains("SELECT TOP 1", repository.Calls[1].Sql!);
+        foreach (var call in repository.Calls.Skip(2).Take(2))
         {
             Assert.Contains("p.Status != -1", call.Sql!);
             Assert.Contains("p.CreateUserId = @CreateUserId AND c.CreateUserId = @CreateUserId", call.Sql!);
@@ -169,14 +171,14 @@ public class SnapshotPersistenceTests
                 new() { Name = "second", Items = [new() { Name = "c", Target = 1 }], Collected = ["z"] },
             ],
         });
-        var details = repository.Calls.Select(call => call.Value).OfType<AchievementDetail>().ToList();
+        var details = SnapshotSaveTests.BatchRows<AchievementDetail>(repository, "Details");
         CollectionAssert.AreEqual(new int?[] { 0, 1, 0 }, details.Select(row => row.Sequence).ToArray());
-        var collected = repository.Calls.Select(call => call.Value).OfType<AchievementCollected>().ToList();
+        var collected = SnapshotSaveTests.BatchRows<AchievementCollected>(repository, "Collected");
         CollectionAssert.AreEqual(new int?[] { 0, 1, 0 }, collected.Select(row => row.Sequence).ToArray());
         Assert.AreEqual(details[2].AchievementId, collected[2].AchievementId);
         Assert.AreNotEqual(details[0].AchievementId, details[2].AchievementId);
         Assert.Contains("WITH (UPDLOCK, HOLDLOCK)", repository.Calls[0].Sql!);
-        Assert.Contains("p.Status != -1", repository.Calls[1].Sql!);
+        Assert.Contains("p.Status != -1", repository.Calls[3].Sql!);
     }
 
     [TestMethod]
@@ -193,10 +195,10 @@ public class SnapshotPersistenceTests
         };
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
             new AchievementProgressService(argument, new ItemService(argument)).ClaimReward("item"));
-        Assert.HasCount(2, repository.Calls);
-        Assert.Contains("FROM Achievement WITH (UPDLOCK, HOLDLOCK)", repository.Calls[0].Sql!);
-        Assert.Contains("FROM AchievementDetail WITH (UPDLOCK, HOLDLOCK)", repository.Calls[1].Sql!);
-        Assert.IsTrue(repository.Calls.All(call => call.Sql!.Contains("CreateUserId = @CreateUserId")));
+        Assert.HasCount(3, repository.Calls);
+        Assert.Contains("FROM Achievement WITH (UPDLOCK, HOLDLOCK)", repository.Calls[1].Sql!);
+        Assert.Contains("FROM AchievementDetail WITH (UPDLOCK, HOLDLOCK)", repository.Calls[2].Sql!);
+        Assert.IsTrue(repository.Calls.Skip(1).All(call => call.Sql!.Contains("CreateUserId = @CreateUserId")));
     }
 
     [TestMethod]
@@ -211,14 +213,100 @@ public class SnapshotPersistenceTests
             SkillSuffixes = new() { ["a"] = JsonSerializer.SerializeToElement(1), ["b"] = JsonSerializer.SerializeToElement(2) },
             Progression = new() { ["c"] = JsonSerializer.SerializeToElement(3) },
         });
-        string delete = repository.Calls.Single(call => call.Sql?.StartsWith("DELETE FROM PlayerParams") == true).Sql!;
+        string delete = repository.Calls.Single(call => call.Sql?.Contains("DELETE FROM PlayerParams") == true).Sql!;
         Assert.Contains("NOT ([Group] = 'game_progress' AND Name = 'gold')", delete);
         Assert.Contains("'game_progress.unlocked_bullet_kinds', 'game_progress.unlocked_auxiliary_kinds'", delete);
-        var rows = repository.Calls.Select(call => call.Value).OfType<PlayerParams>().ToList();
+        var rows = SnapshotSaveTests.BatchRows<PlayerParams>(repository, "Parameters");
         Assert.IsFalse(rows.Any(row => row.Name == "gold" || row.Group is "game_progress.unlocked_bullet_kinds" or "game_progress.unlocked_auxiliary_kinds"));
         Assert.IsTrue(rows.Where(row => row.Group == "game_progress").All(row => row.Sequence == null));
         CollectionAssert.AreEqual(new int?[] { 0, 1 }, rows.Where(row => row.Group.EndsWith("skill_suffixes")).Select(row => row.Sequence).ToArray());
         Assert.AreEqual(0, rows.Single(row => row.Group.EndsWith("progression")).Sequence);
+    }
+
+    [TestMethod]
+    [DataRow(0)]
+    [DataRow(200)]
+    public async Task SnapshotReplacement_UsesOneParameterizedWriteRegardlessOfRowCount(int count)
+    {
+        var (argument, repository) = SnapshotSaveTests.CreateArgument();
+        string quotedName = "測試'; DELETE FROM Player;--";
+        await new AchievementProgressService(argument, new ItemService(argument)).Save(new AchievementProgressModel
+        {
+            Groups = Enumerable.Range(0, count).Select(index => new AchievementGroupModel
+            {
+                Name = $"group-{index}", Total = index,
+                Items = [new() { Name = $"{quotedName}-{index}", Target = 1 }],
+                Collected = ["first", "second"],
+            }).ToList(),
+        });
+        var achievementWrite = repository.Calls.Single(call => call.Name == "ExecuteAsync");
+        Assert.DoesNotContain(quotedName, achievementWrite.Sql!);
+        Assert.HasCount(count, SnapshotSaveTests.BatchRows<Achievement>(repository, "Groups"));
+        Assert.HasCount(count, SnapshotSaveTests.BatchRows<AchievementDetail>(repository, "Details"));
+        Assert.HasCount(count * 2, SnapshotSaveTests.BatchRows<AchievementCollected>(repository, "Collected"));
+        Assert.IsFalse(repository.Calls.Any(call => call.Name == "InsertAsync"));
+
+        repository.Calls.Clear();
+        await new GameProgressService(argument).Save(new GameProgressModel
+        {
+            SkillSuffixes = Enumerable.Range(0, count).ToDictionary(
+                index => $"{quotedName}-{index}", index => JsonSerializer.SerializeToElement(index)),
+            Battlefield = new()
+            {
+                Castle = [1, 2],
+                Roads = Enumerable.Range(0, count).Select(index => new GameProgressRoadModel
+                {
+                    X = index, Y = index + 1, Corner = index % 2 == 0, Rotation = index % 4,
+                }).ToList(),
+            },
+        });
+        var progressWrite = repository.Calls.Single(call => call.Name == "ExecuteAsync");
+        Assert.DoesNotContain(quotedName, progressWrite.Sql!);
+        Assert.HasCount(12 + count, SnapshotSaveTests.BatchRows<PlayerParams>(repository, "Parameters"));
+        Assert.HasCount(count, SnapshotSaveTests.BatchRows<BattlefieldRoad>(repository, "Roads"));
+        Assert.HasCount(0, SnapshotSaveTests.BatchRows<Deployment>(repository, "Deployments"));
+        Assert.IsFalse(repository.Calls.Any(call => call.Name == "InsertAsync"));
+    }
+
+    [TestMethod]
+    public async Task SnapshotReplacement_PropagatesBatchFailures()
+    {
+        var (argument, repository) = SnapshotSaveTests.CreateArgument();
+        repository.FailExecute = true;
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            new AchievementProgressService(argument, new ItemService(argument)).Save(new()));
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            new GameProgressService(argument).Save(new()));
+        Assert.AreEqual(2, repository.Calls.Count(call => call.Name == "ExecuteAsync"));
+        Assert.IsFalse(repository.Calls.Any(call => call.Name == "InsertAsync"));
+    }
+
+    [TestMethod]
+    public async Task CharacterReplacement_PreservesTreeLinksAndIndependentNodeSequences()
+    {
+        var (argument, repository) = SnapshotSaveTests.CreateArgument();
+        Character core = new() { Kind = CharacterService.CoreKind };
+        repository.Existing = core;
+        repository.QueryRows[typeof(Character)] = new[] { core };
+        await new CharacterService(argument).Save(new CharacterModel
+        {
+            Id = core.Id, Kind = core.Kind,
+            SkillTrees =
+            [
+                new() { Kind = 1, AuxiliaryNodes = [new() { Type = "active", Kind = 0 }, new() { Type = "active", Kind = 1 }] },
+                new() { Kind = 0, AuxiliaryNodes = [new() { Type = "active", Kind = 0 }] },
+            ],
+        });
+        var trees = SnapshotSaveTests.BatchRows<CharacterSkillTree>(repository, "Trees");
+        var nodes = SnapshotSaveTests.BatchRows<CharacterSkillNode>(repository, "Nodes");
+        CollectionAssert.AreEqual(new int?[] { 0, 1 }, trees.Select(tree => tree.Sequence).ToArray());
+        CollectionAssert.AreEqual(new int?[] { 0, 1, 0 }, nodes.Select(node => node.Sequence).ToArray());
+        Assert.AreEqual(trees[0].Id, nodes[0].CharacterSkillTreeId);
+        Assert.AreEqual(trees[0].Id, nodes[1].CharacterSkillTreeId);
+        Assert.AreEqual(trees[1].Id, nodes[2].CharacterSkillTreeId);
+        Assert.IsTrue(trees.All(tree => tree.CharacterId == core.Id));
+        Assert.AreEqual(1, repository.Calls.Count(call => call.Name == "ExecuteAsync"));
+        Assert.IsFalse(repository.Calls.Any(call => call.Name == "InsertAsync"));
     }
 
     private sealed class PersistenceProbe(BaseServiceArgument argument) : _SnapshotService<Weapon, WeaponInstanceModel>(argument)

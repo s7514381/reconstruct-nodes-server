@@ -50,6 +50,9 @@ namespace ReconstructNodesServer.Tests.Services
                 Assert.AreEqual(1100, draw.Gold);
                 ShopDrawResult replay = await shop.Draw(request);
                 Assert.AreEqual(draw.Results[0].CharacterId, replay.Results[0].CharacterId);
+                Assert.IsNotNull(draw.State);
+                Assert.AreEqual(draw.State.Characters.Single().SkillTrees.Single().Kind,
+                    replay.State!.Characters.Single().SkillTrees.Single().Kind);
                 Assert.AreEqual(1, await repository.QueryFirstAsync<int>(
                     "SELECT COUNT(*) FROM Character WHERE CreateUserId=@playerId", new { playerId }));
                 Assert.AreEqual(1, await repository.QueryFirstAsync<int>(
@@ -57,6 +60,8 @@ namespace ReconstructNodesServer.Tests.Services
 
                 var characters = new CharacterService(argument);
                 CharacterModel character = (await characters.GetList()).Single(row => row.Kind != CharacterService.CoreKind);
+                Assert.AreEqual(draw.State.Characters.Single().SkillTrees.Single().Kind, character.SkillTrees.Single().Kind,
+                    "Default skills must commit with the draw, not wait for a client save.");
                 CharacterModel core = (await characters.GetList()).Single(row => row.Kind == CharacterService.CoreKind);
                 Assert.AreEqual(1, core.SkillTrees.Single().Kind);
                 Assert.IsTrue(string.IsNullOrEmpty(core.WeaponEntryId));

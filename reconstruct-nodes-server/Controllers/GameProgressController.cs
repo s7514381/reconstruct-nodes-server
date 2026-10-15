@@ -26,7 +26,7 @@ namespace ReconstructNodesServer.Controllers
             });
 
             if (!success) { return StatusCode(400, BackendApiResult<string>.Create(400, message ?? ApiMessageKeys.ProgressSaveFailed)); }
-            return Ok(BackendApiResult<string>.Create(200, string.Empty, string.Empty));
+            return SnapshotSaved(model, string.Empty);
         }
     }
 }

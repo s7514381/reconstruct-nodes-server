@@ -22,6 +22,20 @@ namespace ReconstructNodesServer.Tests.Controllers;
 public class ApiMessageContractTests
 {
     [TestMethod]
+    public void RevisionConflict_Is409_AndSnapshotAckPreservesLegacyBodyWithRevisionHeader()
+    {
+        var controller = new FailureProbeController
+        {
+            ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },
+        };
+        var conflict = (ObjectResult)controller.Fail(new ApiMessage("concurrency.revision_conflict"));
+        Assert.AreEqual(409, conflict.StatusCode);
+        var saved = (OkObjectResult)controller.Saved(new TalentModel { Revision = 7, ExpectedRevision = 6 });
+        Assert.AreEqual("7", controller.Response.Headers["X-State-Revision"].ToString());
+        Assert.AreEqual(string.Empty, ((BackendApiResult<string>)saved.Value!).Data);
+    }
+
+    [TestMethod]
     public void Envelope_HasOnlyNewFields_AndCopiesNamedArguments()
     {
         Dictionary<string, string> arguments = new() { ["cost"] = "100" };
@@ -130,6 +144,7 @@ public class ApiMessageContractTests
     private sealed class FailureProbeController() : BaseApiController(new BaseApiArgument(null!, NullLoggerFactory.Instance))
     {
         public IActionResult Fail(ApiMessage? message) => TransactionFailure(message);
+        public IActionResult Saved(IRevisionedSnapshot snapshot) => SnapshotSaved(snapshot, string.Empty);
     }
 
     [TestMethod]

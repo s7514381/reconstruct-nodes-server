@@ -86,6 +86,7 @@ namespace ReconstructNodesServer.Services
 
             return new GameProgressModel
             {
+                Revision = await Revisions.Read(nameof(GameProgressModel)),
                 Version = ReadInt(progressValues, ProgressKey.Version),
                 DeploymentLog = deploymentLog,
                 Wave = ReadInt(progressValues, ProgressKey.Wave),
@@ -109,7 +110,11 @@ namespace ReconstructNodesServer.Services
         /// <summary>
         /// 以整份快照覆寫遊戲進度：先刪除此玩家既有的進度列再重新寫入。需在交易內呼叫。
         /// </summary>
-        public override Task Save(GameProgressModel model) => base.Save(model);
+        public override async Task Save(GameProgressModel model)
+        {
+            ValidateSnapshot(model);
+            await SaveSnapshot(model);
+        }
 
         protected override void ValidateSnapshot(GameProgressModel model) => ValidateProgress(model);
 
@@ -117,36 +122,80 @@ namespace ReconstructNodesServer.Services
         {
             // 與武器刪除共用玩家鎖，避免刪武器與寫入裝備參照交錯
             await LockPlayerAsync();
+            if (model.RequestId.HasValue)
+            {
+                // The existing debit receipt must replay before CAS and ownership checks.
+                ProgressSaveResult result = await _lazy.GoldService.Value.Execute(model.RequestId.Value, "progress_save", model, async account =>
+                {
+                    await Revisions.Check(nameof(GameProgressModel), model.ExpectedRevision);
+                    int newDeployments = await NewDeploymentCount(model);
+                    if (newDeployments > 0) { GoldService.Spend(account, checked(newDeployments * 60L)); }
+                    await ReplaceProgressAsync(model);
+                    if (model.ExpectedRevision.HasValue) { model.Revision = await Revisions.Advance(nameof(GameProgressModel)); }
+                    return new ProgressSaveResult { Gold = account.Balance, Revision = model.Revision };
+                });
+                model.Revision = result.Revision;
+                return;
+            }
+            await Revisions.Check(nameof(GameProgressModel), model.ExpectedRevision);
+            if (await NewDeploymentCount(model) > 0) { throw new BusinessArgumentException(ApiMessageKeys.ProgressRequestRequired); }
+            await ReplaceProgressAsync(model);
+            if (model.ExpectedRevision.HasValue) { model.Revision = await Revisions.Advance(nameof(GameProgressModel)); }
+        }
+
+        private async Task<int> NewDeploymentCount(GameProgressModel model)
+        {
             await ValidateCharactersAsync(model.DeploymentLog ?? new());
             var previous = await QuerySnapshotRowsAsync<Deployment>(orderBy: row => row.Sequence);
             var previousKeys = previous.Select(row => (row.SpotIndex, row.CharacterId, row.CellX, row.CellY)).ToHashSet();
-            int newDeployments = (model.DeploymentLog ?? new()).Count(row =>
+            return (model.DeploymentLog ?? new()).Count(row =>
                 !previousKeys.Contains((row.SpotIndex, row.CharacterId, row.Cell?[0], row.Cell?[1])));
-            if (newDeployments > 0 && !model.RequestId.HasValue)
-            {
-                throw new BusinessArgumentException(ApiMessageKeys.ProgressRequestRequired);
-            }
-            if (model.RequestId.HasValue)
-            {
-                await _lazy.GoldService.Value.Execute(model.RequestId.Value, "progress_save", model, async account =>
-                {
-                    if (newDeployments > 0) { GoldService.Spend(account, checked(newDeployments * 60L)); }
-                    await ReplaceProgressAsync(model);
-                    return new GoldOperationResult { Gold = account.Balance };
-                });
-                return;
-            }
-            await ReplaceProgressAsync(model);
         }
 
         private async Task ReplaceProgressAsync(GameProgressModel model)
         {
-            await DeleteProgressRowsAsync();
+            List<PlayerParams> parameters = BuildProgressRows(model).ToList();
+            List<Deployment> deployments = (model.DeploymentLog ?? []).Select((deployment, sequence) => new Deployment
+            {
+                SpotIndex = deployment.SpotIndex, CellX = deployment.Cell?[0], CellY = deployment.Cell?[1],
+                CharacterId = deployment.CharacterId, Wave = deployment.Wave, Sequence = sequence,
+            }).ToList();
+            List<BattlefieldRoad> roads = (model.Battlefield?.Roads ?? []).Select((road, sequence) => new BattlefieldRoad
+            {
+                X = road.X, Y = road.Y, Corner = road.Corner, Rotation = road.Rotation, Sequence = sequence,
+            }).ToList();
 
-            await InsertScalarsAsync(model);
-            await InsertSettingsAsync(model);
-            await InsertDeploymentsAsync(model.DeploymentLog ?? new());
-            await InsertRoadsAsync(model.Battlefield);
+            await ExecuteAsync($"""
+                DELETE FROM Deployment WHERE CreateUserId = @CreateUserId;
+                DELETE FROM BattlefieldRoad WHERE CreateUserId = @CreateUserId;
+                DELETE FROM {_tableName} WHERE CreateUserId = @CreateUserId
+                    AND {ProgressRowFilter} AND NOT ([Group] = 'game_progress' AND Name = 'gold')
+                    AND [Group] NOT IN ('game_progress.unlocked_bullet_kinds', 'game_progress.unlocked_auxiliary_kinds');
+
+                INSERT INTO PlayerParams (Id, Sequence, CreateDate, CreateUserId, Status, Name, [Group], Value)
+                SELECT Id, Sequence, CreateDate, @CreateUserId, Status, Name, [Group], Value
+                FROM OPENJSON(@Parameters) WITH (
+                    Id uniqueidentifier, Sequence int, CreateDate datetime2, Status int,
+                    Name nvarchar(max), [Group] nvarchar(max), Value nvarchar(max));
+
+                INSERT INTO Deployment (Id, Sequence, CreateDate, CreateUserId, Status, SpotIndex, CellX, CellY, CharacterId, Wave)
+                SELECT Id, Sequence, CreateDate, @CreateUserId, Status, SpotIndex, CellX, CellY, CharacterId, Wave
+                FROM OPENJSON(@Deployments) WITH (
+                    Id uniqueidentifier, Sequence int, CreateDate datetime2, Status int,
+                    SpotIndex int, CellX int, CellY int, CharacterId uniqueidentifier, Wave int);
+
+                INSERT INTO BattlefieldRoad (Id, Sequence, CreateDate, CreateUserId, Status, X, Y, Corner, Rotation)
+                SELECT Id, Sequence, CreateDate, @CreateUserId, Status, X, Y, Corner, Rotation
+                FROM OPENJSON(@Roads) WITH (
+                    Id uniqueidentifier, Sequence int, CreateDate datetime2, Status int,
+                    X int, Y int, Corner bit, Rotation int);
+                """, new
+            {
+                CreateUserId = _playerId,
+                Parameters = JsonSerializer.Serialize(parameters),
+                Deployments = JsonSerializer.Serialize(deployments),
+                Roads = JsonSerializer.Serialize(roads),
+            });
         }
 
         /// <summary>
@@ -182,94 +231,52 @@ namespace ReconstructNodesServer.Services
             if (ids.Any(id => !ownedIds.Contains(id))) { throw new BusinessArgumentException(ApiMessageKeys.ProgressCharacterNotOwned); }
         }
 
-        /// <summary>
-        /// 依子表由深到淺刪除此玩家的進度列；子列都以 CreateUserId 歸屬，不再依賴父列
-        /// </summary>
-        private async Task DeleteProgressRowsAsync()
+        private static IEnumerable<PlayerParams> BuildProgressRows(GameProgressModel model)
         {
-            await DeleteSnapshotRowsAsync<Deployment>();
-            await DeleteSnapshotRowsAsync<BattlefieldRoad>();
+            yield return Scalar(ProgressKey.Version, model.Version);
+            yield return Scalar(ProgressKey.Wave, model.Wave);
+            yield return Scalar(ProgressKey.MaxWaveReached, model.MaxWaveReached);
+            yield return Scalar(ProgressKey.Difficulty, model.Difficulty);
+            yield return Scalar(ProgressKey.LifetimeEnemiesDefeated, model.LifetimeEnemiesDefeated);
+            yield return Scalar(ProgressKey.InfiniteLevel, model.InfiniteLevel);
+            yield return Scalar(ProgressKey.WaveCompleted, model.WaveCompleted);
 
-            await ExecuteAsync($@"DELETE FROM {_tableName} WHERE CreateUserId = @CreateUserId
-                AND {ProgressRowFilter} AND NOT ([Group] = 'game_progress' AND Name = 'gold')
-                AND [Group] NOT IN ('game_progress.unlocked_bullet_kinds', 'game_progress.unlocked_auxiliary_kinds')",
-                new { CreateUserId = _playerId });
-        }
-
-        private async Task InsertScalarsAsync(GameProgressModel model)
-        {
-            await InsertScalarAsync(ProgressKey.Version, model.Version);
-            await InsertScalarAsync(ProgressKey.Wave, model.Wave);
-            await InsertScalarAsync(ProgressKey.MaxWaveReached, model.MaxWaveReached);
-            await InsertScalarAsync(ProgressKey.Difficulty, model.Difficulty);
-            await InsertScalarAsync(ProgressKey.LifetimeEnemiesDefeated, model.LifetimeEnemiesDefeated);
-            await InsertScalarAsync(ProgressKey.InfiniteLevel, model.InfiniteLevel);
-            await InsertScalarAsync(ProgressKey.WaveCompleted, model.WaveCompleted);
-
-            // 沒有戰場時不寫入戰場鍵，讀取時即為 null
-            if (model.Battlefield == null) { return; }
-
-            await InsertScalarAsync(ProgressKey.BattlefieldVersion, model.Battlefield.Version);
-            await InsertScalarAsync(ProgressKey.BattlefieldColumns, model.Battlefield.Columns);
-            await InsertScalarAsync(ProgressKey.BattlefieldRows, model.Battlefield.Rows);
-            await InsertScalarAsync(ProgressKey.CastleX, model.Battlefield.Castle[0]);
-            await InsertScalarAsync(ProgressKey.CastleY, model.Battlefield.Castle[1]);
-        }
-
-        private async Task InsertScalarAsync(string name, object value)
-        {
-            await InsertSnapshotRowAsync(new PlayerParams
+            if (model.Battlefield != null)
             {
-                Group = ProgressGroup,
-                Name = name,
-                Value = Convert.ToString(value, CultureInfo.InvariantCulture),
-            });
-        }
-
-        private async Task InsertSettingsAsync(GameProgressModel model)
-        {
-            foreach ((string group, Dictionary<string, JsonElement> values) in EnumerateSettingGroups(model))
-            {
-                await InsertSnapshotRowsAsync(values, (entry, _) => new PlayerParams
-                {
-                    Group = group, Name = entry.Key, Value = entry.Value.GetRawText(),
-                });
+                yield return Scalar(ProgressKey.BattlefieldVersion, model.Battlefield.Version);
+                yield return Scalar(ProgressKey.BattlefieldColumns, model.Battlefield.Columns);
+                yield return Scalar(ProgressKey.BattlefieldRows, model.Battlefield.Rows);
+                yield return Scalar(ProgressKey.CastleX, model.Battlefield.Castle[0]);
+                yield return Scalar(ProgressKey.CastleY, model.Battlefield.Castle[1]);
             }
 
-            List<JsonElement> clearedWaves = model.ClearedWaves ?? new();
-            await InsertSnapshotRowsAsync(clearedWaves, (value, index) => new PlayerParams
+            foreach ((string group, Dictionary<string, JsonElement> values) in EnumerateSettingGroups(model))
             {
-                Group = ClearedWavesGroup,
-                Name = index.ToString(CultureInfo.InvariantCulture),
-                Value = value.GetRawText(),
-            });
-        }
-
-        private async Task InsertDeploymentsAsync(List<GameProgressDeploymentModel> deployments)
-        {
-            await InsertSnapshotRowsAsync(deployments, (deployment, _) => new Deployment
+                int sequence = 0;
+                foreach ((string name, JsonElement value) in values)
                 {
-                    SpotIndex = deployment.SpotIndex,
-                    CellX = deployment.Cell?[0],
-                    CellY = deployment.Cell?[1],
-                    CharacterId = deployment.CharacterId,
-                    Wave = deployment.Wave,
-                });
-        }
+                    yield return new PlayerParams
+                    {
+                        Group = group, Name = name, Value = value.GetRawText(), Sequence = sequence++,
+                    };
+                }
+            }
 
-        private async Task InsertRoadsAsync(GameProgressBattlefieldModel? battlefield)
-        {
-            if (battlefield == null) { return; }
-
-            List<GameProgressRoadModel> roads = battlefield.Roads ?? new();
-            await InsertSnapshotRowsAsync(roads, (road, _) => new BattlefieldRoad
+            int index = 0;
+            foreach (JsonElement value in model.ClearedWaves ?? [])
+            {
+                yield return new PlayerParams
                 {
-                    X = road.X,
-                    Y = road.Y,
-                    Corner = road.Corner,
-                    Rotation = road.Rotation,
-                });
+                    Group = ClearedWavesGroup, Name = index.ToString(CultureInfo.InvariantCulture),
+                    Value = value.GetRawText(), Sequence = index++,
+                };
+            }
         }
+
+        private static PlayerParams Scalar(string name, object value) => new()
+        {
+            Group = ProgressGroup, Name = name, Value = Convert.ToString(value, CultureInfo.InvariantCulture),
+        };
 
         private static IEnumerable<(string Group, Dictionary<string, JsonElement> Values)> EnumerateSettingGroups(GameProgressModel model)
         {

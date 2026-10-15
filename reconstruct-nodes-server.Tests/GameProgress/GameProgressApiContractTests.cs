@@ -21,7 +21,7 @@ namespace ReconstructNodesServer.Tests.GameProgress
             "unlocked_bullet_kinds", "unlocked_auxiliary_kinds", "unlocked_character_kinds",
             "skill_suffixes", "refine_item_counts", "progression",
             "difficulty", "lifetime_enemies_defeated", "infinite_level", "cleared_waves",
-            "wave_completed",
+            "wave_completed", "revision", "expected_revision",
         };
 
         [TestMethod]

@@ -21,12 +21,13 @@ namespace ReconstructNodesServer.Tests.Services
             var (argument, repository) = CreateArgument();
             await new WeaponService(argument).Save(WeaponModel());
 
-            Assert.AreEqual("QueryFirstOrDefaultAsync", repository.Calls[0].Name);
-            Assert.Contains("WITH (UPDLOCK, HOLDLOCK)", repository.Calls[0].Sql!);
-            Assert.Contains("Status != -1", repository.Calls[0].Sql!);
-            Assert.Contains("EntryKey = @NaturalKey", repository.Calls[0].Sql!);
-            Assert.AreEqual(PlayerId, Property(repository.Calls[0].Value!, "CreateUserId"));
-            Assert.AreEqual("entry", Property(repository.Calls[0].Value!, "NaturalKey"));
+            Assert.Contains("Player WITH (UPDLOCK, HOLDLOCK)", repository.Calls[0].Sql!);
+            Assert.AreEqual("QueryFirstOrDefaultAsync", repository.Calls[2].Name);
+            Assert.Contains("WITH (UPDLOCK, HOLDLOCK)", repository.Calls[2].Sql!);
+            Assert.Contains("Status != -1", repository.Calls[2].Sql!);
+            Assert.Contains("EntryKey = @NaturalKey", repository.Calls[2].Sql!);
+            Assert.AreEqual(PlayerId, Property(repository.Calls[2].Value!, "CreateUserId"));
+            Assert.AreEqual("entry", Property(repository.Calls[2].Value!, "NaturalKey"));
             Weapon row = (Weapon)repository.Calls.Single(c => c.Name == "InsertAsync").Value!;
             Assert.AreEqual(PlayerId, row.CreateUserId);
             Assert.AreEqual("entry", row.EntryKey);
@@ -44,13 +45,13 @@ namespace ReconstructNodesServer.Tests.Services
             repository.Existing = existing;
             await new WeaponService(argument).Save(WeaponModel());
 
-            Assert.AreEqual("ExecuteAsync", repository.Calls[1].Name);
-            string update = repository.Calls[1].Sql!;
+            Assert.AreEqual("ExecuteAsync", repository.Calls[3].Name);
+            string update = repository.Calls[3].Sql!;
             Assert.Contains("WeaponKey = @WeaponKey", update);
             Assert.Contains("AND CreateUserId = @CreateUserId", update);
             Assert.DoesNotContain("Status =", update);
-            Assert.AreEqual(existing.Id, Property(repository.Calls[1].Value!, "Id"));
-            Assert.IsTrue(repository.Calls.Skip(2).All(c => c.Sql!.StartsWith("DELETE")));
+            Assert.AreEqual(existing.Id, Property(repository.Calls[3].Value!, "Id"));
+            Assert.IsTrue(repository.Calls.Skip(4).All(c => c.Sql!.StartsWith("DELETE")));
             Assert.IsFalse(repository.Calls.Any(c => c.Name is "UpdateAsync" or "InsertAsync"));
         }
 
@@ -68,9 +69,9 @@ namespace ReconstructNodesServer.Tests.Services
                 LegacyCategoryTalents = new() { ["legacy"] = new() { ["node"] = JsonSerializer.SerializeToElement(true) } },
             });
 
-            Assert.DoesNotContain("@NaturalKey", repository.Calls[0].Sql!);
-            Assert.AreEqual(exists ? "UpdateAsync" : "InsertAsync", repository.Calls[1].Name);
-            Talent row = (Talent)repository.Calls[1].Value!;
+            Assert.DoesNotContain("@NaturalKey", repository.Calls[2].Sql!);
+            Assert.AreEqual(exists ? "UpdateAsync" : "InsertAsync", repository.Calls[3].Name);
+            Talent row = (Talent)repository.Calls[3].Value!;
             Assert.AreEqual(PlayerId, row.CreateUserId);
             Assert.AreEqual(2, row.Version);
             Assert.AreEqual(3, row.TalentPoints);
@@ -111,8 +112,8 @@ namespace ReconstructNodesServer.Tests.Services
 
             int childIndex = repository.Calls.FindIndex(c => c.Value is WeaponAffix);
             Assert.IsGreaterThan(1, childIndex);
-            Assert.IsTrue(repository.Calls.Skip(2).Take(childIndex - 2).All(c => c.Sql!.StartsWith("DELETE")));
-            Weapon parent = exists ? (Weapon)repository.Existing! : (Weapon)repository.Calls[1].Value!;
+            Assert.IsTrue(repository.Calls.Skip(4).Take(childIndex - 4).All(c => c.Sql!.StartsWith("DELETE")));
+            Weapon parent = exists ? (Weapon)repository.Existing! : (Weapon)repository.Calls[3].Value!;
             Assert.AreEqual("unique", parent.UniqueKey);
             WeaponAffix affix = (WeaponAffix)repository.Calls[childIndex].Value!;
             Assert.AreEqual(parent.Id, affix.WeaponId);
@@ -158,8 +159,12 @@ namespace ReconstructNodesServer.Tests.Services
             Assert.AreEqual(PlayerId, Property(repository.Calls[0].Value!, "PlayerId"));
             var deletion = repository.Calls.First(call => call.Name == "ExecuteAsync");
             Assert.Contains("CreateUserId = @CreateUserId", deletion.Sql!);
-            Assert.IsFalse(repository.Calls.Where(call => call.Name == "ExecuteAsync")
-                .Any(call => call.Sql!.Contains("Character")));
+            foreach (var write in repository.Calls.Where(call => call.Name == "ExecuteAsync"))
+            {
+                Assert.DoesNotContain("DELETE FROM Character", write.Sql!);
+                Assert.DoesNotContain("INSERT INTO Character", write.Sql!);
+                Assert.DoesNotContain("UPDATE Character", write.Sql!);
+            }
         }
 
         [TestMethod]
@@ -190,12 +195,13 @@ namespace ReconstructNodesServer.Tests.Services
             Character row = repository.Calls.Select(call => call.Value).OfType<Character>().Single();
             Assert.AreEqual(row.Id, model.Id);
             Assert.AreEqual(PlayerId, row.CreateUserId);
-            Assert.AreEqual("entry", row.WeaponEntryKey);
-            CharacterSkillTree tree = repository.Calls.Select(call => call.Value).OfType<CharacterSkillTree>().Single();
+            Assert.IsNull(row.WeaponEntryKey, "Generic character saves must not equip a client-supplied weapon.");
+            CharacterSkillTree tree = BatchRows<CharacterSkillTree>(repository, "Trees").Single();
             Assert.AreEqual(row.Id, tree.CharacterId);
-            var nodes = repository.Calls.Select(call => call.Value).OfType<CharacterSkillNode>().ToList();
+            var nodes = BatchRows<CharacterSkillNode>(repository, "Nodes");
             Assert.HasCount(2, nodes);
-            Assert.IsTrue(nodes.All(node => node.CharacterSkillTreeId == tree.Id && node.CreateUserId == PlayerId));
+            Assert.IsTrue(nodes.All(node => node.CharacterSkillTreeId == tree.Id));
+            Assert.AreEqual(PlayerId, Property(repository.Calls.Single(call => call.Name == "ExecuteAsync").Value!, "CreateUserId"));
             Assert.AreEqual(1, nodes[1].Sequence);
             Assert.IsFalse(repository.Calls.Any(call => call.Sql?.Contains("Deployment") == true));
         }
@@ -204,18 +210,21 @@ namespace ReconstructNodesServer.Tests.Services
         public async Task Character_Update_PreservesId_AndReplacesOnlyOwnSkills()
         {
             var (argument, repository) = CreateArgument();
-            Character existing = new() { Kind = 3, CreateUserId = PlayerId };
+            Character existing = new() { Kind = 3, CreateUserId = PlayerId, WeaponEntryKey = "confirmed" };
             repository.Existing = existing;
             repository.QueryRows[typeof(Character)] = new[] { existing };
-            CharacterModel model = new() { Id = existing.Id, Kind = 3 };
+            repository.QueryRows[typeof(Guid)] = new[] { Guid.NewGuid() };
+            CharacterModel model = new() { Id = existing.Id, Kind = 3, WeaponEntryId = "stale" };
             await new CharacterService(argument).Save(model);
             Assert.AreEqual(existing.Id, model.Id);
-            Assert.IsNull(existing.WeaponEntryKey);
+            Assert.AreEqual("confirmed", existing.WeaponEntryKey, "A stale skill snapshot cannot replace equipment.");
             Assert.AreEqual(3, existing.Kind);
-            var deletions = repository.Calls.Where(call => call.Sql?.StartsWith("DELETE") == true).ToList();
-            Assert.HasCount(2, deletions);
-            Assert.IsTrue(deletions.All(call => call.Sql!.Contains("CreateUserId = @CreateUserId")));
-            Assert.IsFalse(deletions.Any(call => call.Sql!.Contains("Deployment")));
+            var write = repository.Calls.Single(call => call.Name == "ExecuteAsync");
+            Assert.Contains("DELETE FROM CharacterSkillNode WHERE CreateUserId = @CreateUserId", write.Sql!);
+            Assert.Contains("DELETE FROM CharacterSkillTree WHERE CharacterId = @CharacterId AND CreateUserId = @CreateUserId", write.Sql!);
+            Assert.AreEqual(existing.Id, Property(write.Value!, "CharacterId"));
+            Assert.IsTrue((bool)Property(write.Value!, "ReplaceChildren")!);
+            Assert.DoesNotContain("Deployment", write.Sql!);
         }
 
         [TestMethod]
@@ -241,6 +250,7 @@ namespace ReconstructNodesServer.Tests.Services
             }
             else
             {
+                existing.WeaponEntryKey = "entry";
                 model.WeaponEntryId = "entry";
                 if (reason == "equipped-weapon")
                 {
@@ -288,10 +298,10 @@ namespace ReconstructNodesServer.Tests.Services
                 return;
             }
             await new GameProgressService(argument).Save(model);
-            var row = repository.Calls.Select(call => call.Value).OfType<Deployment>().Single();
+            var row = BatchRows<Deployment>(repository, "Deployments").Single();
             Assert.AreEqual(id, row.CharacterId);
-            Assert.AreEqual(PlayerId, row.CreateUserId);
-            Assert.Contains("CreateUserId = @CreateUserId", repository.Calls[1].Sql!);
+            Assert.AreEqual(PlayerId, Property(repository.Calls.Single(call => call.Name == "ExecuteAsync").Value!, "CreateUserId"));
+            Assert.Contains("CreateUserId = @CreateUserId", repository.Calls[3].Sql!);
         }
 
         [TestMethod]
@@ -336,15 +346,17 @@ namespace ReconstructNodesServer.Tests.Services
             });
 
             Assert.Contains("WITH (UPDLOCK, HOLDLOCK)", repository.Calls[0].Sql!);
-            Assert.Contains("AchievementDetail", repository.Calls[1].Sql!);
-            Assert.IsTrue(repository.Calls.Skip(2).Take(3).All(c => c.Sql!.StartsWith("DELETE")));
-            List<AchievementDetail> details = repository.Calls.Where(c => c.Name == "InsertAsync")
-                .Select(c => c.Value).OfType<AchievementDetail>().ToList();
+            Assert.Contains("AchievementDetail", repository.Calls[3].Sql!);
+            var write = repository.Calls.Single(c => c.Name == "ExecuteAsync");
+            Assert.Contains("DELETE FROM AchievementCollected", write.Sql!);
+            Assert.Contains("DELETE FROM AchievementDetail", write.Sql!);
+            Assert.Contains("DELETE FROM Achievement WHERE", write.Sql!);
+            List<AchievementDetail> details = BatchRows<AchievementDetail>(repository, "Details");
             Assert.IsTrue(details[0].IsReward);
             Assert.AreEqual(rewardDate, details[0].RewardDate);
             Assert.IsFalse(details[1].IsReward);
             Assert.IsNull(details[1].RewardDate);
-            Assert.IsTrue(details.All(d => d.CreateUserId == PlayerId));
+            Assert.AreEqual(PlayerId, Property(write.Value!, "CreateUserId"));
         }
 
         [TestMethod]
@@ -353,7 +365,7 @@ namespace ReconstructNodesServer.Tests.Services
             var (argument, repository) = CreateArgument();
             repository.FailInsert = true;
             await Assert.ThrowsAsync<InvalidOperationException>(() => new WeaponService(argument).Save(WeaponModel()));
-            Assert.HasCount(2, repository.Calls);
+            Assert.HasCount(4, repository.Calls);
         }
 
         private static WeaponInstanceModel WeaponModel() => new()
@@ -363,6 +375,13 @@ namespace ReconstructNodesServer.Tests.Services
 
         private static object? Property(object value, string name) => value is Dapper.DynamicParameters parameters
             ? parameters.Get<object?>(name) : value.GetType().GetProperty(name)!.GetValue(value);
+
+        internal static List<T> BatchRows<T>(RecordingRepository repository, string parameter)
+        {
+            object arguments = repository.Calls.Single(call =>
+                call.Name == "ExecuteAsync" && call.Value?.GetType().GetProperty(parameter) != null).Value!;
+            return JsonSerializer.Deserialize<List<T>>((string)Property(arguments, parameter)!)!;
+        }
 
         private static Lazy<T> UnusedLazy<T>() => new(() => throw new InvalidOperationException($"Unexpected dependency: {typeof(T).Name}"));
 
@@ -396,6 +415,7 @@ namespace ReconstructNodesServer.Tests.Services
             public Dictionary<Type, object> FirstRows { get; } = new();
             public Dictionary<Type, object> QueryRows { get; } = new();
             public bool FailInsert { get; set; }
+            public bool FailExecute { get; set; }
 
             protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
             {
@@ -405,10 +425,11 @@ namespace ReconstructNodesServer.Tests.Services
                 bool query = name is "QueryAsync" or "QueryFirstOrDefaultAsync" or "ExecuteAsync";
                 Calls.Add((name, query ? (string)args[0]! : null, query ? args[1] : args[0]));
                 if (name == "InsertAsync" && FailInsert) { throw new InvalidOperationException("Insert failed"); }
+                if (name == "ExecuteAsync" && FailExecute) { throw new InvalidOperationException("Execute failed"); }
                 object? result = name switch
                 {
                     "QueryFirstOrDefaultAsync" => FirstRows.TryGetValue(targetMethod.GetGenericArguments()[0], out object? first)
-                        ? first : Existing,
+                        ? first : Existing != null && targetMethod.GetGenericArguments()[0].IsInstanceOfType(Existing) ? Existing : null,
                     "QueryAsync" => QueryRows.TryGetValue(targetMethod.GetGenericArguments()[0], out object? rows)
                         ? rows : Array.CreateInstance(targetMethod.GetGenericArguments()[0], 0),
                     "InsertAsync" or "ExecuteAsync" => 1,

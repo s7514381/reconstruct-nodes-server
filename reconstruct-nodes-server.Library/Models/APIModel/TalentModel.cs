@@ -8,7 +8,7 @@ namespace ReconstructNodesServer.Library.Models
     /// 天賦樹存檔快照，欄位沿用前端 talent_tree_manager 的 payload（snake_case）。
     /// 節點值保留為原始 JSON，由服務層檢查型別。
     /// </summary>
-    public class TalentModel
+    public class TalentModel : RevisionedSnapshot
     {
         [JsonPropertyName("version")]
         public int Version { get; set; }

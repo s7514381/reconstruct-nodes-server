@@ -38,8 +38,8 @@ namespace ReconstructNodesServer.Services
             var payload = new { request.SessionId, request.EnemyIndex };
             return gold.Execute(request.RequestId, "enemy_kill", payload, async account =>
             {
-                var active = await ReadParameter("economy", "active_wave");
-                if (active?.Value != request.SessionId.ToString()) { throw new BusinessArgumentException(ApiMessageKeys.EconomySessionExpired); }
+                // A transition does not revoke rewards from the prior owned session.
+                // Ownership, bounded enemy indices and the unique kill payload still apply.
                 EconomyRequest? start = await QueryFirstAsync<EconomyRequest?>(
                     "SELECT * FROM EconomyRequest WHERE CreateUserId=@CreateUserId AND RequestId=@SessionId AND Operation='wave_start'",
                     new { CreateUserId = _playerId, request.SessionId });

@@ -12,10 +12,21 @@ namespace ReconstructNodesServer.Services
         where DBModel : ModelBase, new()
         where Snapshot : class
     {
+        protected RevisionService Revisions { get; } = new(argument);
+
         public virtual async Task Save(Snapshot model)
         {
             ValidateSnapshot(model);
+            string domain = typeof(Snapshot).Name;
+            if (model is IRevisionedSnapshot versioned)
+            {
+                await Revisions.Check(domain, versioned.ExpectedRevision, RevisionService.ScopesFor(versioned));
+            }
             await SaveSnapshot(model);
+            if (model is IRevisionedSnapshot saved && saved.ExpectedRevision.HasValue)
+            {
+                saved.Revision = await Revisions.Advance(domain, RevisionService.ScopesFor(saved));
+            }
         }
 
         protected abstract void ValidateSnapshot(Snapshot model);

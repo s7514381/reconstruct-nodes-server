@@ -1,3 +1,4 @@
+using System.Text.Json;
 using ReconstructNodesServer.Argument;
 using ReconstructNodesServer.Library.DBModel;
 using ReconstructNodesServer.Library.Models;
@@ -21,6 +22,7 @@ namespace ReconstructNodesServer.Services
         /// </summary>
         public virtual async Task<AchievementProgressModel?> Get()
         {
+            await LockPlayerAsync();
             List<Achievement> groups = await QueryGroupsAsync(lockRows: false);
             if (groups.Count == 0) { return null; }
 
@@ -29,6 +31,7 @@ namespace ReconstructNodesServer.Services
 
             return new AchievementProgressModel
             {
+                Revision = await Revisions.Read(nameof(AchievementProgressModel)),
                 Groups = groups.Select(group => new AchievementGroupModel
                 {
                     Name = group.Name,
@@ -60,35 +63,67 @@ namespace ReconstructNodesServer.Services
                 .Where(d => d.IsReward)
                 .ToDictionary(d => d.Name);
 
-            await DeleteSnapshotRowsAsync<AchievementCollected>();
-            await DeleteSnapshotRowsAsync<AchievementDetail>();
-            await DeleteSnapshotRowsAsync<Achievement>();
-
-            await InsertSnapshotRowsAsync(model.Groups ?? new(), (group, _) => new Achievement
+            List<Achievement> groups = [];
+            List<AchievementDetail> details = [];
+            List<AchievementCollected> collected = [];
+            foreach (AchievementGroupModel group in model.Groups ?? [])
+            {
+                Achievement row = new() { Name = group.Name, Total = group.Total, Sequence = groups.Count };
+                groups.Add(row);
+                int sequence = 0;
+                foreach (AchievementItemModel item in group.Items ?? [])
                 {
-                    Name = group.Name,
-                    Total = group.Total,
-                }, async (group, row) =>
+                    claimed.TryGetValue(item.Name, out AchievementDetail? previous);
+                    details.Add(new AchievementDetail
+                    {
+                        AchievementId = row.Id, Name = item.Name, Target = item.Target,
+                        IsReward = previous != null, RewardDate = previous?.RewardDate, Sequence = sequence++,
+                    });
+                }
+                sequence = 0;
+                foreach (string name in group.Collected ?? [])
                 {
-                    await InsertSnapshotRowsAsync(group.Items ?? new(), (item, _) =>
+                    collected.Add(new AchievementCollected
                     {
-                        claimed.TryGetValue(item.Name, out AchievementDetail? previous);
-                        return new AchievementDetail
-                        {
-                            AchievementId = row.Id,
-                            Name = item.Name,
-                            Target = item.Target,
-                            IsReward = previous != null,
-                            RewardDate = previous?.RewardDate,
-                        };
+                        AchievementId = row.Id, Name = name, Sequence = sequence++,
                     });
+                }
+            }
 
-                    await InsertSnapshotRowsAsync(group.Collected ?? new(), (name, _) => new AchievementCollected
-                    {
-                        AchievementId = row.Id,
-                        Name = name,
-                    });
-                });
+            // One command retains the caller's transaction and avoids a network round trip per row.
+            await ExecuteAsync("""
+                DELETE FROM AchievementCollected WHERE CreateUserId = @CreateUserId;
+                DELETE FROM AchievementDetail WHERE CreateUserId = @CreateUserId;
+                DELETE FROM Achievement WHERE CreateUserId = @CreateUserId;
+
+                INSERT INTO Achievement (Id, Sequence, CreateDate, CreateUserId, Status, Name, Category, Total, DayTotal)
+                SELECT Id, Sequence, CreateDate, @CreateUserId, Status, Name, Category, Total, DayTotal
+                FROM OPENJSON(@Groups) WITH (
+                    Id uniqueidentifier, Sequence int, CreateDate datetime2, Status int,
+                    Name nvarchar(max), Category int, Total real, DayTotal real);
+
+                INSERT INTO AchievementDetail
+                    (Id, Sequence, CreateDate, CreateUserId, Status, AchievementId, Name, Target,
+                     IsReward, RewardDate, GainCoins, Type, Version)
+                SELECT Id, Sequence, CreateDate, @CreateUserId, Status, AchievementId, Name, Target,
+                       IsReward, RewardDate, GainCoins, Type, Version
+                FROM OPENJSON(@Details) WITH (
+                    Id uniqueidentifier, Sequence int, CreateDate datetime2, Status int,
+                    AchievementId uniqueidentifier, Name nvarchar(max), Target int, IsReward bit,
+                    RewardDate datetime2, GainCoins real, Type int, Version nvarchar(max));
+
+                INSERT INTO AchievementCollected (Id, Sequence, CreateDate, CreateUserId, Status, AchievementId, Name)
+                SELECT Id, Sequence, CreateDate, @CreateUserId, Status, AchievementId, Name
+                FROM OPENJSON(@Collected) WITH (
+                    Id uniqueidentifier, Sequence int, CreateDate datetime2, Status int,
+                    AchievementId uniqueidentifier, Name nvarchar(max));
+                """, new
+            {
+                CreateUserId = _playerId,
+                Groups = JsonSerializer.Serialize(groups),
+                Details = JsonSerializer.Serialize(details),
+                Collected = JsonSerializer.Serialize(collected),
+            });
         }
 
         /// <summary>
@@ -97,6 +132,7 @@ namespace ReconstructNodesServer.Services
         public virtual async Task ClaimReward(string achievementItemId)
         {
             if (string.IsNullOrWhiteSpace(achievementItemId)) { throw new BusinessArgumentException(ApiMessageKeys.AchievementIdRequired); }
+            await LockPlayerAsync();
 
             List<Achievement> groups = await QueryGroupsAsync(lockRows: true);
             if (groups.Count == 0) { throw new BusinessOperationException(ApiMessageKeys.AchievementMissing); }
@@ -117,6 +153,7 @@ namespace ReconstructNodesServer.Services
             detail.RewardDate = DateTime.Now;
             await UpdateAsync(detail);
             await itemService.AdjustAmount(RewardItemKey, RewardAmount);
+            await Revisions.Advance(nameof(AchievementProgressModel));
         }
 
         private Task<List<Achievement>> QueryGroupsAsync(bool lockRows) =>

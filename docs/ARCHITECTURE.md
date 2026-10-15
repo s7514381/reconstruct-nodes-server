@@ -94,8 +94,9 @@ EF Core Migration、SqlClient 連線池與非 DB 的 semaphore 不受此機制�
 
 獨立快照 DTO 不需要繼承 DBModel：`_SnapshotService<DBModel, Snapshot>` 沿用
 `_ModelService<DBModel, DBModel>`，提供 `Save(Snapshot)`，先呼叫 `ValidateSnapshot`，
-再呼叫 `SaveSnapshot`。Character、Weapon、Talent、GameProgress、AchievementProgress 的公開 Save
-皆為真正 override，委派基底執行此流程，客製化驗證及寫入位於對應 hooks。
+再呼叫 `SaveSnapshot`。Character、Weapon、Talent、AchievementProgress 的公開 Save
+委派基底執行此流程；GameProgress 的 override 先驗證，再於 `SaveSnapshot` 內依交易回執
+處理 revision 與部署扣款。客製化驗證及寫入位於對應 hooks。
 Weapon 的詞綴與特殊屬性仍在 `SaveSnapshot` 開始時完整解析，早於任何資料庫操作。
 
 `UpsertSnapshotParentAsync` 共用本人父列的 `UPDLOCK, HOLDLOCK` 查詢及新增／更新分支。
@@ -103,6 +104,12 @@ Weapon 使用 EntryKey 定位，透過 `UpdateSnapshotFieldsAsync` 僅更新 Wea
 Rarity、UniqueKey，WHERE 保留 Id 與目前玩家；不更新 EntryKey、Status 或建立資訊。
 Talent 以玩家定位、Character 以 Kind 定位，仍使用完整 UpdateAsync。
 GameProgress 與 AchievementProgress 保留各自的整份覆寫策略，不使用父表 upsert。
+兩者及 Character 的技能子列替換先建立具型別列（含 GUID、建立時間及各集合獨立 Sequence），再以 JSON 參數和
+`OPENJSON ... WITH` 在單一 SQL command 中刪除及集合式插入；不再每列往返資料庫。
+SQL 的寫入擁有者固定取目前玩家，不信任 JSON 的 CreateUserId，所有刪除同樣限制本人。
+成就仍先鎖群組並讀取已領獎狀態，重建時只保留伺服器的領獎紀錄；
+進度仍保留金幣與伺服器解鎖欄位，部署驗證、扣款及冪等回執的先後順序不變。
+空集合仍執行對應清除，後段插入失敗由原交易回滾，不以提早回覆或延後保存降低時間。
 所有快照儲存仍需由 Controller 的交易包裝呼叫，不在 Service 新增交易。
 
 快照基類只集中持久化機制：表名與關聯鍵沿用 `CommonUtility` 的 Table／Relation metadata，
@@ -118,8 +125,8 @@ GameProgress 與 AchievementProgress 保留各自的整份覆寫策略，不使�
 | `QuerySnapshotChildrenAsync<TChild, TParent>(parentIds?, activeChildrenOnly?, activeParentsOnly?)` | 批次父子關聯、雙層擁有權、Sequence 排序；Weapon、Talent、Character、AchievementProgress 共用，不新增逐父查詢 |
 | `DeleteSnapshotRowsAsync<T>()` / `DeleteSnapshotChildrenAsync<TChild, TParent>(parentId)` | 型別安全的本人列／子列硬刪除，委派既有 DeleteOwnedRowsAsync |
 | `DeleteSnapshotDescendantsAsync<TChild, TParent, TAncestor>(ancestorId)` | Weapon 詞綴值與 Character 技能節點共用；先刪孫列再刪子列，內外層皆檢查 CreateUserId，清理時不排除停用列 |
-| `InsertSnapshotRowAsync<TRow>(row)` | 統一 CreateUserId，不變更 Sequence；進度純量仍保留 null 序號 |
-| `InsertSnapshotRowsAsync<TInput, TRow>(inputs, map, afterInsert?)` | 每個集合序號從零開始，設定本人擁有權；依序插入後才回呼寫入下一層。五個服務皆使用，父列 Id 與例外傳遞時機不變 |
+| `InsertSnapshotRowAsync<TRow>(row)` | 統一 CreateUserId，不變更 Sequence；核心初始化與父表 upsert 等單列寫入使用 |
+| `InsertSnapshotRowsAsync<TInput, TRow>(inputs, map, afterInsert?)` | 每個集合序號從零開始，設定本人擁有權；Weapon、Talent 依序插入後才回呼寫入下一層。Character 技能子列、GameProgress、AchievementProgress 改用各領域集合式 SQL，進度純量仍保留 null 序號 |
 
 Character/GetList（Get 也委派 GetList）是核心取得入口：在 controller 交易內先取得
 Player 的 UPDLOCK/HOLDLOCK，再檢查本人有效 Character 清單；缺少 kind=3 才新增
@@ -139,8 +146,9 @@ Shop Catalog 維持一般三職業，CharacterController 只公開 GetList/Get/S
 後續於 2026-10-14 獲明確授權後，已使用設定的本機開發 DB 執行該聚焦 SQL rollback
 測試，1/1 通過。新增 opt-in `CoreHttpIntegrationTests`，透過單一隨機訪客及自有
 HTTP backend／記憶體 Azurite 驗證核心初始配置、GUID、武器與技能保存、空技能與還原配置
-跨兩次真實重新登入皆保留，1/1 通過。武器只在 fixture 玩家下經 WeaponService
-交易建立；finally 停止自有程序、精準刪除該玩家與子資料，再查驗所有 CreateUserId
+跨兩次真實重新登入皆保留，當時 1/1 通過。本次 runner 已改成 fixture 玩家下經
+Weapon/Acquire（含重播）與 Character/EquipWeapon 建立／穿裝，**尚未重新執行真 HTTP fixture**；
+finally 停止自有程序、精準刪除該玩家與子資料，再查驗所有 CreateUserId
 實體表與 fixture ClientId 無殘留。未執行 migration、未使用既有帳號或停止共享服務。
 重跑命令、環境前提及強制終止限制見 README 的核心 SQL／HTTP fixture 整合驗證。
 
@@ -190,7 +198,7 @@ GameProgress 仍先鎖玩家、驗證角色，再由 GoldService 的 RequestId �
 
 例外是 DEBUG 的 `Seed`：直接呼叫 Service，不使用上述交易包裝。
 `BaseApiController.DeleteByKeyAsync` 共用空鍵檢查、交易與 `BackendApiResult<int>` 回應，
-供 `ItemController.Delete`、`WeaponController.Delete` 使用。
+供 `ItemController.Delete` 使用；武器不再暴露通用 Delete，改由批次分解 action 驗證並回執。
 
 ### 3.1 子類別覆寫情況
 
@@ -319,7 +327,7 @@ Step 4：依需要覆寫 `SetModel`、`ModelSave`、`ModelDelete`，或在 Contr
 `Save` / `SaveData` 的存在性查詢（`GetExistIdSet`）已限定為目前玩家（`CreateUserId`），避免以他人的 Id 覆寫資料。查無此列時會改走新增路徑，結果依實體而不同：
 
 - **角色**：他人的 Id 不列入更新集合，會走 `InsertModel`；若資料庫已有相同主鍵，預期交易回滾並回傳 400，仍待執行驗證。
-- **武器**：`WeaponService.Save` 以 `(CreateUserId, EntryKey)` 查既有列；API 的 `Id` 是 EntryKey，不是資料庫 GUID。不同玩家可有相同 EntryKey，各自寫入本人列。
+- **武器**：低階持久化以 `(CreateUserId, EntryKey)` 定位；API 的 `Id` 是 EntryKey，不是資料庫 GUID。公開寫入只透過 `WeaponCommandService` 的取得／精煉／批次分解，取得拒絕任何既有 EntryKey（含 tombstone），不提供通用 upsert API。
 
 武器與道具以自然鍵刪除本人資料，查無本人列通常回 `Data = 0`；武器仍會先檢查本人的裝備參照。通用 `DeleteModel` 則略過非本人 Id。
 
@@ -374,7 +382,7 @@ Step 4：依需要覆寫 `SetModel`、`ModelSave`、`ModelDelete`，或在 Contr
 | `POST GameProgress/Save` | `AuthorizeApiController` | 是 | Body `GameProgressModel`，覆寫進度、部署與道路；不更動角色及其配置。部署使用 `character_id` 引用本人角色。 |
 | `POST Character/GetList` | `AuthorizeApiController` | 是 | 讀取本人擁有角色，含目前武器與技能樹；交易內冪等補齊 kind=3 核心（空手、初始火球 kind=1），故新帳號至少回傳核心。 |
 | `POST Character/Get?id=<GUID>` | `AuthorizeApiController` | 是 | 讀取本人單一角色；不存在或非本人角色回 404 envelope。 |
-| `POST Character/Save` | `AuthorizeApiController` | 是 | Body `CharacterModel`，只更新已擁有角色，必須指定 `id` 並驗證本人及種類；成功 Data 為穩定角色 GUID。不能任意建立角色。 |
+| `POST Character/Save` | `AuthorizeApiController` | 是 | Body `CharacterModel`，只更新已擁有角色的技能配置，保留權威武器引用；必須指定 `id` 並驗證本人及種類；成功 Data 為穩定角色 GUID。不能任意建立角色或穿卸裝。 |
 | `POST Shop/GetCatalog` | `AuthorizeApiController` | 是 | 回傳抽卡價格與角色／碎片／基礎武器對應，規則由後端持有。 |
 | `POST Shop/GetGold` | `AuthorizeApiController` | 是 | 回傳後端金幣餘額；新玩家初始 1200。 |
 | `POST Shop/Draw` | `AuthorizeApiController` | 是 | Body `{request_id, count}`；只支援單抽與十連，後端抽選、扣款、建立角色及普通武器或發碎片，同一交易。 |
@@ -384,8 +392,10 @@ Step 4：依需要覆寫 `SetModel`、`ModelSave`、`ModelDelete`，或在 Contr
 | `POST Item/AdjustAmount` | `AuthorizeApiController` | 是 | Body `ItemDeltaRequest {ItemKey, Delta, Category?}`，對既有數量加上 `Delta`（可為負）。數量歸零即軟刪除。非冪等，見 10.3。 |
 | `POST Item/Delete` | `AuthorizeApiController` | 是 | Body `ItemKeyRequest {ItemKey}`，軟刪除單一物品列。 |
 | `POST Weapon/GetInstanceList` | `AuthorizeApiController` | 是 | 回傳武器列表，`Id` 等於 `EntryKey`；無資料回 200 空陣列。 |
-| `POST Weapon/Save` | `AuthorizeApiController` | 是 | Body `WeaponInstanceModel`，以其 `id` 作為 EntryKey，在本人名下 upsert；成功 Data 為該 id。 |
-| `POST Weapon/Delete` | `AuthorizeApiController` | 是 | Body `EntryKeyRequest {EntryKey}`，軟刪除。仍被有效角色裝備參照時回 400 envelope，不刪除。重複呼叫安全（冪等）。 |
+| `POST Weapon/Acquire` | `AuthorizeApiController` | 是 | `{request_id, weapon}`，只取得新 EntryKey，回 `CommandReceipt<WeaponInstanceModel>`。 |
+| `POST Weapon/Refine` | `AuthorizeApiController` | 是 | `{request_id, weapon_entry_id, crystal_id}`，原子扣材料及伺服器精煉，回 `CommandReceipt<WeaponRefineSnapshot>`。 |
+| `POST Weapon/Disassemble` | `AuthorizeApiController` | 是 | `{request_id, weapon_entry_ids}`，去重批次分解、略過裝備中／不存在實例，回 `CommandReceipt<WeaponDisassembleSnapshot>`，無獎勵。 |
+| `POST Character/EquipWeapon` | `AuthorizeApiController` | 是 | `{request_id, character_id, weapon_entry_id}`，null 卸下；只改武器引用，不寫技能，回 `CommandReceipt<CharacterModel>`。 |
 | `POST AchievementProgress/Get` | `AuthorizeApiController` | 是 | 讀取成就進度；無群組資料回 404 envelope。 |
 | `POST AchievementProgress/Save` | `AuthorizeApiController` | 是 | Body `AchievementProgressModel`，以整份快照覆寫。已領取的項目保留領取狀態，請求中的 `is_reward` 會被忽略。 |
 | `POST AchievementProgress/ClaimReward` | `AuthorizeApiController` | 是 | Body `AchievementClaimRequest {achievement_item_id}`。在同一交易內標記已領取並發放 `diamond` ×1；伺服器信任已儲存的 `Total`，因此客戶端須先呼叫 `AchievementProgress/Save`。 |
@@ -397,8 +407,8 @@ Step 4：依需要覆寫 `SetModel`、`ModelSave`、`ModelDelete`，或在 Contr
 | 舊 URL（POST） | 新 URL（POST） |
 | --- | --- |
 | `Weapon/GetWeaponList` | `Weapon/GetInstanceList` |
-| `Weapon/SaveWeapon` | `Weapon/Save` |
-| `Weapon/DeleteWeapon` | `Weapon/Delete` |
+| `Weapon/SaveWeapon`、`Weapon/Save` | 已移除，取得使用 `Weapon/Acquire`；更新由明確業務 action 負責 |
+| `Weapon/DeleteWeapon`、`Weapon/Delete` | 已移除，使用 `Weapon/Disassemble` |
 | `Talent/GetTalent` | `Talent/GetSnapshot` |
 | `Talent/SaveTalent` | `Talent/Save` |
 | `Item/GetItemList` | `Item/GetInStockList` |
@@ -418,11 +428,11 @@ Step 4：依需要覆寫 `SetModel`、`ModelSave`、`ModelDelete`，或在 Contr
 
 - 讀取結果的區分：object 型 endpoint（`GameProgress`、`Talent`、`AchievementProgress`）無資料時回 HTTP 404，且 envelope 的 `Status` 為 404，代表「尚未建立」。不含 envelope 的 404（例如路由不存在）由客戶端視為讀取失敗，不可當成無資料。
 - 清單型 endpoint（`Character`、`Item`、`Weapon`）無資料時回 200 空陣列。
-- 寫入（`Save*`、`AdjustAmount`、`Item/Delete`、`Weapon/Delete`、`ClaimReward`）包在 `TransactionFunc` 交易內；交易失敗回 400 envelope（`Success = false`）。Character 與 GameProgress 讀取也開交易並取得共用玩家鎖，避免讀到替換明細的中間狀態；其他讀取不因此改變。
+- 寫入（`Save*`、`AdjustAmount`、`Item/Delete`、武器業務 action、`ClaimReward`）包在 request-scoped 交易內；Character 與 GameProgress 讀取也開交易並取得共用玩家鎖，避免讀到替換明細的中間狀態；其他讀取不因此改變。武器命令使用 `TransactionResultAsync` 沿用既有錯誤分類與 envelope。
 - 冪等性：
-  - `GameProgressService.Save`（端點 `GameProgress/Save`）為整份覆寫，重送安全。以 `Player` 列的 `UPDLOCK, HOLDLOCK` 序列化（與 `Weapon/Delete` 共用），再以實體 `DELETE`（非軟刪除）清除此玩家的子表列與 `game_progress*` 的 `PlayerParams` 列後重新寫入。進度沒有父列。
+  - `GameProgressService.Save`（端點 `GameProgress/Save`）為整份覆寫，重送安全。以 `Player` 列的 `UPDLOCK, HOLDLOCK` 序列化（與武器業務命令共用），再以實體 `DELETE`（非軟刪除）清除此玩家的子表列與 `game_progress*` 的 `PlayerParams` 列後重新寫入。進度沒有父列。
   - `TalentService.Save` 以 `UPDLOCK, HOLDLOCK` 鎖定父列後更新或新增，再實體刪除並重建子列。`AchievementProgressService.Save`（端點 `AchievementProgress/Save`）先鎖定群組並記錄已領取狀態，再實體刪除本人群組與子列後全部重建；保留仍存在之同名項目的領取狀態。這是領域快照覆寫，不保證重送後 DB Id／CreateDate 不變。
-  - `WeaponService.Save` 依 `EntryKey` upsert，重送安全；`Weapon/Delete` 重複呼叫安全，但仍被裝備的武器會被拒絕（400）。
+  - 武器寫入僅公開取得／精煉／批次分解 action，與 Character/EquipWeapon 共用玩家鎖及永久回執；不要求整域 checkpoint，禁止用舊 Save/Delete 繞過。詳細意圖比對、亂序回執與材料交易規則見 [WEAPON-CONTRACTS](WEAPON-CONTRACTS.md)。
   - `CharacterService.Save` 只更新本人已擁有的角色，保留角色父列 Id，整份替換該角色技能樹／節點。角色可未部署即可儲存；不改其他角色或進度，不能建立角色。
   - `ItemService.AdjustAmount`（端點 `Item/AdjustAmount`）非冪等。若網路逾時但伺服器已套用，重送會重複加上增量。客戶端應以 `Item/GetInStockList` 端點對帳，不應直接重送。
   - `ClaimReward` 不重複發獎；已領取再次呼叫回 400，而非再次回成功。
@@ -449,7 +459,7 @@ Step 4：依需要覆寫 `SetModel`、`ModelSave`、`ModelDelete`，或在 Contr
 角色與部署的新契約：
 - 角色 `id` 為穩定 GUID，`kind` 為種類，`name` 為名稱，`weapon_entry_id` 空字串表示卸下，`skill_trees` 為完整技能樹清單。只有 Shop/Draw 能建立擁有角色；Character/Save 拒絕未指定 Id 或尚未擁有的角色。裝備的其他輸出欄位由 Weapon 目前資料組出，不採信請求中的武器屬性。
 - 每棵技能樹含 `kind`、`auxiliary_nodes`；節點 `type = auxiliary` 必須有 `loot_id`，`type = active` 必須有 `kind`。`auxiliary_gem_ids` 僅為推導輸出。
-- 角色 `weapon_quality_version` 保存前端需要的裝備版本中繼資料，卸下武器時清除。
+- 角色 `weapon_quality_version` 由 EquipWeapon 設為現行 2，卸下時清除；不採信 legacy Save 的武器引用或此中繼資料。
 - GameProgress 移除 `character_weapons`；部署只含 `character_id`、`spot_index`、`wave` 與可選 `cell`，不再含角色名稱／種類／武器／技能快照。
 - 前端需先載入角色清單，再依部署的 `character_id` 使用角色目前武器／技能。角色改裝會影響後續讀取的所有部署，不保存部署歷史配置。舊前端契約不相容。
 - 解鎖群組仍是全域進度設定，不自動等同角色擁有資料；角色不必有 GameProgress 存檔才能儲存。

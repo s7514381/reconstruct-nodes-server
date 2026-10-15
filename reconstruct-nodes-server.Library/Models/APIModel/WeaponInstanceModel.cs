@@ -8,7 +8,7 @@ namespace ReconstructNodesServer.Library.Models
     /// 單把背包武器快照，欄位沿用前端存檔 JSON（snake_case），前端可直接送出既有字典。
     /// affixes 元素為純字串（未擲骰）或 {id, values}；unique 為空字典或 {unique_id, values}。
     /// </summary>
-    public class WeaponInstanceModel
+    public class WeaponInstanceModel : RevisionedSnapshot
     {
         [JsonPropertyName("id")]
         public string Id { get; set; } = string.Empty;
