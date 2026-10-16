@@ -6,6 +6,8 @@ namespace ReconstructNodesServer.Library.Models
         public const string AchievementMissing = "backend.achievement.missing";
         public const string AchievementSaveFailed = "backend.achievement.save_failed";
         public const string AchievementClaimFailed = "backend.achievement.claim_failed";
+        public const string AchievementResetFailed = "backend.achievement.reset_failed";
+        public const string AchievementResetUnavailable = "backend.achievement.reset_unavailable";
         public const string CharacterReadFailed = "backend.character.read_failed";
         public const string CharacterMissing = "backend.character.missing";
         public const string CharacterSaveFailed = "backend.character.save_failed";

@@ -27,7 +27,7 @@ public class CommandRequest
     public Guid RequestId { get; set; }
 }
 
-public class ForegroundRequest : CommandRequest
+public class ExpectedRevisionRequest : CommandRequest
 {
     [JsonPropertyName("expected_revision")]
     [JsonRequired]
@@ -50,7 +50,7 @@ public sealed class WeaponEquipRequest : CommandRequest
     public string? WeaponEntryId { get; set; }
 }
 
-public sealed class SkillLoadoutRequest : ForegroundRequest
+public sealed class SkillLoadoutRequest : ExpectedRevisionRequest
 {
     [JsonPropertyName("character_id")]
     public Guid CharacterId { get; set; }
@@ -59,13 +59,22 @@ public sealed class SkillLoadoutRequest : ForegroundRequest
     public List<GameProgressSkillLoadoutModel> SkillTrees { get; set; } = [];
 }
 
-public sealed class AchievementSnapshotClaimRequest : ForegroundRequest
+public sealed class AchievementClaimRequest : ExpectedRevisionRequest
 {
     [JsonPropertyName("achievement_item_id")]
     public string AchievementItemId { get; set; } = "";
 }
 
-public sealed class TalentNodeCommandRequest : ForegroundRequest
+/// <summary>領取成就的單一回執：成就推導快照與領取後的在庫物品，客戶端不必再讀 Item 清單。</summary>
+public sealed class AchievementClaimSnapshot
+{
+    [JsonPropertyName("progress")]
+    public AchievementProgressModel Progress { get; set; } = new();
+    [JsonPropertyName("items")]
+    public List<ReconstructNodesServer.Library.DBModel.Item> Items { get; set; } = [];
+}
+
+public sealed class TalentNodeCommandRequest : ExpectedRevisionRequest
 {
     [JsonPropertyName("tree_id")]
     public string TreeId { get; set; } = "";
@@ -73,21 +82,21 @@ public sealed class TalentNodeCommandRequest : ForegroundRequest
     public string NodeId { get; set; } = "";
 }
 
-public sealed class TalentResetRequest : ForegroundRequest
+public sealed class TalentResetRequest : ExpectedRevisionRequest
 {
     // null resets all trees.
     [JsonPropertyName("tree_id")]
     public string? TreeId { get; set; }
 }
 
-public sealed class DeploymentCommandRequest : ForegroundRequest
+public sealed class DeploymentCommandRequest : ExpectedRevisionRequest
 {
     [JsonPropertyName("deployment_log")]
     [JsonRequired]
     public List<GameProgressDeploymentModel> DeploymentLog { get; set; } = [];
 }
 
-public sealed class BattlefieldCommandRequest : ForegroundRequest
+public sealed class BattlefieldCommandRequest : ExpectedRevisionRequest
 {
     [JsonPropertyName("battlefield")]
     [JsonRequired]
@@ -97,7 +106,7 @@ public sealed class BattlefieldCommandRequest : ForegroundRequest
     public List<GameProgressDeploymentModel>? DeploymentLog { get; set; }
 }
 
-public sealed class WaveTransitionRequest : ForegroundRequest
+public sealed class WaveTransitionRequest : ExpectedRevisionRequest
 {
     [JsonPropertyName("wave")]
     public int Wave { get; set; }
@@ -161,12 +170,6 @@ public sealed class RevisionVector
     public long Achievement { get; set; }
     [JsonPropertyName("weapon")]
     public long Weapon { get; set; }
-}
-
-public sealed class ProgressSaveResult : GoldOperationResult
-{
-    [JsonPropertyName("revision")]
-    public long Revision { get; set; }
 }
 
 public sealed class CommandReceipt<T>

@@ -9,6 +9,7 @@ namespace ReconstructNodesServer.Controllers
     {
         [HttpPost]
         public Task<IActionResult> PurchaseSkill(SkillPurchaseRequest request) =>
-            TransactionResultAsync<GoldOperationResult>(() => service.PurchaseSkill(request), ApiMessageKeys.EconomySkillFailed);
+            TransactionResultAsync<GoldOperationResult>(() => service.PurchaseSkill(request), ApiMessageKeys.EconomySkillFailed,
+                commandOwnsTransaction: true);
     }
 }

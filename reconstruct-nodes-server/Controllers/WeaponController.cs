@@ -19,6 +19,7 @@ namespace ReconstructNodesServer.Controllers
 
         [HttpPost]
         public Task<IActionResult> Disassemble(WeaponDisassembleRequest request) =>
-            TransactionResultAsync(() => commands.Disassemble(request), ApiMessageKeys.WeaponDeleteFailed);
+            TransactionResultAsync(() => commands.Disassemble(request), ApiMessageKeys.WeaponDeleteFailed,
+                commandOwnsTransaction: true);
     }
 }

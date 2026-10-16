@@ -39,7 +39,7 @@ internal static partial class Fixture
     public static async Task Run(string baseline, string connection, List<double> rtt,
         bool concurrentOnly = false, bool regressionOnly = false, bool itemOnly = false, bool readsOnly = false,
         bool economyOnly = false, bool savesOnly = false, bool shopOnly = false, bool refineOnly = false,
-        bool backgroundOnly = false)
+        bool backgroundOnly = false, bool skillsOnly = false, bool talentOnly = false)
     {
         string clientId = $"core-http-fixture-{Guid.NewGuid():N}";
         string reportDirectory = Path.Combine(Path.GetDirectoryName(baseline)!,
@@ -55,9 +55,9 @@ internal static partial class Fixture
         List<string> selectedChecks = [];
         var refineDiagnostics = new RefineDiagnostics();
         bool selectedRegressionsPassed = false;
-        string mode = backgroundOnly ? "background" : refineOnly ? "refine" : shopOnly ? "shop" : economyOnly ? "economy" : savesOnly ? "saves" : readsOnly ? "reads" :
+        string mode = talentOnly ? "talent" : skillsOnly ? "skills" : backgroundOnly ? "background" : refineOnly ? "refine" : shopOnly ? "shop" : economyOnly ? "economy" : savesOnly ? "saves" : readsOnly ? "reads" :
             itemOnly ? "item" : regressionOnly ? "regression" : concurrentOnly ? "concurrent" : "latency";
-        string[] selectedRoutes = backgroundOnly ? ["GameProgress/BackgroundSync (all)"] : shopOnly ? ShopRoutes : economyOnly ? EconomyRoutes : savesOnly ? SaveRoutes : readsOnly ? ReadRoutes : [];
+        string[] selectedRoutes = talentOnly ? TalentRoutes : skillsOnly ? SkillRoutes : backgroundOnly ? ["GameProgress/BackgroundSync (all)"] : shopOnly ? ShopRoutes : economyOnly ? EconomyRoutes : savesOnly ? SaveRoutes : readsOnly ? ReadRoutes : [];
         bool cleaned = false;
         bool correlationVerified = false;
         try
@@ -88,6 +88,8 @@ internal static partial class Fixture
                 ["SmtpConfig__Password"] = "unused-fixture-password",
                 ["Logging__LogLevel__Default"] = "Warning",
                 ["API_REQUEST_TIMING"] = "1",
+                // The fixture backend shares the real database; it must never run the retention purge.
+                ["EconomyRequestRetention__Days"] = "0",
             }, true, Path.Combine(baseline, "reconstruct-nodes-server.dll"),
                 "--urls", $"http://127.0.0.1:{httpPort}");
             await Ready(backend, httpPort);
@@ -107,6 +109,31 @@ internal static partial class Fixture
                 await MeasureBackground(http, repository, playerId.Value, Measure);
                 selectedRegressionsPassed = true;
                 Stage = "background completed";
+                return;
+            }
+            if (talentOnly)
+            {
+                await SeedTalent(repository, playerId.Value, 40);
+                Stage = "talent regressions";
+                TrackRegressionRequests = true;
+                try { await TalentRegressions(http, repository, playerId.Value, selectedChecks); }
+                finally { TrackRegressionRequests = false; }
+                selectedRegressionsPassed = true;
+                await MeasureTalent(http, Measure);
+                Stage = "talent completed";
+                return;
+            }
+            if (skillsOnly)
+            {
+                var skillCore = await SkillCore(http);
+                Require(skillCore.Kind == 3 && skillCore.Id.HasValue, "valid core3");
+                Stage = "skill loadout regressions";
+                TrackRegressionRequests = true;
+                try { await SkillRegressions(http, repository, playerId.Value, skillCore, selectedChecks); }
+                finally { TrackRegressionRequests = false; }
+                selectedRegressionsPassed = true;
+                await MeasureSkills(http, skillCore.Id!.Value, Measure);
+                Stage = "skills completed";
                 return;
             }
             if (itemOnly)
@@ -412,6 +439,12 @@ internal static partial class Fixture
 
         async Task Persist()
         {
+            TalentBudgetMet = talentOnly && reports.Count == 1 && reports[0].Samples.Count == 100 &&
+                reports[0].Http.MeanMs <= 200 && reports[0].Http.P95Ms <= 200 && correlationVerified && cleaned &&
+                selectedRegressionsPassed && Stage == "talent completed";
+            SkillBudgetMet = skillsOnly && reports.Count == 1 && reports[0].Samples.Count == 100 &&
+                reports[0].Http.MeanMs <= 200 && reports[0].Http.P95Ms <= 200 && correlationVerified && cleaned &&
+                selectedRegressionsPassed && Stage == "skills completed";
             BackgroundBudgetMet = backgroundOnly && reports.Count == 1 && reports[0].Samples.Count == 100 &&
                 reports[0].Http.P95Ms <= 300 && correlationVerified && cleaned && selectedRegressionsPassed;
             // Deliberate requested report artifact, not a process log or private config dump.
@@ -427,7 +460,7 @@ internal static partial class Fixture
                     ? reports.SelectMany(r => r.Samples).Select(s =>
                         Breakdown[s.RequestId]["Metrics"]!["Sql"]!["Count"]!.GetValue<int>()).Distinct().Order().ToArray()
                     : null,
-                SelectedWorkloadsComplete = backgroundOnly || economyOnly || savesOnly || shopOnly
+                SelectedWorkloadsComplete = talentOnly || skillsOnly || backgroundOnly || economyOnly || savesOnly || shopOnly
                     ? SelectionComplete(reports.Select(r => r.Route), selectedRoutes, correlationVerified, cleaned,
                         Stage == $"{mode} completed" && selectedRegressionsPassed)
                     : readsOnly
@@ -491,6 +524,14 @@ internal static partial class Fixture
     }
 
     private sealed record Result(JsonNode? Data, Sample Sample, long? Revision);
+    /// <summary>以目前 revision 領取成就；單一請求，回執含成就快照與在庫物品。</summary>
+    private static async Task<Result> ClaimAchievement(HttpClient http, string itemId)
+    {
+        var current = (await Post(http, "AchievementProgress/Get", new { })).Data!.Deserialize<AchievementProgressModel>(Json)!;
+        return await Post(http, "AchievementProgress/ClaimReward", new AchievementClaimRequest
+            { RequestId = Guid.NewGuid(), ExpectedRevision = current.Revision, AchievementItemId = itemId });
+    }
+
     private static async Task<Result> Post(HttpClient http, string route, object body)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, route) { Content = JsonContent.Create(body) };

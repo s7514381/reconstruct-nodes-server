@@ -27,14 +27,11 @@ namespace ReconstructNodesServer.Services
 
         public Task<TalentModel?> GetSnapshotCommand() => ReadSnapshotCommandAsync(GetSnapshotRead);
 
-        public SnapshotRead<TalentModel?> GetSnapshotRead => new("""
-            SELECT TOP 1 * FROM Talent WHERE Status != -1 AND CreateUserId = @CreateUserId;
-            SELECT c.* FROM TalentAcquired c INNER JOIN Talent p ON p.Id = c.TalentId
-            WHERE p.CreateUserId = @CreateUserId AND c.CreateUserId = @CreateUserId AND p.Status != -1 ORDER BY c.Sequence;
-            SELECT c.* FROM TalentLegacyCategory c INNER JOIN Talent p ON p.Id = c.TalentId
-            WHERE p.CreateUserId = @CreateUserId AND c.CreateUserId = @CreateUserId AND p.Status != -1 ORDER BY c.Sequence;
-            SELECT Value FROM PlayerParams WHERE CreateUserId = @CreateUserId
-                AND [Group] = 'server.revisions' AND Name = 'TalentModel' AND Status != -1;
+        public SnapshotRead<TalentModel?> GetSnapshotRead => new($"""
+            {OwnedSql.Select<Talent>(top: 1)}
+            {OwnedSql.Children<TalentAcquired, Talent>()}
+            {OwnedSql.Children<TalentLegacyCategory, Talent>()}
+            {RevisionCommand.SelectValueSql(nameof(TalentModel))}
             """, async reader =>
         {
             Talent? talent = await reader.ReadFirstOrDefaultAsync<Talent>();

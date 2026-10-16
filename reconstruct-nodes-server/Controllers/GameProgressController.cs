@@ -8,7 +8,7 @@ namespace ReconstructNodesServer.Controllers
 {
     public class GameProgressController(BaseApiArgument argument, GameProgressCommand service,
         BackgroundSyncCommand background, PlayerLifecycleService lifecycle,
-        WaveCompleteCommand waveComplete) : AuthorizeApiController(argument)
+        WaveCompleteCommand waveComplete, BattlefieldCommand battlefield, RevisionCommand revisions) : AuthorizeApiController(argument)
     {
         /// <summary>
         /// 讀取目前玩家的遊戲進度；尚未儲存過時回傳 404 封包（前端據此判定為 MISSING）
@@ -34,5 +34,23 @@ namespace ReconstructNodesServer.Controllers
             TransactionResultAsync(() => waveComplete.Execute(request), ApiMessageKeys.ProgressSaveFailed,
                 commandOwnsTransaction: true);
 
+        [HttpPost]
+        public Task<IActionResult> Revisions() =>
+            TransactionResultAsync(() => revisions.GetVector(), ApiMessageKeys.ErrorUnexpected);
+
+        [HttpPost]
+        public Task<IActionResult> SetDeployment(DeploymentCommandRequest request) =>
+            TransactionResultAsync(() => battlefield.SetDeployment(request), ApiMessageKeys.ErrorUnexpected,
+                commandOwnsTransaction: true);
+
+        [HttpPost]
+        public Task<IActionResult> SetBattlefield(BattlefieldCommandRequest request) =>
+            TransactionResultAsync(() => battlefield.SetBattlefield(request), ApiMessageKeys.ErrorUnexpected,
+                commandOwnsTransaction: true);
+
+        [HttpPost]
+        public Task<IActionResult> TransitionWave(WaveTransitionRequest request) =>
+            TransactionResultAsync(() => battlefield.TransitionWave(request), ApiMessageKeys.ErrorUnexpected,
+                commandOwnsTransaction: true);
     }
 }

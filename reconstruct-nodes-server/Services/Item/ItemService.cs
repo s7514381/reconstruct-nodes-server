@@ -49,6 +49,40 @@ namespace ReconstructNodesServer.Services
             }
         }
 
+        /// <summary>
+        /// 一次套用多筆物品增量（參數 @Items 為 [{k,d,c}] JSON），語意同 <see cref="AdjustmentSql"/>：
+        /// 同 key 先加總；不足拋 51001，擁有者不存在拋 51002，數量溢位為 8115。
+        /// 只用固定數量的陳述式，取代每個物品各一段 SQL。
+        /// </summary>
+        internal const string BulkAdjustmentSql = """
+                        IF NOT EXISTS (SELECT 1 FROM Player WHERE Id = @CreateUserId) THROW 51002, 'Item owner is unavailable', 1;
+                        DECLARE @Changes TABLE (ItemKey nvarchar(max), Delta int, Category nvarchar(max),
+                            ExistingId uniqueidentifier, Amount int, ExistingCategory nvarchar(max));
+                        WITH j AS (SELECT CAST([key] AS int) AS Ord, JSON_VALUE(value, '$.k') AS ItemKey,
+                                CAST(JSON_VALUE(value, '$.d') AS int) AS Delta, JSON_VALUE(value, '$.c') AS Category
+                            FROM OPENJSON(@Items))
+                        INSERT INTO @Changes
+                        SELECT g.ItemKey, g.Delta, g.Category, e.Id, e.Amount, e.Category
+                        FROM (SELECT j.ItemKey, SUM(j.Delta) AS Delta,
+                                  (SELECT TOP 1 j2.Category FROM j j2 WHERE j2.ItemKey = j.ItemKey AND j2.Category IS NOT NULL
+                                   ORDER BY j2.Ord DESC) AS Category
+                              FROM j GROUP BY j.ItemKey) g
+                        OUTER APPLY (SELECT TOP 1 Id, Amount, Category FROM Item WITH (UPDLOCK, HOLDLOCK)
+                                     WHERE Status != -1 AND CreateUserId = @CreateUserId AND ItemKey = g.ItemKey) e;
+                        IF EXISTS (SELECT 1 FROM @Changes WHERE (ExistingId IS NULL AND Delta <= 0) OR (ExistingId IS NOT NULL AND Amount + Delta < 0))
+                            THROW 51001, 'Insufficient item amount', 1;
+                        INSERT INTO Item (Id, CreateDate, CreateUserId, Status, ItemKey, Amount, Category)
+                        SELECT NEWID(), @CreateDate, @CreateUserId, @Status, ItemKey, Delta, COALESCE(Category, N'')
+                        FROM @Changes WHERE ExistingId IS NULL;
+                        UPDATE i SET Amount = c.Amount + c.Delta,
+                            Status = CASE WHEN c.Amount + c.Delta = 0 THEN -1 ELSE i.Status END,
+                            Category = CASE WHEN c.Amount + c.Delta = 0 THEN i.Category
+                                WHEN c.ExistingCategory IS NULL OR DATALENGTH(TRIM(@Whitespace FROM c.ExistingCategory)) = 0
+                                    THEN COALESCE(c.Category, N'') ELSE i.Category END
+                        FROM Item i JOIN @Changes c ON c.ExistingId = i.Id
+                        WHERE i.CreateUserId = @CreateUserId;
+                    """;
+
         internal const string AdjustmentSql = """
                         DECLARE @Player uniqueidentifier;
                         SELECT @Player = Id FROM Player WHERE Id = @CreateUserId;

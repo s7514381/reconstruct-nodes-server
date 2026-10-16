@@ -2,6 +2,7 @@ using System.Text.Json;
 using ReconstructNodesServer.Argument;
 using ReconstructNodesServer.Library.DBModel;
 using ReconstructNodesServer.Library.Models;
+using ReconstructNodesServer.Repositories;
 
 namespace ReconstructNodesServer.Services
 {
@@ -14,24 +15,30 @@ namespace ReconstructNodesServer.Services
             "critical_trigger_gem", "hit_trigger_gem", "tracking_gem", "aura_support",
         ];
 
-        public Task<WaveStartResult> StartWave(WaveStartRequest request)
+        /// <summary>
+        /// 自動開波的批次寫入：active_wave 指向 sessionId，並寫入 wave_start 回執供 WaveComplete 驗證。
+        /// 金幣不變動，只把目前餘額放進回傳值。
+        /// </summary>
+        internal static WaveStartResult QueueWaveStart(SqlWriteBatch writes, IEnumerable<PlayerParams> parameters,
+            Guid sessionId, int wave, int difficulty, int infiniteLevel, long gold)
         {
-            int count = WaveEnemyCount(request);
-            return gold.ExecuteBatch<WaveStartResult>(request.RequestId, "wave_start",
-                new { request.Wave, request.Difficulty }, """
-                    DECLARE @ActiveId uniqueidentifier;
-                    SELECT @ActiveId = Id FROM PlayerParams WHERE CreateUserId = @CreateUserId
-                        AND Status != -1 AND [Group] = 'economy' AND Name = 'active_wave';
-                    IF @@ROWCOUNT > 1 THROW 51004, 'Duplicate wave parameter', 1;
-                    IF @ActiveId IS NULL
-                        INSERT INTO PlayerParams (Id, CreateDate, CreateUserId, Status, [Group], Name, Value)
-                        VALUES (NEWID(), @Now, @CreateUserId, @Enabled, 'economy', 'active_wave', CONVERT(nvarchar(36), @RequestId));
-                    ELSE UPDATE PlayerParams SET Value = CONVERT(nvarchar(36), @RequestId)
-                        WHERE Id = @ActiveId AND CreateUserId = @CreateUserId;
-                    SET @Result = (SELECT @RequestId AS session_id, @Wave AS wave, @EnemyCount AS enemy_count,
-                        @Difficulty AS difficulty, @InfiniteLevel AS infinite_level,
-                        @Balance AS gold FOR JSON PATH, WITHOUT_ARRAY_WRAPPER);
-                    """, new { request.Wave, request.Difficulty, request.InfiniteLevel, EnemyCount = count });
+            var result = new WaveStartResult
+            {
+                SessionId = sessionId, Wave = wave, Difficulty = difficulty, InfiniteLevel = infiniteLevel,
+                EnemyCount = WaveEnemyCount(new WaveStartRequest { Wave = wave, Difficulty = difficulty }), Gold = gold,
+            };
+            // 與舊版 CONVERT(nvarchar(36), uniqueidentifier) 的大寫格式一致。
+            string session = sessionId.ToString("D").ToUpperInvariant();
+            PlayerParams? active = parameters.SingleOrDefault(row => row.Group == "economy" && row.Name == "active_wave");
+            if (active == null) { writes.Insert([new PlayerParams { Group = "economy", Name = "active_wave", Value = session }]); }
+            else { active.Value = session; writes.Update([active]); }
+            writes.Insert([new EconomyRequest
+            {
+                RequestId = sessionId, Operation = "wave_start",
+                Payload = JsonSerializer.Serialize(new { Wave = wave, Difficulty = difficulty }),
+                Result = JsonSerializer.Serialize(result),
+            }]);
+            return result;
         }
 
         internal static int WaveEnemyCount(WaveStartRequest request)
@@ -44,36 +51,7 @@ namespace ReconstructNodesServer.Services
             return checked(6 + request.Wave * 3 + (request.Wave % 5 == 0 ? 1 : 0));
         }
 
-        public Task<GoldOperationResult> ReportKill(EnemyKillRequest request)
-        {
-            if (request.SessionId == Guid.Empty || request.EnemyIndex < 0) { throw new BusinessArgumentException(ApiMessageKeys.EconomyKillInvalid); }
-            var payload = new { request.SessionId, request.EnemyIndex };
-            return gold.ExecuteCommand(request.RequestId, "enemy_kill", payload, """
-                    SELECT Result FROM EconomyRequest WHERE CreateUserId = @CreateUserId
-                        AND RequestId = @SessionId AND Operation = 'wave_start';
-                    SELECT CAST(CASE WHEN EXISTS (SELECT 1 FROM EconomyRequest WHERE CreateUserId = @CreateUserId
-                        AND Operation = 'enemy_kill' AND Payload = @Payload) THEN 1 ELSE 0 END AS bit);
-                    SELECT * FROM TalentAcquired WHERE CreateUserId = @CreateUserId AND Status != -1
-                        AND TreeId = 'utility' AND NodeId IN ('gold_1', 'gold_2', 'gold_3');
-                    """, new { request.SessionId }, ReadKillContext, (account, context) =>
-            {
-                long reward = KillRewardRules.CalculateClaim(context.Session, context.Claimed, request.EnemyIndex, context.Talents);
-                account.Balance = checked(account.Balance + reward);
-                return new GoldOperationResult { Gold = account.Balance };
-            });
-        }
-
-        private sealed record KillContext(string? Session, bool Claimed, List<TalentAcquired> Talents);
-
-        private static async Task<KillContext> ReadKillContext(Repositories.ManagedGridReader reader)
-        {
-            string? session = await reader.ReadSingleOrDefaultAsync<string>();
-            bool claimed = await reader.ReadSingleAsync<bool>();
-            var talents = (await reader.ReadAsync<TalentAcquired>()).ToList();
-            return new KillContext(session, claimed, talents);
-        }
-
-        public Task<GoldOperationResult> PurchaseSkill(SkillPurchaseRequest request)
+        public async Task<GoldOperationResult> PurchaseSkill(SkillPurchaseRequest request)
         {
             string group;
             string name;
@@ -89,40 +67,43 @@ namespace ReconstructNodesServer.Services
                 name = request.LootId;
             }
             else { throw new BusinessArgumentException(ApiMessageKeys.SkillMissing); }
-            return gold.Execute(request.RequestId, "skill_purchase", new { request.Type, request.Kind, request.LootId }, async account =>
+            try
             {
-                var existing = await ReadParameter(group, name);
-                if (existing != null && JsonSerializer.Deserialize<bool>(existing.Value))
-                {
-                    throw new BusinessArgumentException(ApiMessageKeys.SkillUnlocked);
-                }
-                GoldCommand.Spend(account, 100);
-                await WriteParameter(group, name, "true");
-                return new GoldOperationResult { Gold = account.Balance };
-            });
-        }
-
-        private async Task<PlayerParams?> ReadParameter(string group, string name)
-        {
-            var rows = (await QueryAsync<PlayerParams>(
-                "SELECT * FROM PlayerParams WHERE CreateUserId=@CreateUserId AND Status != -1 AND [Group]=@Group AND Name=@Name",
-                new { CreateUserId = _playerId, Group = group, Name = name })).ToList();
-            if (rows.Count > 1) { throw new InvalidOperationException("玩家參數重複"); }
-            return rows.SingleOrDefault();
-        }
-
-        private async Task WriteParameter(string group, string name, string value)
-        {
-            var row = await ReadParameter(group, name);
-            if (row == null)
-            {
-                await InsertAsync(new PlayerParams { Group = group, Name = name, Value = value, CreateUserId = _playerId });
+                return await gold.ExecuteBatch<GoldOperationResult>(request.RequestId, "skill_purchase",
+                    new { request.Type, request.Kind, request.LootId }, SkillPurchaseSql,
+                    new { SkillGroup = group, SkillName = name, Cost = SkillCost });
             }
-            else
+            catch (System.Data.SqlClient.SqlException error) when (error.Number == SkillUnlockedError)
             {
-                row.Value = value;
-                await UpdateAsync(row);
+                throw new BusinessArgumentException(ApiMessageKeys.SkillUnlocked);
+            }
+            catch (System.Data.SqlClient.SqlException error) when (error.Number == InsufficientGoldError)
+            {
+                throw new BusinessOperationException(new ApiMessage(ApiMessageKeys.EconomyInsufficientGold,
+                    new Dictionary<string, string> { ["cost"] = SkillCost.ToString(System.Globalization.CultureInfo.InvariantCulture) }));
             }
         }
+
+        private const long SkillCost = 100;
+        private const int InsufficientGoldError = 51005;
+        private const int SkillUnlockedError = 51007;
+
+        // 已解鎖先於金幣檢查；旗標列不存在時新增，值為 false 時改寫為 true。
+        private const string SkillPurchaseSql = """
+            DECLARE @SkillId uniqueidentifier, @SkillValue nvarchar(max);
+            SELECT @SkillId = Id, @SkillValue = Value FROM PlayerParams
+            WHERE CreateUserId = @CreateUserId AND Status != -1 AND [Group] = @SkillGroup AND Name = @SkillName;
+            IF @@ROWCOUNT > 1 THROW 51004, 'Duplicate skill parameter', 1;
+            IF @SkillValue IS NOT NULL AND LTRIM(RTRIM(@SkillValue)) NOT IN (N'true', N'false')
+                THROW 51004, 'Invalid skill parameter', 1;
+            IF LTRIM(RTRIM(@SkillValue)) = N'true' THROW 51007, 'Skill already unlocked', 1;
+            IF @Balance < @Cost THROW 51005, 'Insufficient gold', 1;
+            SET @Balance = @Balance - @Cost;
+            IF @SkillId IS NULL
+                INSERT INTO PlayerParams (Id, CreateDate, CreateUserId, Status, [Group], Name, Value)
+                VALUES (NEWID(), @Now, @CreateUserId, @Enabled, @SkillGroup, @SkillName, N'true');
+            ELSE UPDATE PlayerParams SET Value = N'true' WHERE Id = @SkillId AND CreateUserId = @CreateUserId;
+            SET @Result = (SELECT @Balance AS gold FOR JSON PATH, WITHOUT_ARRAY_WRAPPER);
+            """;
     }
 }

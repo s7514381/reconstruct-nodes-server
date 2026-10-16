@@ -9,16 +9,10 @@ namespace ReconstructNodesServer.Services
     /// 成就進度服務：Achievement 每個群組一列（Total 為進度），AchievementDetail 為群組內項目與領取狀態，
     /// AchievementCollected 為已收集的武器與詞綴。
     /// </summary>
-    public class AchievementProgressCommand(BaseServiceArgument argument, ItemService itemService,
+    public class AchievementProgressCommand(BaseServiceArgument argument,
         AchievementService achievementService, AchievementDetailService detailService,
         AchievementCollectedService collectedService, RevisionCommand Revisions) : BaseService(argument)
     {
-        // 與用戶端 AchievementItem.REWARD_ID、REWARD_AMOUNT 保持一致
-        private const string RewardItemKey = "diamond";
-        private const int RewardAmount = 1;
-
-        private const string DetailTable = nameof(AchievementDetail);
-
         /// <summary>
         /// 讀取目前玩家的成就進度。進度與收集一律由伺服器資料推導（擊殺、通關波數、武器與詞綴），
         /// 資料庫只保存領取紀錄與既有的收集歷史；用戶端不再上報成就。
@@ -38,28 +32,39 @@ namespace ReconstructNodesServer.Services
 
         public Task<AchievementProgressModel?> GetCommand() => ReadSnapshotCommandAsync(GetRead);
 
-        public SnapshotRead<AchievementProgressModel?> GetRead => new($"""
-            SELECT * FROM Achievement WHERE CreateUserId = @CreateUserId AND Status != -1 ORDER BY Sequence;
-            SELECT c.* FROM AchievementDetail c INNER JOIN Achievement p ON p.Id = c.AchievementId
-            WHERE p.CreateUserId = @CreateUserId AND c.CreateUserId = @CreateUserId AND p.Status != -1 ORDER BY c.Sequence;
-            SELECT c.* FROM AchievementCollected c INNER JOIN Achievement p ON p.Id = c.AchievementId
-            WHERE p.CreateUserId = @CreateUserId AND c.CreateUserId = @CreateUserId AND p.Status != -1 ORDER BY c.Sequence;
-            SELECT Value FROM PlayerParams WHERE CreateUserId = @CreateUserId
-                AND [Group] = 'server.revisions' AND Name = 'AchievementProgressModel' AND Status != -1;
+        public SnapshotRead<AchievementProgressModel?> GetRead =>
+            new(RowsRead.Sql, async reader => Derive(await RowsRead.Read(reader)));
+
+        /// <summary>一次往返讀出推導成就所需的全部資料列（領取指令也共用這個讀取）。</summary>
+        internal static SnapshotRead<AchievementRows> RowsRead => new($"""
+            {OwnedSql.Select<Achievement>(orderBy: "Sequence")}
+            {OwnedSql.Children<AchievementDetail, Achievement>()}
+            {OwnedSql.Children<AchievementCollected, Achievement>()}
+            {OwnedSql.Select<PlayerParams>($"[Group] = '{RevisionCommand.RevisionGroup}' AND Name = '{nameof(AchievementProgressModel)}'")}
             {InputParamsSql}
             {InputWeaponsSql}
             {InputAffixesSql}
             """, async reader =>
         {
             var groups = (await reader.ReadAsync<Achievement>()).ToList();
-            var details = (await reader.ReadAsync<AchievementDetail>()).ToLookup(row => row.AchievementId);
-            var collected = (await reader.ReadAsync<AchievementCollected>()).ToLookup(row => row.AchievementId);
-            string? revision = await reader.ReadSingleOrDefaultAsync<string>();
+            var details = (await reader.ReadAsync<AchievementDetail>()).ToList();
+            var collected = (await reader.ReadAsync<AchievementCollected>()).ToList();
+            PlayerParams? revision = await reader.ReadSingleOrDefaultAsync<PlayerParams>();
             var inputs = new AchievementInputs((await reader.ReadAsync<ParamRow>()).ToList(),
                 (await reader.ReadAsync<string>()).ToList(), (await reader.ReadAsync<string>()).ToList());
-            return Derive(groups, details, collected,
-                revision == null ? 0 : long.Parse(revision, System.Globalization.CultureInfo.InvariantCulture), inputs);
+            return new AchievementRows(groups, details, collected, revision, inputs);
         });
+
+        internal sealed record AchievementRows(List<Achievement> Groups, List<AchievementDetail> Details,
+            List<AchievementCollected> Collected, PlayerParams? RevisionRow, AchievementInputs Inputs)
+        {
+            public long Revision => RevisionRow == null ? 0
+                : long.Parse(RevisionRow.Value, System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        internal static AchievementProgressModel Derive(AchievementRows rows) =>
+            Derive(rows.Groups, rows.Details.ToLookup(d => d.AchievementId),
+                rows.Collected.ToLookup(c => c.AchievementId), rows.Revision, rows.Inputs);
 
         internal sealed class ParamRow
         {
@@ -69,14 +74,13 @@ namespace ReconstructNodesServer.Services
         }
 
         // 伺服器端推導成就所需的資料；已刪除（Status = -1）的武器仍算收集過。
-        private const string InputParamsSql = """
-            SELECT [Group], Name, Value FROM PlayerParams WHERE CreateUserId = @CreateUserId AND Status != -1
-                AND (([Group] = 'game_progress' AND Name = 'lifetime_enemies_defeated')
-                    OR [Group] = 'game_progress.cleared_waves');
-            """;
-        private const string InputWeaponsSql = """
-            SELECT DISTINCT COALESCE(UniqueKey, WeaponKey) FROM Weapon WHERE CreateUserId = @CreateUserId;
-            """;
+        private static readonly string InputParamsSql = OwnedSql.Select<PlayerParams>(
+            """
+            (([Group] = 'game_progress' AND Name = 'lifetime_enemies_defeated')
+                OR [Group] = 'game_progress.cleared_waves')
+            """, "[Group], Name, Value");
+        private static readonly string InputWeaponsSql = OwnedSql.Select<Weapon>(
+            columns: "DISTINCT COALESCE(UniqueKey, WeaponKey)", activeOnly: false);
         private const string InputAffixesSql = """
             SELECT DISTINCT a.AffixKey FROM WeaponAffix a INNER JOIN Weapon w ON w.Id = a.WeaponId
             WHERE w.CreateUserId = @CreateUserId AND a.CreateUserId = @CreateUserId;
@@ -167,129 +171,9 @@ namespace ReconstructNodesServer.Services
             return result;
         }
 
-        // 成就只由伺服器推導，不接受整份快照寫入。
+        // 成就只由伺服器推導，不接受整份快照寫入；領取獎勵見 AchievementClaimCommand。
         public Task Save(AchievementProgressModel model) =>
             throw new NotSupportedException("Achievement snapshots are derived by the server.");
-
-        internal static (List<Achievement> Groups, List<AchievementDetail> Details,
-            List<AchievementCollected> Collected) BuildRows(AchievementProgressModel model,
-            Dictionary<string, AchievementDetail> claimed)
-        {
-            List<Achievement> groups = [];
-            List<AchievementDetail> details = [];
-            List<AchievementCollected> collected = [];
-            foreach (AchievementGroupModel group in model.Groups ?? [])
-            {
-                Achievement row = new() { Name = group.Name, Total = group.Total, Sequence = groups.Count };
-                groups.Add(row);
-                int sequence = 0;
-                foreach (AchievementItemModel item in group.Items ?? [])
-                {
-                    claimed.TryGetValue(item.Name, out AchievementDetail? previous);
-                    details.Add(new AchievementDetail
-                    {
-                        AchievementId = row.Id, Name = item.Name, Target = item.Target,
-                        IsReward = previous != null, RewardDate = previous?.RewardDate, Sequence = sequence++,
-                    });
-                }
-                sequence = 0;
-                foreach (string name in group.Collected ?? [])
-                {
-                    collected.Add(new AchievementCollected
-                    {
-                        AchievementId = row.Id, Name = name, Sequence = sequence++,
-                    });
-                }
-            }
-
-            return (groups, details, collected);
-        }
-
-        private async Task PersistRows(List<Achievement> groups, List<AchievementDetail> details,
-            List<AchievementCollected> collected)
-        {
-            const string sql = """
-                DECLARE @Claimed TABLE (Name nvarchar(max), RewardDate datetime2);
-                INSERT INTO @Claimed
-                SELECT c.Name, c.RewardDate FROM AchievementDetail c INNER JOIN Achievement p ON p.Id = c.AchievementId
-                WHERE p.CreateUserId = @CreateUserId AND c.CreateUserId = @CreateUserId
-                    AND p.Status != -1 AND c.IsReward = 1;
-                IF EXISTS (SELECT 1 FROM @Claimed WHERE Name IS NULL)
-                    OR EXISTS (SELECT 1 FROM @Claimed GROUP BY Name COLLATE Latin1_General_100_BIN2, DATALENGTH(Name)
-                        HAVING COUNT(*) > 1)
-                    THROW 51004, 'Invalid claimed achievement identities', 1;
-                DELETE FROM AchievementCollected WHERE CreateUserId = @CreateUserId;
-                DELETE FROM AchievementDetail WHERE CreateUserId = @CreateUserId;
-                DELETE FROM Achievement WHERE CreateUserId = @CreateUserId;
-
-                INSERT INTO Achievement (Id, Sequence, CreateDate, CreateUserId, Status, Name, Category, Total, DayTotal)
-                SELECT Id, Sequence, CreateDate, @CreateUserId, Status, Name, Category, Total, DayTotal
-                FROM OPENJSON(@Groups) WITH (
-                    Id uniqueidentifier, Sequence int, CreateDate datetime2, Status int,
-                    Name nvarchar(max), Category int, Total real, DayTotal real);
-
-                INSERT INTO AchievementDetail
-                    (Id, Sequence, CreateDate, CreateUserId, Status, AchievementId, Name, Target,
-                     IsReward, RewardDate, GainCoins, Type, Version)
-                SELECT d.Id, d.Sequence, d.CreateDate, @CreateUserId, d.Status, d.AchievementId, d.Name, d.Target,
-                       CAST(CASE WHEN c.Name IS NULL THEN 0 ELSE 1 END AS bit), c.RewardDate, d.GainCoins, d.Type, d.Version
-                FROM OPENJSON(@Details) WITH (
-                    Id uniqueidentifier, Sequence int, CreateDate datetime2, Status int,
-                    AchievementId uniqueidentifier, Name nvarchar(max), Target int, IsReward bit,
-                    RewardDate datetime2, GainCoins real, Type int, Version nvarchar(max)) d
-                LEFT JOIN @Claimed c ON c.Name COLLATE Latin1_General_100_BIN2 = d.Name COLLATE Latin1_General_100_BIN2
-                    AND DATALENGTH(c.Name) = DATALENGTH(d.Name);
-
-                INSERT INTO AchievementCollected (Id, Sequence, CreateDate, CreateUserId, Status, AchievementId, Name)
-                SELECT Id, Sequence, CreateDate, @CreateUserId, Status, AchievementId, Name
-                FROM OPENJSON(@Collected) WITH (
-                    Id uniqueidentifier, Sequence int, CreateDate datetime2, Status int,
-                    AchievementId uniqueidentifier, Name nvarchar(max));
-                """;
-            var values = new
-            {
-                CreateUserId = _playerId,
-                Groups = JsonSerializer.Serialize(groups),
-                Details = JsonSerializer.Serialize(details),
-                Collected = JsonSerializer.Serialize(collected),
-            };
-            await ExecuteAsync(sql, values);
-        }
-
-        /// <summary>
-        /// 領取已達成項目的獎勵：標記為已領取並發放獎勵物品。需在交易內呼叫，任一步失敗會整筆回滾。
-        /// </summary>
-        public virtual async Task ClaimReward(string achievementItemId)
-        {
-            if (string.IsNullOrWhiteSpace(achievementItemId)) { throw new BusinessArgumentException(ApiMessageKeys.AchievementIdRequired); }
-
-            await QueryGroupsAsync(lockRows: true);
-            AchievementProgressModel current = (await Get())!;
-            AchievementItemModel? target = current.Groups.SelectMany(g => g.Items).FirstOrDefault(i => i.Name == achievementItemId);
-            if (target == null) { throw new BusinessOperationException(ApiMessageKeys.AchievementItemMissing); }
-            if (target.IsReward) { throw new BusinessOperationException(ApiMessageKeys.AchievementClaimed); }
-            if (current.Groups.Single(g => g.Items.Contains(target)).Total < target.Target)
-            { throw new BusinessOperationException(ApiMessageKeys.AchievementIncomplete); }
-
-            // 領取前把伺服器推導的進度落地，後續的領取標記與獎勵才有對應的資料列。
-            Dictionary<string, AchievementDetail> previous = (await detailService.QueryChildrenAsync<Achievement>())
-                .Where(d => d.IsReward).ToDictionary(d => d.Name);
-            var rows = BuildRows(current, previous);
-            await PersistRows(rows.Groups, rows.Details, rows.Collected);
-
-            string sql = $@"SELECT TOP 1 *
-                              FROM {DetailTable} WITH (UPDLOCK, HOLDLOCK)
-                             WHERE Name = @Name
-                               AND CreateUserId = @CreateUserId";
-            AchievementDetail? detail = await QueryFirstAsync<AchievementDetail?>(sql, new { Name = achievementItemId, CreateUserId = _playerId });
-            if (detail == null) { throw new BusinessOperationException(ApiMessageKeys.AchievementItemMissing); }
-
-            detail.IsReward = true;
-            detail.RewardDate = DateTime.Now;
-            await UpdateAsync(detail);
-            await itemService.AdjustAmount(RewardItemKey, RewardAmount);
-            await Revisions.Advance(nameof(AchievementProgressModel));
-        }
 
         private Task<List<Achievement>> QueryGroupsAsync(bool lockRows) =>
             achievementService.QueryOwnedRowsAsync(orderBy: row => row.Sequence, lockRows: lockRows);

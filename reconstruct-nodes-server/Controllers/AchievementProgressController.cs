@@ -5,7 +5,8 @@ using ReconstructNodesServer.Services;
 
 namespace ReconstructNodesServer.Controllers
 {
-    public class AchievementProgressController(BaseApiArgument argument, AchievementProgressCommand service) : AuthorizeApiController(argument)
+    public class AchievementProgressController(BaseApiArgument argument, AchievementProgressCommand service,
+        AchievementClaimCommand claim, AchievementResetCommand reset) : AuthorizeApiController(argument)
     {
         /// <summary>
         /// 讀取目前玩家的成就進度；進度與收集由伺服器資料推導
@@ -16,18 +17,18 @@ namespace ReconstructNodesServer.Controllers
                 ApiMessageKeys.AchievementMissing, commandOwnsTransaction: true);
 
         /// <summary>
-        /// 領取已達成成就的獎勵；標記與發放獎勵在同一交易內完成
+        /// 領取已達成成就的獎勵：單一請求完成驗證、標記、發獎，並在回執帶回成就快照與領取後的在庫物品。
         /// </summary>
         [HttpPost]
-        public virtual async Task<IActionResult> ClaimReward(AchievementClaimRequest request)
-        {
-            (bool success, ApiMessage? message) = await TransactionFunc(async () =>
-            {
-                await service.ClaimReward(request.AchievementItemId);
-            });
+        public virtual Task<IActionResult> ClaimReward(AchievementClaimRequest request) =>
+            TransactionResultAsync(() => claim.Execute(request), ApiMessageKeys.AchievementClaimFailed,
+                commandOwnsTransaction: true);
 
-            if (!success) { return TransactionFailure(message ?? new ApiMessage(ApiMessageKeys.AchievementClaimFailed)); }
-            return Ok(BackendApiResult<string>.Create(200, string.Empty, string.Empty));
-        }
+        /// <summary>
+        /// 測試用：清除成就領取與收集歷史並歸零擊殺／通關進度；僅 Development 環境可用。
+        /// </summary>
+        [HttpPost]
+        public virtual Task<IActionResult> ResetForTesting() =>
+            TransactionResultAsync(() => reset.Execute(), ApiMessageKeys.AchievementResetFailed);
     }
 }

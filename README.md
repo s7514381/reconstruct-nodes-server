@@ -2,7 +2,7 @@
 
 ASP.NET Core（net10.0）後端服務，提供 **reconstruct-nodes** 遊戲前端使用的 API。
 
-前景版本／原子命令契約與聚焦測試入口見 [FOREGROUND-CONTRACTS](docs/FOREGROUND-CONTRACTS.md)。
+前景版本／原子命令契約與聚焦測試入口見 [PLAYER-ACTION-CONTRACTS](docs/PLAYER-ACTION-CONTRACTS.md)。
 武器取得／精煉／批次分解與角色穿卸裝已改為無 checkpoint 的業務 action，完整路由、
 request／receipt 型別與驗證限制見 [WEAPON-CONTRACTS](docs/WEAPON-CONTRACTS.md)。
 

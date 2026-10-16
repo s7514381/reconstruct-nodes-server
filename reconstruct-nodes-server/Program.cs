@@ -66,6 +66,10 @@ services.AddSingleton<AzureStoreService>();
 services.AddHostedService(x => new DatabaseWarmupService(sqlConnString,
     x.GetRequiredService<ILogger<DatabaseWarmupService>>()));
 
+services.AddHostedService(x => new EconomyRequestRetentionService(sqlConnString,
+    builder.Configuration.GetValue("EconomyRequestRetention:Days", 0),
+    x.GetRequiredService<ILogger<EconomyRequestRetentionService>>()));
+
 services.AddMemoryCache();
 
 // Secret 中的 Google 桌面與 Web 憑證隨發布部署；User Secrets、環境變數與命令列仍可覆寫。
@@ -85,6 +89,9 @@ services.AddScoped<GoogleLoginService>();
 
 
 var app = builder.Build();
+
+// 預先建立連線池，避免第一批請求各自等待 Azure SQL 的實體連線。
+if (!string.IsNullOrEmpty(sqlConnString)) { new DapperDBContext(sqlConnString).WarmPool(); }
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())

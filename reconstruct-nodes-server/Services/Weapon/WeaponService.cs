@@ -36,18 +36,12 @@ namespace ReconstructNodesServer.Services
             ReadSnapshotCommandAsync(GetInstanceListRead);
 
         public SnapshotRead<IEnumerable<WeaponInstanceModel>> GetInstanceListRead =>
-            new("""
-                SELECT * FROM Weapon WHERE CreateUserId = @CreateUserId AND Status != -1 ORDER BY CreateDate;
-                SELECT c.* FROM WeaponAffix c INNER JOIN Weapon p ON p.Id = c.WeaponId
-                WHERE p.CreateUserId = @CreateUserId AND c.CreateUserId = @CreateUserId AND p.Status != -1 ORDER BY c.Sequence;
-                SELECT c.* FROM WeaponAffixValue c INNER JOIN WeaponAffix p ON p.Id = c.WeaponAffixId
-                INNER JOIN Weapon w ON w.Id = p.WeaponId
-                WHERE p.CreateUserId = @CreateUserId AND c.CreateUserId = @CreateUserId
-                    AND w.CreateUserId = @CreateUserId AND w.Status != -1 ORDER BY c.Sequence;
-                SELECT c.* FROM WeaponUniqueValue c INNER JOIN Weapon p ON p.Id = c.WeaponId
-                WHERE p.CreateUserId = @CreateUserId AND c.CreateUserId = @CreateUserId AND p.Status != -1 ORDER BY c.Sequence;
-                SELECT Value FROM PlayerParams WHERE CreateUserId = @CreateUserId
-                    AND [Group] = 'server.revisions' AND Name = 'WeaponInstanceModel' AND Status != -1;
+            new($"""
+                {OwnedSql.Select<Weapon>(orderBy: "CreateDate")}
+                {OwnedSql.Children<WeaponAffix, Weapon>()}
+                {OwnedSql.Descendants<WeaponAffixValue, WeaponAffix, Weapon>()}
+                {OwnedSql.Children<WeaponUniqueValue, Weapon>()}
+                {RevisionCommand.SelectValueSql(nameof(WeaponInstanceModel))}
                 """, async reader =>
             {
                 var weapons = (await reader.ReadAsync<Weapon>()).ToList();

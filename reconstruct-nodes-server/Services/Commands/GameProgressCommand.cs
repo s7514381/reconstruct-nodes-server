@@ -3,6 +3,7 @@ using System.Text.Json;
 using ReconstructNodesServer.Argument;
 using ReconstructNodesServer.Library.DBModel;
 using ReconstructNodesServer.Library.Models;
+using ReconstructNodesServer.Repositories;
 
 namespace ReconstructNodesServer.Services
 {
@@ -15,7 +16,7 @@ namespace ReconstructNodesServer.Services
     {
         private const string ProgressGroup = GameProgressParamGroups.Progress;
         private const string SettingGroupPrefix = GameProgressParamGroups.SettingPrefix;
-        private const long DeploymentCost = 60;
+        internal const long DeploymentCost = 60;
 
         // LIKE 中的 [_] 代表字面底線，避免底線被當成萬用字元
         private const string ProgressRowFilter = "([Group] = 'game_progress' OR [Group] LIKE 'game[_]progress.%')";
@@ -68,12 +69,10 @@ namespace ReconstructNodesServer.Services
         public Task<GameProgressModel?> GetCommand() => ReadSnapshotCommandAsync(GetRead);
 
         public SnapshotRead<GameProgressModel?> GetRead => new($"""
-            SELECT * FROM PlayerParams WHERE Status != -1 AND CreateUserId = @CreateUserId
-                AND {ProgressRowFilter} ORDER BY [Group], Sequence;
-            SELECT * FROM Deployment WHERE Status != -1 AND CreateUserId = @CreateUserId ORDER BY Sequence;
-            SELECT * FROM BattlefieldRoad WHERE Status != -1 AND CreateUserId = @CreateUserId ORDER BY Sequence;
-            SELECT Value FROM PlayerParams WHERE CreateUserId = @CreateUserId
-                AND [Group] = 'server.revisions' AND Name = 'GameProgressModel' AND Status != -1;
+            {OwnedSql.Select<PlayerParams>(ProgressRowFilter, orderBy: "[Group], Sequence")}
+            {OwnedSql.Select<Deployment>(orderBy: "Sequence")}
+            {OwnedSql.Select<BattlefieldRoad>(orderBy: "Sequence")}
+            {RevisionCommand.SelectValueSql(nameof(GameProgressModel))}
             """, async reader =>
         {
             var rows = (await reader.ReadAsync<PlayerParams>()).ToList();
@@ -143,22 +142,6 @@ namespace ReconstructNodesServer.Services
 
         private async Task SaveSnapshot(GameProgressModel model)
         {
-            // 與武器刪除共用玩家鎖，避免刪武器與寫入裝備參照交錯
-            if (model.RequestId.HasValue)
-            {
-                // The existing debit receipt must replay before CAS and ownership checks.
-                ProgressSaveResult result = await _lazy.GoldCommand.Value.Execute(model.RequestId.Value, "progress_save", model, async account =>
-                {
-                    await Revisions.Check(nameof(GameProgressModel), model.ExpectedRevision);
-                    int newDeployments = await NewDeploymentCount(model);
-                    if (newDeployments > 0) { GoldCommand.Spend(account, checked(newDeployments * DeploymentCost)); }
-                    await ReplaceProgressAsync(model);
-                    if (model.ExpectedRevision.HasValue) { model.Revision = await Revisions.Advance(nameof(GameProgressModel)); }
-                    return new ProgressSaveResult { Gold = account.Balance, Revision = model.Revision };
-                });
-                model.Revision = result.Revision;
-                return;
-            }
             await Revisions.Check(nameof(GameProgressModel), model.ExpectedRevision);
             if (await NewDeploymentCount(model) > 0) { throw new BusinessArgumentException(ApiMessageKeys.ProgressRequestRequired); }
             await ReplaceProgressAsync(model);
@@ -169,51 +152,135 @@ namespace ReconstructNodesServer.Services
         {
             await ValidateCharactersAsync(model.DeploymentLog ?? new());
             var previous = await deploymentService.QueryOwnedRowsAsync(orderBy: row => row.Sequence);
+            return NewDeploymentCount(model, previous);
+        }
+
+        internal static int NewDeploymentCount(GameProgressModel model, IEnumerable<Deployment> previous)
+        {
             var previousKeys = previous.Select(row => (row.SpotIndex, row.CharacterId, row.CellX, row.CellY)).ToHashSet();
             return (model.DeploymentLog ?? new()).Count(row =>
                 !previousKeys.Contains((row.SpotIndex, row.CharacterId, row.Cell?[0], row.Cell?[1])));
         }
 
+        /// <summary>批次版的部署角色檢查：ownedIds 為本人 Kind 0..2 的有效角色。</summary>
+        internal static void ValidateCharacters(IEnumerable<GameProgressDeploymentModel> deployments, IReadOnlySet<Guid> ownedIds)
+        {
+            if (deployments.Any(row => !ownedIds.Contains(row.CharacterId)))
+            { throw new BusinessArgumentException(ApiMessageKeys.ProgressCharacterNotOwned); }
+        }
+
         internal sealed record ProgressWriteRows(Guid? CreateUserId, string Parameters, string Deployments, string Roads);
 
-        internal ProgressWriteRows BuildWriteRows(GameProgressModel model)
+        internal sealed record ProgressRowSet(List<PlayerParams> Parameters, List<Deployment> Deployments, List<BattlefieldRoad> Roads);
+
+        /// <summary>批次命令一次讀回的進度資料：進度／revision／指定 economy 參數、部署與道路。</summary>
+        internal sealed class ProgressRows
         {
-            List<PlayerParams> parameters = BuildProgressRows(model).ToList();
-            List<Deployment> deployments = (model.DeploymentLog ?? []).Select((deployment, sequence) => new Deployment
+            public List<PlayerParams> Parameters { get; set; } = [];
+            public List<Deployment> Deployments { get; set; } = [];
+            public List<BattlefieldRoad> Roads { get; set; } = [];
+        }
+
+        /// <summary>economyNames 只能是固定名稱。</summary>
+        internal static SnapshotRead<ProgressRows> StateRead(params string[] economyNames) => new($"""
+            {OwnedSql.Select<PlayerParams>($"""
+                (([Group] = '{RevisionCommand.RevisionGroup}' AND Name = '{nameof(GameProgressModel)}')
+                    OR {ProgressRowFilter}
+                    OR ([Group] = 'economy' AND Name IN ({string.Join(", ", economyNames.Select(name => $"'{name}'"))})))
+                """, orderBy: "[Group], Sequence")}
+            {OwnedSql.Select<Deployment>(orderBy: "Sequence")}
+            {OwnedSql.Select<BattlefieldRoad>(orderBy: "Sequence")}
+            """, async reader => new ProgressRows
+        {
+            Parameters = (await reader.ReadAsync<PlayerParams>()).ToList(),
+            Deployments = (await reader.ReadAsync<Deployment>()).ToList(),
+            Roads = (await reader.ReadAsync<BattlefieldRoad>()).ToList(),
+        });
+
+        /// <summary>讀回本人 Kind 0..2 的有效角色 Id，供部署驗證。</summary>
+        internal static SnapshotRead<List<Guid>> DeployableCharactersRead => new(
+            OwnedSql.Select<Character>("Kind IN (0, 1, 2)", columns: "Id"),
+            async reader => (await reader.ReadAsync<Guid>()).ToList());
+
+        private static bool IsProgressRow(PlayerParams row) =>
+            row.Group == ProgressGroup || row.Group.StartsWith(GameProgressParamGroups.SettingPrefix, StringComparison.Ordinal);
+
+        /// <summary>整份覆寫不會動到的群組：由其他流程維護的解鎖、技能後綴與精煉計數（金幣另外排除）。</summary>
+        private static readonly string[] PreservedGroups =
+        [
+            UnlockedBulletKindsGroup, UnlockedAuxiliaryKindsGroup,
+            SettingGroupPrefix + "skill_suffixes", SettingGroupPrefix + "refine_item_counts",
+        ];
+
+        private static bool IsReplaced(PlayerParams row) =>
+            !(row.Group == ProgressGroup && row.Name == ProgressKey.Gold) && !PreservedGroups.Contains(row.Group);
+
+        /// <summary>由批次讀回的列組出快照；金幣列缺少時用初始金幣。</summary>
+        internal static GameProgressModel? BuildFrom(ProgressRows rows, long revision)
+        {
+            List<PlayerParams> progressRows = rows.Parameters.Where(IsProgressRow)
+                .OrderBy(row => row.Group, StringComparer.Ordinal).ThenBy(row => row.Sequence).ToList();
+            PlayerParams? gold = progressRows.SingleOrDefault(row => row.Group == ProgressGroup && row.Name == ProgressKey.Gold);
+            return BuildSnapshot(progressRows, rows.Deployments, rows.Roads, revision,
+                gold == null ? GoldCommand.StartingGold : GoldCommand.ReadBalance(gold));
+        }
+
+        internal static ProgressRowSet BuildRows(GameProgressModel model) => new(
+            BuildProgressRows(model).ToList(),
+            (model.DeploymentLog ?? []).Select((deployment, sequence) => new Deployment
             {
                 SpotIndex = deployment.SpotIndex, CellX = deployment.Cell?[0], CellY = deployment.Cell?[1],
                 CharacterId = deployment.CharacterId, Wave = deployment.Wave, Sequence = sequence,
-            }).ToList();
-            List<BattlefieldRoad> roads = (model.Battlefield?.Roads ?? []).Select((road, sequence) => new BattlefieldRoad
+            }).ToList(),
+            (model.Battlefield?.Roads ?? []).Select((road, sequence) => new BattlefieldRoad
             {
                 X = road.X, Y = road.Y, Corner = road.Corner, Rotation = road.Rotation, Sequence = sequence,
-            }).ToList();
+            }).ToList());
 
-            return new(_playerId, JsonSerializer.Serialize(parameters),
-                JsonSerializer.Serialize(deployments), JsonSerializer.Serialize(roads));
+        private static ProgressWriteRows ToWriteRows(Guid? owner, ProgressRowSet rows) => new(owner,
+            JsonSerializer.Serialize(rows.Parameters), JsonSerializer.Serialize(rows.Deployments),
+            JsonSerializer.Serialize(rows.Roads));
+
+        /// <summary>批次版整份覆寫：加入寫入批次，並回傳寫入後（含新 revision 與金幣）的快照。</summary>
+        internal static GameProgressModel QueueReplace(SqlWriteBatch writes, ProgressRows state,
+            GameProgressModel model, long revision, long gold)
+        {
+            ProgressRowSet rows = BuildRows(model);
+            writes.Add(ProgressWriteSql, ToWriteRows(null, rows));
+            var after = new ProgressRows
+            {
+                Parameters = state.Parameters.Where(row => IsProgressRow(row) && !IsReplaced(row)).Concat(rows.Parameters).ToList(),
+                Deployments = rows.Deployments, Roads = rows.Roads,
+            };
+            GameProgressModel saved = BuildFrom(after, revision)
+                ?? throw new BusinessOperationException(ApiMessageKeys.ProgressMissing);
+            saved.Gold = gold;
+            return saved;
         }
+
+        internal ProgressWriteRows BuildWriteRows(GameProgressModel model) => ToWriteRows(_playerId, BuildRows(model));
 
         private Task ReplaceProgressAsync(GameProgressModel model) =>
             ExecuteAsync(ProgressWriteSql, BuildWriteRows(model));
 
         internal static string ProgressWriteSql => $"""
-                DELETE FROM PlayerParams WHERE CreateUserId = @CreateUserId
-                    AND {ProgressRowFilter} AND NOT ([Group] = 'game_progress' AND Name = 'gold')
-                    AND [Group] NOT IN ('game_progress.unlocked_bullet_kinds', 'game_progress.unlocked_auxiliary_kinds',
-                        'game_progress.skill_suffixes', 'game_progress.refine_item_counts');
+                {OwnedSql.Delete<PlayerParams>($"""
+                    {ProgressRowFilter} AND NOT ([Group] = 'game_progress' AND Name = 'gold')
+                    AND [Group] NOT IN ({string.Join(", ", PreservedGroups.Select(group => $"'{group}'"))})
+                    """)}
 
                 INSERT INTO PlayerParams (Id, Sequence, CreateDate, CreateUserId, Status, Name, [Group], Value)
                 SELECT Id, Sequence, CreateDate, @CreateUserId, Status, Name, [Group], Value
                 FROM OPENJSON(@Parameters) WITH (
                     Id uniqueidentifier, Sequence int, CreateDate datetime2, Status int,
                     Name nvarchar(max), [Group] nvarchar(max), Value nvarchar(max));
-                DELETE FROM Deployment WHERE CreateUserId = @CreateUserId;
+                {OwnedSql.Delete<Deployment>()}
                 INSERT INTO Deployment (Id, Sequence, CreateDate, CreateUserId, Status, SpotIndex, CellX, CellY, CharacterId, Wave)
                 SELECT Id, Sequence, CreateDate, @CreateUserId, Status, SpotIndex, CellX, CellY, CharacterId, Wave
                 FROM OPENJSON(@Deployments) WITH (
                     Id uniqueidentifier, Sequence int, CreateDate datetime2, Status int,
                     SpotIndex int, CellX int, CellY int, CharacterId uniqueidentifier, Wave int);
-                DELETE FROM BattlefieldRoad WHERE CreateUserId = @CreateUserId;
+                {OwnedSql.Delete<BattlefieldRoad>()}
                 INSERT INTO BattlefieldRoad (Id, Sequence, CreateDate, CreateUserId, Status, X, Y, Corner, Rotation)
                 SELECT Id, Sequence, CreateDate, @CreateUserId, Status, X, Y, Corner, Rotation
                 FROM OPENJSON(@Roads) WITH (

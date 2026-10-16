@@ -14,7 +14,7 @@ POST，沿用既有 Authorization header、`BackendApiResult<T>`（`Data`／`Mes
 | 路由 | Request DTO／額外 JSON 欄位 | snapshot 型別／JSON |
 |---|---|---|
 | `/Weapon/GetInstanceList` | 無業務 body；查詢不需 request ID | `WeaponInstanceModel[]`（無 command receipt） |
-| `/GameProgress/BackgroundSync` 的 `weapon_acquisitions[]` | `WeaponAcquireRequest`：`request_id, weapon: WeaponInstanceModel` | `acquisitions[]` 中的 `CommandReceipt<WeaponInstanceModel>` |
+| `/GameProgress/BackgroundSync` 的 `weapon_acquisitions[]` | `WeaponAcquireRequest`：`request_id, weapon: WeaponInstanceModel` | `acquisitions[]` 中的 `CommandReceipt<WeaponInstanceModel>`；回應的 `weapons`（完整清單）固定為 null，客戶端以回執的 snapshot 合併，需要完整清單時呼叫 `/Weapon/GetInstanceList` |
 | `/Weapon/Refine` | `WeaponRefineRequest`：`weapon_entry_id: string, crystal_id: string` | `WeaponRefineSnapshot`：`{weapon, crystal_id, material_count: int}` |
 | `/Weapon/Disassemble` | `WeaponDisassembleRequest`：`weapon_entry_ids: string[]` | `WeaponDisassembleSnapshot`：`{removed_ids, skipped_ids, weapons: WeaponInstanceModel[]}` |
 | `/Character/EquipWeapon` | `WeaponEquipRequest`：`character_id: UUID, weapon_entry_id: string|null`；null／空字串卸下 | `CharacterModel` |
@@ -27,7 +27,9 @@ JSON 物件欄位順序不影響新業務命令的冪等比對；詞綴陣列順
 
 ## 權威與不變量
 
-- `RevisionCommand.ExecuteIntent` 重用 `EconomyRequest` ledger 與 Snapshot transaction；
+- `RevisionCommand.ExecuteIntent`（Acquire）重用 `EconomyRequest` ledger 與 Snapshot transaction；
+  `Weapon/Disassemble` 與 `Character/EquipWeapon` 則以單次批次讀寫（`ExecuteAtomicJsonAsync`）達成相同語意：
+  分解只軟刪除武器父列，推進武器領域與各 EntryKey 範圍 revision；穿裝碰觸武器列，與同時分解的交易以寫入衝突收場。
   不再取得玩家列鎖。有效資源自然鍵與 request ID 唯一約束保護首次寫入；
   先查已保存回執，不作客戶端 revision fence。
   同 ID 同意圖只回原始回執，不再扣材料、擲骰、取得或刪除；同 ID 不同操作／意圖
@@ -47,11 +49,11 @@ JSON 物件欄位順序不影響新業務命令的冪等比對；詞綴陣列順
   詞綴結構未變時只更新變動數值；結構變動時才替換子列。
 - 穿卸裝只更新 Character 的武器引用／quality metadata，不刪寫技能樹；
   驗證武器為本人有效持有、未被其他角色裝備。Character/Save 與
-  Foreground/ConfigureSkills 繼續支援技能 consumers，但不能改變權威武器引用。
+  Character/ConfigureSkills 繼續支援技能 consumers，但不能改變權威武器引用。
 - 分解略過裝備中與不存在的 ID，回傳實際移除／略過集合，不發材料或金幣。
   穿裝亦更新目標 Weapon 列，使穿裝／刪除成為同資源寫入衝突，
   避免 Snapshot 下不同資料列的 write skew；不需玩家交易鎖。
-- `/Weapon/Acquire`、`/Weapon/Save`、`/Weapon/Delete` 與 Foreground 下三個武器 action 已移除，
+- `/Weapon/Acquire`、`/Weapon/Save`、`/Weapon/Delete` 與舊 Foreground 控制器下三個武器 action 已移除，
   不保留舊路由包裝；其他領域通用 Save／Delete 與技能配置未移除。
   `WeaponService.Save` 是內部可信 fixture／持久化用的舊低階入口，不再有公開 HTTP consumer。
 

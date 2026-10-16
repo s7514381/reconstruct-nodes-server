@@ -18,22 +18,17 @@ public partial class WeaponService
         string? replay = null;
         try
         {
-            const string readSql = """
-                DECLARE @Owner uniqueidentifier;
-                SELECT @Owner = Id FROM Player WHERE Id = @CreateUserId;
-                IF @Owner IS NULL THROW 51002, 'Weapon owner is unavailable', 1;
-                SELECT * FROM EconomyRequest WHERE CreateUserId = @CreateUserId AND RequestId = @RequestId;
+            string readSql = $"""
+                {OwnedSql.RequireOwner("Weapon")}
+                {OwnedSql.Select<EconomyRequest>("RequestId = @RequestId", activeOnly: false)}
                 DECLARE @WeaponId uniqueidentifier;
-                SELECT @WeaponId = Id FROM Weapon
-                WHERE CreateUserId = @CreateUserId AND EntryKey = @EntryKey AND Status != -1;
+                {OwnedSql.Select<Weapon>("EntryKey = @EntryKey", "@WeaponId = Id")}
                 IF @@ROWCOUNT > 1 THROW 51004, 'Duplicate weapon ownership', 1;
-                SELECT * FROM Weapon WHERE Id = @WeaponId AND CreateUserId = @CreateUserId;
-                SELECT * FROM WeaponAffix WHERE WeaponId = @WeaponId AND CreateUserId = @CreateUserId ORDER BY Sequence;
-                SELECT v.* FROM WeaponAffixValue v INNER JOIN WeaponAffix a ON a.Id = v.WeaponAffixId
-                WHERE a.WeaponId = @WeaponId AND a.CreateUserId = @CreateUserId AND v.CreateUserId = @CreateUserId ORDER BY v.Sequence;
-                SELECT * FROM WeaponUniqueValue WHERE WeaponId = @WeaponId AND CreateUserId = @CreateUserId ORDER BY Sequence;
-                SELECT * FROM PlayerParams WHERE CreateUserId = @CreateUserId AND Status != -1
-                    AND [Group] = 'server.revisions' AND Name = 'WeaponInstanceModel';
+                {OwnedSql.Select<Weapon>("Id = @WeaponId", activeOnly: false)}
+                {OwnedSql.Select<WeaponAffix>("WeaponId = @WeaponId", orderBy: "Sequence", activeOnly: false)}
+                {OwnedSql.Descendants<WeaponAffixValue, WeaponAffix, Weapon>(condition: "m.WeaponId = @WeaponId")}
+                {OwnedSql.Select<WeaponUniqueValue>("WeaponId = @WeaponId", orderBy: "Sequence", activeOnly: false)}
+                {OwnedSql.Select<PlayerParams>($"[Group] = '{RevisionCommand.RevisionGroup}' AND Name = '{nameof(WeaponInstanceModel)}'")}
                 """;
             var parameters = new { CreateUserId = _playerId, request.RequestId, EntryKey = request.WeaponEntryId };
             Func<ManagedGridReader, Task<IReadOnlyList<SqlBatchCommand>>> prepare = async reader =>
@@ -65,11 +60,11 @@ public partial class WeaponService
                     writes.Update([row]);
                     if (!TryQueueRefinedValues(writes, candidate, affixes, values, unique, parsedUnique))
                     {
-                        writes.Add("""
-                        DELETE v FROM WeaponAffixValue v INNER JOIN WeaponAffix a ON a.Id = v.WeaponAffixId
+                        writes.Add($"""
+                        DELETE v FROM {OwnedSql.Table<WeaponAffixValue>()} v INNER JOIN {OwnedSql.Table<WeaponAffix>()} a ON a.Id = v.WeaponAffixId
                         WHERE a.WeaponId = @WeaponId AND a.CreateUserId = @CreateUserId AND v.CreateUserId = @CreateUserId;
-                        DELETE FROM WeaponAffix WHERE WeaponId = @WeaponId AND CreateUserId = @CreateUserId;
-                        DELETE FROM WeaponUniqueValue WHERE WeaponId = @WeaponId AND CreateUserId = @CreateUserId;
+                        {OwnedSql.Delete<WeaponAffix>("WeaponId = @WeaponId")}
+                        {OwnedSql.Delete<WeaponUniqueValue>("WeaponId = @WeaponId")}
                         """, new { WeaponId = row.Id });
                         QueueChildren(writes, row.Id, WeaponSnapshotCodec.ReadAffixes(candidate.Affixes), parsedUnique);
                     }

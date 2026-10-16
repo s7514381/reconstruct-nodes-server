@@ -15,12 +15,15 @@ namespace ReconstructNodesServer.Services
             public long Balance { get; set; } = balance;
         }
 
+        internal static readonly string GoldRowSql =
+            OwnedSql.Select<PlayerParams>("[Group] = 'game_progress' AND Name = 'gold'");
+
+        /// <summary>金幣加成天賦的節點條件，供 SELECT * FROM TalentAcquired 共用。</summary>
+        internal const string GoldTalentsCondition = "TreeId = 'utility' AND NodeId IN ('gold_1', 'gold_2', 'gold_3')";
+
         private async Task<PlayerParams?> GetGoldRow()
         {
-            var rows = (await QueryAsync<PlayerParams>(
-                @"SELECT * FROM PlayerParams WHERE CreateUserId = @CreateUserId
-                  AND [Group] = 'game_progress' AND Name = 'gold' AND Status != -1",
-                new { CreateUserId = _playerId })).ToList();
+            var rows = (await QueryAsync<PlayerParams>(GoldRowSql, new { CreateUserId = _playerId })).ToList();
             if (rows.Count > 1) { throw new InvalidOperationException("玩家金幣參數重複"); }
             return rows.SingleOrDefault();
         }
@@ -40,54 +43,6 @@ namespace ReconstructNodesServer.Services
             return row == null ? StartingGold : ReadBalance(row);
         }
 
-        internal async Task<T> Execute<T>(Guid requestId, string operation, object payload, Func<GoldBalance, Task<T>> action)
-            where T : class
-        {
-            if (requestId == Guid.Empty) { throw new BusinessArgumentException(ApiMessageKeys.EconomyRequestRequired); }
-            string json = SerializePayload(operation, payload);
-            EconomyRequest? existing = await QueryFirstAsync<EconomyRequest?>(
-                "SELECT * FROM EconomyRequest WHERE CreateUserId = @CreateUserId AND RequestId = @RequestId",
-                new { CreateUserId = _playerId, RequestId = requestId });
-            if (existing != null)
-            {
-                if (existing.Operation != operation || existing.Payload != json)
-                {
-                    throw new BusinessArgumentException(ApiMessageKeys.EconomyRequestConflict);
-                }
-                return JsonSerializer.Deserialize<T>(existing.Result)
-                    ?? throw new InvalidOperationException("交易結果紀錄無效");
-            }
-            PlayerParams? row = await GetGoldRow();
-            bool isNew = row == null;
-            GoldBalance account = new(row == null ? StartingGold : ReadBalance(row));
-            row ??= new PlayerParams { CreateUserId = _playerId, Group = "game_progress", Name = "gold" };
-            T result = await action(account);
-            if (account.Balance < 0) { throw new InvalidOperationException("金幣餘額不可為負"); }
-            row.Value = account.Balance.ToString(CultureInfo.InvariantCulture);
-            if (isNew) { await InsertAsync(row); }
-            else { await UpdateAsync(row); }
-            await InsertAsync(new EconomyRequest
-            {
-                RequestId = requestId, Operation = operation, Payload = json,
-                Result = JsonSerializer.Serialize(result), CreateUserId = _playerId,
-            });
-            return result;
-        }
-
-        internal static string SerializePayload(string operation, object payload)
-        {
-            string json = JsonSerializer.Serialize(payload);
-            if (operation == "progress_save" && payload is GameProgressModel { ExpectedRevision: null, Revision: 0 })
-            {
-                // Keep pre-version rollout receipts replayable: those fields did not exist on the old wire.
-                var legacy = JsonSerializer.SerializeToNode(payload)!.AsObject();
-                legacy.Remove("revision");
-                legacy.Remove("expected_revision");
-                json = legacy.ToJsonString();
-            }
-            return json;
-        }
-
         internal static void Spend(GoldBalance account, long cost)
         {
             if (cost <= 0) { throw new ArgumentOutOfRangeException(nameof(cost)); }
@@ -101,20 +56,14 @@ namespace ReconstructNodesServer.Services
             where TContext : class where TResult : class
         {
             if (requestId == Guid.Empty) { throw new BusinessArgumentException(ApiMessageKeys.EconomyRequestRequired); }
-            string json = SerializePayload(operation, payload);
+            string json = JsonSerializer.Serialize(payload);
             var parameters = new Dapper.DynamicParameters(contextParameters);
             parameters.Add("CreateUserId", _playerId);
             parameters.Add("RequestId", requestId);
             parameters.Add("Payload", json);
             return await ExecuteCommandAsync(
-                () => ReadBatchAsync("""
-                    DECLARE @Owner uniqueidentifier;
-                    SELECT @Owner = Id FROM Player WHERE Id = @CreateUserId;
-                    IF @Owner IS NULL THROW 51002, 'Economy owner is unavailable', 1;
-                    SELECT * FROM EconomyRequest WHERE CreateUserId = @CreateUserId AND RequestId = @RequestId;
-                    SELECT * FROM PlayerParams WHERE CreateUserId = @CreateUserId
-                        AND [Group] = 'game_progress' AND Name = 'gold' AND Status != -1;
-                    """ + "\n" + contextSql, parameters, async reader =>
+                () => ReadBatchAsync(OwnedSql.RequireOwner("Economy")
+                    + "\n" + OwnedSql.Select<EconomyRequest>("RequestId = @RequestId", activeOnly: false) + "\n" + GoldRowSql + "\n" + contextSql, parameters, async reader =>
                 {
                     var existing = await reader.ReadSingleOrDefaultAsync<EconomyRequest>();
                     if (existing != null)
@@ -175,7 +124,7 @@ namespace ReconstructNodesServer.Services
             parameters.Add("CreateUserId", _playerId);
             parameters.Add("RequestId", requestId);
             parameters.Add("Operation", operation);
-            parameters.Add("Payload", SerializePayload(operation, payload));
+            parameters.Add("Payload", JsonSerializer.Serialize(payload));
             parameters.Add("StartingGold", StartingGold);
             parameters.Add("Now", DateTime.Now);
             parameters.Add("Enabled", (int)ReconstructNodesServer.Library.Models.Enum.EStatus.啟用);

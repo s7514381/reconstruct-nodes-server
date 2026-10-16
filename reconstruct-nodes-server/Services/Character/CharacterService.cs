@@ -52,14 +52,9 @@ namespace ReconstructNodesServer.Services
                 INSERT INTO CharacterSkillTree (Id, CreateDate, CreateUserId, Status, CharacterId, Kind, Sequence)
                 VALUES (NEWID(), GETDATE(), @CreateUserId, {(int)EStatus.啟用}, @Core, {CoreDefaultSkillKind}, 0);
             END
-            SELECT * FROM Character WHERE CreateUserId = @CreateUserId AND Status != -1 ORDER BY Kind;
-            SELECT c.* FROM CharacterSkillTree c INNER JOIN Character p ON p.Id = c.CharacterId
-            WHERE p.CreateUserId = @CreateUserId AND c.CreateUserId = @CreateUserId
-                AND p.Status != -1 AND c.Status != -1 ORDER BY c.Sequence;
-            SELECT c.* FROM CharacterSkillNode c INNER JOIN CharacterSkillTree p ON p.Id = c.CharacterSkillTreeId
-                INNER JOIN Character a ON a.Id = p.CharacterId
-            WHERE p.CreateUserId = @CreateUserId AND c.CreateUserId = @CreateUserId AND a.CreateUserId = @CreateUserId
-                AND p.Status != -1 AND c.Status != -1 AND a.Status != -1 ORDER BY c.Sequence;
+            {OwnedSql.Select<Character>(orderBy: "Kind")}
+            {OwnedSql.Children<CharacterSkillTree, Character>(activeChildren: true)}
+            {OwnedSql.Descendants<CharacterSkillNode, CharacterSkillTree, Character>(activeChildren: true, activeMiddle: true)}
             SELECT w.* INTO #EquippedWeapons FROM Weapon w
             WHERE w.CreateUserId = @CreateUserId AND w.Status != -1
                 AND EXISTS (SELECT 1 FROM Character c WHERE c.CreateUserId = @CreateUserId
@@ -73,8 +68,7 @@ namespace ReconstructNodesServer.Services
             SELECT c.* FROM WeaponUniqueValue c INNER JOIN #EquippedWeapons p ON p.Id = c.WeaponId
             WHERE c.CreateUserId = @CreateUserId ORDER BY c.Sequence;
             DROP TABLE #EquippedWeapons;
-            SELECT Value FROM PlayerParams WHERE CreateUserId = @CreateUserId
-                AND [Group] = 'server.revisions' AND Name = 'CharacterModel' AND Status != -1;
+            {RevisionCommand.SelectValueSql(nameof(CharacterModel))}
             """, async reader =>
         {
             var characters = (await reader.ReadAsync<Character>()).ToList();
@@ -90,7 +84,7 @@ namespace ReconstructNodesServer.Services
                 revision == null ? 0 : long.Parse(revision, System.Globalization.CultureInfo.InvariantCulture));
         });
 
-        private static List<CharacterModel> BuildSnapshots(IEnumerable<Character> characters,
+        internal static List<CharacterModel> BuildSnapshots(IEnumerable<Character> characters,
             IEnumerable<CharacterSkillTree> trees, IEnumerable<CharacterSkillNode> nodes,
             Dictionary<string, WeaponInstanceModel> weapons, long revision)
         {
@@ -134,32 +128,7 @@ namespace ReconstructNodesServer.Services
 
         public override Task Save(CharacterModel model) => base.Save(model);
 
-        public Task<CommandReceipt<CharacterModel>> EquipWeapon(WeaponEquipRequest request) =>
-            Revisions.ExecuteIntent(request, "character.equip_weapon", nameof(CharacterModel), request, async () =>
-            {
-                CharacterModel model = await Get(request.CharacterId)
-                    ?? throw new BusinessArgumentException(ApiMessageKeys.CharacterNotOwned);
-                model.WeaponEntryId = request.WeaponEntryId ?? "";
-                ValidateWeaponKey(model.WeaponEntryId);
-                string? weaponKey = string.IsNullOrEmpty(model.WeaponEntryId) ? null : model.WeaponEntryId;
-                await ValidateWeaponAsync(weaponKey, model.Kind);
-                if (weaponKey != null)
-                {
-                    int owned = await ExecuteAsync("""
-                        UPDATE Weapon SET Rarity = Rarity
-                        WHERE CreateUserId = @CreateUserId AND EntryKey = @EntryKey AND Status != -1;
-                        """, new { CreateUserId = _playerId, EntryKey = weaponKey });
-                    if (owned != 1) { throw new BusinessArgumentException(ApiMessageKeys.WeaponNotOwned); }
-                }
-                // Update only equipment. Skill trees are never deleted/reinserted by this action.
-                await ExecuteAsync(
-                    "UPDATE Character SET WeaponEntryKey=@WeaponEntryKey, WeaponQualityVersion=@Quality WHERE Id=@Id AND CreateUserId=@CreateUserId AND Status != -1",
-                    new { model.Id, CreateUserId = _playerId, WeaponEntryKey = weaponKey, Quality = weaponKey == null ? (int?)null : 2 });
-                await Revisions.Advance(nameof(CharacterModel), [request.CharacterId.ToString("D")]);
-                return (await Get(request.CharacterId))!;
-            });
-
-        private static void ValidateWeaponKey(string? key)
+        internal static void ValidateWeaponKey(string? key)
         {
             if (key is { Length: > 450 } || (!string.IsNullOrEmpty(key) && string.IsNullOrWhiteSpace(key)))
             { throw new BusinessArgumentException(ApiMessageKeys.WeaponIdInvalid); }
@@ -169,11 +138,11 @@ namespace ReconstructNodesServer.Services
         {
             if (weaponKey == null) { return; }
             var weapons = await QueryAsync<Guid>(
-                "SELECT Id FROM Weapon WHERE CreateUserId=@CreateUserId AND Status != -1 AND EntryKey=@EntryKey",
+                OwnedSql.Select<Weapon>("EntryKey=@EntryKey", "Id"),
                 new { CreateUserId = _playerId, EntryKey = weaponKey });
             if (!weapons.Any()) { throw new BusinessArgumentException(ApiMessageKeys.WeaponNotOwned); }
             var equipped = await QueryAsync<int>(
-                "SELECT Kind FROM Character WHERE CreateUserId=@CreateUserId AND Status != -1 AND WeaponEntryKey=@EntryKey AND Kind != @Kind",
+                OwnedSql.Select<Character>("WeaponEntryKey=@EntryKey AND Kind != @Kind", "Kind"),
                 new { CreateUserId = _playerId, EntryKey = weaponKey, Kind = kind });
             if (equipped.Any()) { throw new BusinessArgumentException(ApiMessageKeys.WeaponAlreadyEquipped); }
         }
@@ -274,23 +243,32 @@ namespace ReconstructNodesServer.Services
             model.Id = row.Id;
         }
 
+        internal const string SkillAccessCondition =
+            "[Group] IN ('game_progress.unlocked_bullet_kinds','game_progress.unlocked_auxiliary_kinds')";
+
         private async Task ValidateSkillAccessAsync(CharacterModel model)
         {
             if (model.SkillTrees == null || model.SkillTrees.Count == 0) { return; }
-            int defaultSkill = model.Kind switch
+            var rows = await QueryAsync<PlayerParams>(
+                OwnedSql.Select<PlayerParams>(SkillAccessCondition), new { CreateUserId = _playerId });
+            ValidateSkillAccess(model.Kind, model.SkillTrees, rows);
+        }
+
+        /// <summary>純函式版的解鎖檢查；rows 為 SkillAccessCondition 查出的 PlayerParams。</summary>
+        internal static void ValidateSkillAccess(int characterKind, List<GameProgressSkillLoadoutModel>? trees,
+            IEnumerable<PlayerParams> rows)
+        {
+            if (trees == null || trees.Count == 0) { return; }
+            int defaultSkill = characterKind switch
             {
                 0 => 5, 1 => 0, 2 => 3, CoreKind => CoreDefaultSkillKind,
                 _ => throw new BusinessArgumentException(ApiMessageKeys.CharacterKindInvalid),
             };
-            var rows = await QueryAsync<PlayerParams>(
-                @"SELECT * FROM PlayerParams WHERE CreateUserId=@CreateUserId AND Status != -1
-                  AND [Group] IN ('game_progress.unlocked_bullet_kinds','game_progress.unlocked_auxiliary_kinds')",
-                new { CreateUserId = _playerId });
-            var unlocked = rows.ToDictionary(row => (row.Group, row.Name), row => System.Text.Json.JsonSerializer.Deserialize<bool>(row.Value));
+            var unlocked = rows.ToDictionary(row => (row.Group, row.Name), row => JsonSerializer.Deserialize<bool>(row.Value));
             bool ActiveAllowed(int kind) => kind is >= 0 and <= 6 &&
                 (kind == 0 || kind == defaultSkill ||
                  unlocked.GetValueOrDefault(("game_progress.unlocked_bullet_kinds", kind.ToString(CultureInfo.InvariantCulture))));
-            foreach (var tree in model.SkillTrees)
+            foreach (var tree in trees)
             {
                 if (!ActiveAllowed(tree.Kind)) { throw new BusinessArgumentException(ApiMessageKeys.SkillLocked); }
                 foreach (var node in tree.AuxiliaryNodes ?? new())

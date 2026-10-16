@@ -32,36 +32,22 @@ public class WaveCompleteCommand(BaseServiceArgument argument) : BaseService(arg
         if (request.RequestId == Guid.Empty) { throw new BusinessArgumentException(ApiMessageKeys.EconomyRequestRequired); }
         var state = new State();
         var reads = new SnapshotReadBatch();
-        reads.Add(new SnapshotRead<object?>("""
-            DECLARE @Owner uniqueidentifier;
-            SELECT @Owner = Id FROM Player WHERE Id = @CreateUserId;
-            IF @Owner IS NULL THROW 51002, 'Wave owner is unavailable', 1;
-            """, _ => Task.FromResult<object?>(null)));
-        reads.Add(new SnapshotRead<object?>("""
-            SELECT * FROM EconomyRequest WHERE CreateUserId = @CreateUserId
-                AND RequestId IN (@RequestId, @SessionId);
-            """, async reader => { state.Receipts = (await reader.ReadAsync<EconomyRequest>()).ToList(); return null; }));
-        reads.Add(new SnapshotRead<object?>("""
-            SELECT * FROM PlayerParams WHERE CreateUserId = @CreateUserId AND Status != -1
-                AND (([Group] = 'server.revisions' AND Name = 'GameProgressModel')
-                    OR [Group] = 'game_progress' OR [Group] LIKE 'game[_]progress.%'
-                    OR ([Group] = 'economy' AND Name = 'active_wave'))
-                ORDER BY [Group], Sequence;
-            SELECT * FROM Deployment WHERE Status != -1 AND CreateUserId = @CreateUserId ORDER BY Sequence;
-            SELECT * FROM BattlefieldRoad WHERE Status != -1 AND CreateUserId = @CreateUserId ORDER BY Sequence;
-            """, async reader =>
+        reads.Add(OwnedSql.OwnerRead("Wave"));
+        reads.Add(OwnedSql.Rows<EconomyRequest>("RequestId IN (@RequestId, @SessionId)", rows => state.Receipts = rows, activeOnly: false));
+        var progressRead = GameProgressCommand.StateRead("active_wave", "claimed_kills");
+        reads.Add(new SnapshotRead<object?>(progressRead.Sql, async reader =>
         {
-            state.Parameters = (await reader.ReadAsync<PlayerParams>()).ToList();
-            state.Deployments = (await reader.ReadAsync<Deployment>()).ToList();
-            state.Roads = (await reader.ReadAsync<BattlefieldRoad>()).ToList();
+            var progress = await progressRead.Read(reader);
+            state.Parameters = progress.Parameters;
+            state.Deployments = progress.Deployments;
+            state.Roads = progress.Roads;
             return null;
         }));
+        // 新擊殺只記在 economy/claimed_kills 位元圖；這裡僅為相容舊版逐殺 enemy_kill 收據（不再新增）。
         // Kill payloads are {"SessionId":"<guid>","EnemyIndex":n}; the prefix avoids parsing every kill ever made.
-        reads.Add(new SnapshotRead<object?>("""
-            SELECT DISTINCT TRY_CONVERT(int, JSON_VALUE(Payload, '$.EnemyIndex'))
-            FROM EconomyRequest WHERE CreateUserId = @CreateUserId AND Operation = 'enemy_kill'
-                AND Payload LIKE @KillPrefix;
-            """, async reader => { state.KillIndexes = (await reader.ReadAsync<int>()).ToList(); return null; }));
+        reads.Add(new SnapshotRead<object?>(OwnedSql.Select<EconomyRequest>(
+            "Operation = 'enemy_kill' AND Payload LIKE @KillPrefix",
+            "DISTINCT TRY_CONVERT(int, JSON_VALUE(Payload, '$.EnemyIndex'))", activeOnly: false), async reader => { state.KillIndexes = (await reader.ReadAsync<int>()).ToList(); return null; }));
 
         string payload = RevisionCommand.CanonicalPayload(request);
         string json = await _repository.ExecuteAtomicJsonAsync(reads.Sql, new
@@ -109,16 +95,10 @@ public class WaveCompleteCommand(BaseServiceArgument argument) : BaseService(arg
                 if (!newRows.Contains(row)) { updatedRows[row.Id] = row; }
             }
         }
-        GameProgressModel BuildProgress(long revision)
-        {
-            var progressRows = state.Parameters
-                .Where(p => p.Group == ProgressGroup || p.Group.StartsWith("game_progress.", StringComparison.Ordinal))
-                .OrderBy(p => p.Group, StringComparer.Ordinal).ThenBy(p => p.Sequence).ToList();
-            PlayerParams? gold = Find(ProgressGroup, "gold");
-            return GameProgressCommand.BuildSnapshot(progressRows, state.Deployments, state.Roads, revision,
-                gold == null ? GoldCommand.StartingGold : GoldCommand.ReadBalance(gold))
+        GameProgressModel BuildProgress(long revision) =>
+            GameProgressCommand.BuildFrom(new GameProgressCommand.ProgressRows
+            { Parameters = state.Parameters, Deployments = state.Deployments, Roads = state.Roads }, revision)
                 ?? throw new BusinessOperationException(ApiMessageKeys.ProgressMissing);
-        }
         long Revision() => Find(RevisionCommand.RevisionGroup, RevisionName) is { } row
             ? long.Parse(row.Value, CultureInfo.InvariantCulture) : 0;
 
@@ -126,7 +106,8 @@ public class WaveCompleteCommand(BaseServiceArgument argument) : BaseService(arg
         var session = ProgressionRules.ReadSession(receipt, model.InfiniteLevel);
         if (!Guid.TryParse(Find("economy", "active_wave")?.Value, out var activeId) || activeId != request.SessionId)
         { throw new BusinessArgumentException(ApiMessageKeys.EconomySessionNotOwned); }
-        var indexes = state.KillIndexes.ToHashSet();
+        var indexes = KillLedger.Parse(Find(KillLedger.Group, KillLedger.Name)?.Value).Indexes(request.SessionId)
+            .Concat(state.KillIndexes).ToHashSet();
         if (session.EnemyCount < 1 || indexes.Count != session.EnemyCount ||
             indexes.Any(i => i < 0 || i >= session.EnemyCount))
         { throw new BusinessOperationException(ApiMessageKeys.EconomyEnemyInvalid); }

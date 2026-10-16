@@ -20,12 +20,21 @@ public partial class BackgroundSyncCommand
         public List<WeaponAffix> Affixes { get; set; } = [];
         public List<WeaponAffixValue> Values { get; set; } = [];
         public List<WeaponUniqueValue> Unique { get; set; } = [];
-        public HashSet<string> ClaimedKills { get; set; } = [];
+        public bool TalentLoaded { get; set; }
     }
 
-    private Task<string> ExecuteBatch(BackgroundSyncRequest request)
+    /// <summary>升級才需要天賦列；一般擊殺同步不讀天賦，遇到升級時以天賦讀取重跑整個交易。</summary>
+    private sealed class TalentReadRequired : Exception;
+
+    private async Task<string> ExecuteBatch(BackgroundSyncRequest request)
     {
-        var state = new BatchState();
+        try { return await ExecuteBatch(request, loadTalent: request.Talent != null); }
+        catch (TalentReadRequired) { return await ExecuteBatch(request, loadTalent: true); }
+    }
+
+    private Task<string> ExecuteBatch(BackgroundSyncRequest request, bool loadTalent)
+    {
+        var state = new BatchState { TalentLoaded = loadTalent };
         var reads = BuildReads(request, state, out object parameters);
         return _repository.ExecuteAtomicJsonAsync(reads.Sql, parameters, async reader =>
         {
@@ -38,6 +47,15 @@ public partial class BackgroundSyncCommand
     {
         string payload = RevisionCommand.CanonicalPayload(request);
         var receipts = state.Receipts.ToDictionary(r => r.RequestId);
+        PlayerParams? ringRow = state.Parameters.SingleOrDefault(p => p.Group == SyncReceiptRing.Group && p.Name == SyncReceiptRing.Name);
+        var ring = SyncReceiptRing.Parse(ringRow?.Value);
+        if (ring.Replay(request.RequestId, payload) is { } ringed)
+        {
+            // 回執不含庫存快照，重放時在同一段 SQL 補上目前在庫物品。
+            return [new SqlBatchCommand(StockSql + "SELECT @Result;",
+                new { CreateUserId = _playerId, Receipt = ringed.Result, Items = ringed.Stock })];
+        }
+        // 舊版每批一列 background.sync 收據（不再新增）仍可重播。
         if (Replay<CommandReceipt<BackgroundSyncResponse>>(receipts, request.RequestId, "background.sync", payload) is { } prior)
         { return [new SqlBatchCommand("SELECT @Receipt;", new { Receipt = JsonSerializer.Serialize(prior) })]; }
         if (request.Progress != null) { throw new BusinessArgumentException(ApiMessageKeys.RequestInvalid); }
@@ -98,6 +116,11 @@ public partial class BackgroundSyncCommand
                 Revision(nameof(GameProgressModel)), balance)
                 ?? throw new BusinessOperationException(ApiMessageKeys.ProgressMissing)
             : null;
+        string? ActiveWave() => state.Parameters.SingleOrDefault(p => p.Group == KillLedger.Group && p.Name == "active_wave")?.Value;
+        KillLedger? killLedger = null;
+        KillLedger Ledger() => killLedger ??= KillLedger.Parse(state.Parameters
+            .SingleOrDefault(p => p.Group == KillLedger.Group && p.Name == KillLedger.Name)?.Value);
+        bool killLedgerChanged = false;
         foreach (WaveStartRequest wave in request.WaveStarts)
         {
             int enemyCount = EconomyCommand.WaveEnemyCount(wave);
@@ -124,6 +147,8 @@ public partial class BackgroundSyncCommand
                 Parameter("game_progress", "max_wave_reached", serverProgress.MaxWaveReached.ToString(CultureInfo.InvariantCulture));
                 progressChanged = true;
                 Parameter("economy", "active_wave", wave.RequestId.ToString());
+                Ledger().Start(wave.RequestId);
+                killLedgerChanged = true;
                 Receipt(wave.RequestId, "wave_start", intent, session);
                 goldChanged = true;
             }
@@ -133,21 +158,26 @@ public partial class BackgroundSyncCommand
         {
             if (kill.SessionId == Guid.Empty || kill.EnemyIndex < 0)
             { throw new BusinessArgumentException(ApiMessageKeys.EconomyKillInvalid); }
-            string intent = JsonSerializer.Serialize(new { kill.SessionId, kill.EnemyIndex });
-            if (Replay<GoldOperationResult>(receipts, kill.RequestId, "enemy_kill", intent) != null) { continue; }
+            // 已領取的擊殺記在最近幾個波次的位元圖；重送（同批次或新信封）視為已套用，不再發獎或計數。
+            // 只接受進行中或位元圖內（最近幾個）的波次。
+            var ledger = Ledger();
+            if (!(Guid.TryParse(ActiveWave(), out Guid activeWave) && activeWave == kill.SessionId) && !ledger.Contains(kill.SessionId))
+            { throw new BusinessArgumentException(ApiMessageKeys.EconomySessionNotOwned); }
+            if (ledger.Has(kill.SessionId, kill.EnemyIndex)) { continue; }
             receipts.TryGetValue(kill.SessionId, out EconomyRequest? session);
             balance = checked(balance + KillRewardRules.CalculateClaim(
                 session?.Operation == "wave_start" ? session.Result : null,
-                state.ClaimedKills.Contains(intent), kill.EnemyIndex, state.GoldTalents));
+                false, kill.EnemyIndex, state.GoldTalents));
             var waveSession = ProgressionRules.ReadSession(session!, serverProgress!.InfiniteLevel);
             talentPointsEarned = checked(talentPointsEarned +
                 ProgressionRules.ApplyKill(serverProgress!.Progression, waveSession, kill.EnemyIndex));
             serverProgress.LifetimeEnemiesDefeated = checked(serverProgress.LifetimeEnemiesDefeated + 1);
             progressChanged = true;
-            state.ClaimedKills.Add(intent);
-            Receipt(kill.RequestId, "enemy_kill", intent, new GoldOperationResult { Gold = balance });
+            ledger.Add(kill.SessionId, kill.EnemyIndex);
+            killLedgerChanged = true;
             goldChanged = true;
         }
+        if (killLedgerChanged) { Parameter(KillLedger.Group, KillLedger.Name, killLedger!.ToString()); }
         if (progressChanged)
         {
             Parameter("game_progress", "lifetime_enemies_defeated",
@@ -160,6 +190,7 @@ public partial class BackgroundSyncCommand
         }
         if (talentPointsEarned > 0)
         {
+            if (state.Talent == null && !state.TalentLoaded) { throw new TalentReadRequired(); }
             if (state.Talent == null) { throw new BusinessOperationException(ApiMessageKeys.ProgressMissing); }
             state.Talent.TalentPoints = checked(state.Talent.TalentPoints + talentPointsEarned);
         }
@@ -188,12 +219,12 @@ public partial class BackgroundSyncCommand
             response.Talent = TalentService.BuildSnapshot(state.Talent!, state.Acquired, state.Legacy,
                 Advance(nameof(TalentModel)));
         }
-        foreach (ItemDeltaRequest item in request.Items)
+        if (request.Items.Count > 0)
         {
             Item row = new();
-            writes.Add(ItemService.AdjustmentSql, new { ItemKey = item.ItemKey, Delta = item.Delta,
-                Category = item.Category, NewId = row.Id, row.CreateDate, Status = (int?)row.Status,
-                Whitespace = ItemService.WhitespaceCharacters });
+            writes.Add(ItemService.BulkAdjustmentSql, new { Items = JsonSerializer.Serialize(
+                    request.Items.Select(i => new { k = i.ItemKey, d = i.Delta, c = i.Category })),
+                row.CreateDate, Status = (int?)row.Status, Whitespace = ItemService.WhitespaceCharacters });
         }
         foreach (WeaponAcquireRequest acquisition in request.WeaponAcquisitions)
         {
@@ -211,11 +242,6 @@ public partial class BackgroundSyncCommand
             Receipt(acquisition.RequestId, "weapon.acquire", intent, receipt);
             response.Acquisitions.Add(receipt);
         }
-        if (request.WeaponAcquisitions.Count > 0)
-        {
-            response.Weapons = WeaponService.BuildSnapshots(state.Weapons.OrderBy(w => w.CreateDate), state.Affixes, state.Values,
-                state.Unique, Revision(nameof(WeaponInstanceModel))).ToList();
-        }
         if (goldChanged) { Parameter("game_progress", "gold", balance.ToString(CultureInfo.InvariantCulture)); }
         response.Gold = balance;
         writes.Insert(newParameters);
@@ -223,23 +249,37 @@ public partial class BackgroundSyncCommand
         writes.Insert(addedReceipts);
         var batchReceipt = new CommandReceipt<BackgroundSyncResponse> { RequestId = request.RequestId,
             Revision = Revision(nameof(BackgroundSyncResponse)), Snapshot = response };
-        writes.Add("""
-            DECLARE @Result nvarchar(max) = @Receipt;
-            IF @Items = 1
-            BEGIN
-                DECLARE @Stock nvarchar(max) = (SELECT Id, Sequence, CreateDate, CreateUserId, Status, ItemKey, Amount, Category
-                    FROM Item WHERE CreateUserId = @CreateUserId AND Status != -1 AND Amount > 0
-                    FOR JSON PATH, INCLUDE_NULL_VALUES);
-                SET @Result = JSON_MODIFY(@Result, '$.snapshot.items', JSON_QUERY(@Stock));
-            END;
-            INSERT INTO EconomyRequest (Id, CreateDate, CreateUserId, Status, RequestId, Operation, Payload, Result)
-            VALUES (NEWID(), @Now, @CreateUserId, @Enabled, @RequestId, 'background.sync', @Payload, @Result);
+        writes.Add(StockSql + """
+            DECLARE @Stocked bit = @Items;
+            DECLARE @Stored nvarchar(max) = JSON_MODIFY(@Receipt, '$.snapshot.items', NULL);
+            DECLARE @Ring nvarchar(max) = JSON_MODIFY(@Retained, 'append $',
+                JSON_QUERY((SELECT @RequestId AS i, @PayloadHash AS h, @Stored AS r, @Stocked AS s FOR JSON PATH, WITHOUT_ARRAY_WRAPPER)));
+            IF @RingId IS NULL
+                INSERT INTO PlayerParams (Id, CreateDate, CreateUserId, Status, [Group], Name, Value)
+                VALUES (NEWID(), @Now, @CreateUserId, @Enabled, @RingGroup, @RingName, @Ring);
+            ELSE
+                UPDATE PlayerParams SET Value = @Ring WHERE Id = @RingId AND CreateUserId = @CreateUserId;
             SELECT @Result;
             """, new { Receipt = JsonSerializer.Serialize(batchReceipt), Items = request.Items.Count > 0,
-                RequestId = request.RequestId, Payload = payload, Now = DateTime.Now,
+                RequestId = request.RequestId, PayloadHash = SyncReceiptRing.Hash(payload), Now = DateTime.Now,
+                Retained = ring.Retained(request.RequestId), RingId = ringRow?.Id,
+                RingGroup = SyncReceiptRing.Group, RingName = SyncReceiptRing.Name,
                 Enabled = (int)ReconstructNodesServer.Library.Models.Enum.EStatus.啟用 });
         return writes.Commands;
     }
+
+    // 回應用的目前在庫物品（@Items = 1 時才附上）；結果放在 @Result。
+    private const string StockSql = """
+        DECLARE @Result nvarchar(max) = @Receipt;
+        IF @Items = 1
+        BEGIN
+            DECLARE @Stock nvarchar(max) = (SELECT Id, Sequence, CreateDate, CreateUserId, Status, ItemKey, Amount, Category
+                FROM Item WHERE CreateUserId = @CreateUserId AND Status != -1 AND Amount > 0
+                FOR JSON PATH, INCLUDE_NULL_VALUES);
+            SET @Result = JSON_MODIFY(@Result, '$.snapshot.items', JSON_QUERY(@Stock));
+        END;
+
+        """;
 
     private static T? Replay<T>(Dictionary<Guid, EconomyRequest> receipts, Guid id, string operation, string payload)
         where T : class

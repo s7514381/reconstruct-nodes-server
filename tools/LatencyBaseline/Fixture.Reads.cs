@@ -98,8 +98,7 @@ internal static partial class Fixture
         achievements.Groups.Single(g => g.Name == "weapons_collected").Collected = ["staff", "sword", "bow"];
         achievements.Groups.Single(g => g.Name == "affixes_seen").Collected = ["latency-affix-a", "latency-affix-b"];
         await SaveBackground(http, achievements);
-        await Post(http, "AchievementProgress/ClaimReward",
-            new AchievementClaimRequest { AchievementItemId = "enemy_kills_10" });
+        await ClaimAchievement(http, "enemy_kills_10");
     }
 
     private static async Task<Dictionary<string, JsonNode?>> LegacyReadSnapshots(
@@ -112,7 +111,7 @@ internal static partial class Fixture
         var progress = await new GameProgressCommand(argument, new DeploymentService(argument), new BattlefieldRoadService(argument), new PlayerParamsService(argument), new RevisionCommand(argument)).Get();
         var talent = await new TalentService(argument, new TalentAcquiredService(argument), new TalentLegacyCategoryService(argument)).GetSnapshot();
         var weapons = (await new WeaponService(argument, new WeaponAffixService(argument), new WeaponAffixValueService(argument), new WeaponUniqueValueService(argument)).GetInstanceList()).ToList();
-        var achievements = await new AchievementProgressCommand(argument, new ItemService(argument), new AchievementService(argument), new AchievementDetailService(argument), new AchievementCollectedService(argument), new RevisionCommand(argument)).Get();
+        var achievements = await new AchievementProgressCommand(argument, new AchievementService(argument), new AchievementDetailService(argument), new AchievementCollectedService(argument), new RevisionCommand(argument)).Get();
 
         Require(weapons.Count == 3, "rich equipped and unequipped inventory");
         foreach (var seed in new[] { RichWeapon("latency-rich-equipped", 0), RichWeapon("latency-rich-spare", 100) })
@@ -164,9 +163,9 @@ internal static partial class Fixture
         return result;
     }
 
-    private static void AssertSnapshotEqual(JsonNode? expected, JsonNode? actual) =>
+    private static void AssertSnapshotEqual(JsonNode? expected, JsonNode? actual, string? label = null) =>
         Require(expected != null && actual != null && JsonNode.DeepEquals(expected, actual),
-            "HTTP command / legacy service rich snapshot equality");
+            "HTTP command / legacy service rich snapshot equality" + (label == null ? "" : $" ({label})"));
 
     private static void AssertUnarmed(CharacterModel character)
     {

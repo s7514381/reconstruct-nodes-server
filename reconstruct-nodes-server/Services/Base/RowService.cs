@@ -46,6 +46,13 @@ namespace ReconstructNodesServer.Services
             return $@"{select} {from} {join} {where} {subWhere} {order}"; 
         }
 
+        /// <summary>
+        /// 本服務 DBModel 的「本人有效列」查詢，與 <see cref="OwnedSql"/> 同一份規則（無別名、不 JOIN 的簡單情境）；
+        /// 需要別名 / JOIN 的情境仍用 <see cref="Sql"/>。
+        /// </summary>
+        public string SelectOwned(string? condition = null, string columns = "*", string? orderBy = null, int? top = null) =>
+            OwnedSql.Select<DBModel>(condition, columns, orderBy, top);
+
         public virtual string SqlDataList(string subWhere = "")
         {
             return Sql(subWhere: $"AND CreateUserId = @CreateUserId {subWhere}");
@@ -178,12 +185,7 @@ namespace ReconstructNodesServer.Services
             return property.Name;
         }
 
-        private static string TableOf<T>()
-        {
-            string table = CommonUtility.GetTableAttribute<T>();
-            return !string.IsNullOrEmpty(table) ? table
-                : throw new InvalidOperationException($"{typeof(T).Name} 未設定資料表");
-        }
+        private static string TableOf<T>() => OwnedSql.Table<T>();
 
         private static string ForeignKeyTo<TParent>()
         {
@@ -197,31 +199,23 @@ namespace ReconstructNodesServer.Services
             Expression<Func<DBModel, object?>>? orderBy = null, bool lockRows = false,
             IEnumerable<Guid>? ids = null)
         {
-            string filter = " AND Status != -1";
-            if (ids != null) { filter += " AND Id IN @Ids"; }
-            string order = orderBy == null ? "" : $" ORDER BY {Field(orderBy)}";
-            string hint = lockRows ? " WITH (UPDLOCK, HOLDLOCK)" : "";
-            return (await QueryAsync<DBModel>($"SELECT * FROM {TableOf<DBModel>()}{hint} WHERE CreateUserId = @CreateUserId{filter}{order}",
-                new { CreateUserId = _playerId, Ids = ids })).ToList();
+            string sql = OwnedSql.Select<DBModel>(ids != null ? "Id IN @Ids" : null,
+                orderBy: orderBy == null ? null : Field(orderBy), tableHint: lockRows ? "UPDLOCK, HOLDLOCK" : null);
+            return (await QueryAsync<DBModel>(sql, new { CreateUserId = _playerId, Ids = ids })).ToList();
         }
 
         public Task<DBModel?> QueryOwnedFirstAsync() =>
-            QueryFirstAsync<DBModel?>($"SELECT TOP 1 * FROM {TableOf<DBModel>()} WHERE Status != -1 AND CreateUserId = @CreateUserId",
-                new { CreateUserId = _playerId });
+            QueryFirstAsync<DBModel?>(OwnedSql.Select<DBModel>(top: 1), new { CreateUserId = _playerId });
 
         /// <summary>批次查詢子列；父子雙重擁有權由 SQL 保證，各層狀態過濾由領域指定。</summary>
         public async Task<List<DBModel>> QueryChildrenAsync<TParent>(
             IEnumerable<Guid>? parentIds = null, bool activeChildrenOnly = false, bool activeParentsOnly = true)
             where TParent : ModelBase
         {
-            string foreignKey = ForeignKeyTo<TParent>();
-            string filter = activeChildrenOnly ? " AND c.Status != -1" : "";
-            if (activeParentsOnly) { filter += " AND p.Status != -1"; }
-            if (parentIds != null) { filter += $" AND c.{foreignKey} IN @ParentIds"; }
-            return (await QueryAsync<DBModel>($@"SELECT c.* FROM {TableOf<DBModel>()} c
-                INNER JOIN {TableOf<TParent>()} p ON p.Id = c.{foreignKey}
-                WHERE p.CreateUserId = @CreateUserId AND c.CreateUserId = @CreateUserId{filter}
-                ORDER BY c.Sequence", new { CreateUserId = _playerId, ParentIds = parentIds })).ToList();
+            string? condition = parentIds != null ? $"c.{ForeignKeyTo<TParent>()} IN @ParentIds" : null;
+            return (await QueryAsync<DBModel>(
+                OwnedSql.Children<DBModel, TParent>(activeChildrenOnly, activeParentsOnly, condition),
+                new { CreateUserId = _playerId, ParentIds = parentIds })).ToList();
         }
 
         public Task<int> DeleteAllOwnedAsync() =>

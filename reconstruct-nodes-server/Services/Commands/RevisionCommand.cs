@@ -1,8 +1,9 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Text.Json;
 using ReconstructNodesServer.Argument;
 using ReconstructNodesServer.Library.DBModel;
 using ReconstructNodesServer.Library.Models;
+using ReconstructNodesServer.Repositories;
 
 namespace ReconstructNodesServer.Services;
 
@@ -23,10 +24,12 @@ public class RevisionCommand(BaseServiceArgument argument) : BaseService(argumen
         };
     }
 
-    public SnapshotRead<RevisionVector> VectorRead => new("""
-        SELECT Name, Value FROM PlayerParams WHERE CreateUserId = @CreateUserId
-            AND [Group] = 'server.revisions' AND Status != -1;
-        """, async reader =>
+    /// <summary>讀取單一領域 revision 值的 SQL；domain 只能是 nameof(XxxModel) 之類的固定名稱。</summary>
+    public static string SelectValueSql(string domain) =>
+        OwnedSql.Select<PlayerParams>($"[Group] = '{RevisionGroup}' AND Name = '{domain}'", "Value");
+
+    public SnapshotRead<RevisionVector> VectorRead => new(
+        OwnedSql.Select<PlayerParams>($"[Group] = '{RevisionGroup}'", "Name, Value"), async reader =>
     {
         var values = (await reader.ReadAsync<PlayerParams>())
             .ToDictionary(row => row.Name, row => long.Parse(row.Value, CultureInfo.InvariantCulture));
@@ -46,7 +49,7 @@ public class RevisionCommand(BaseServiceArgument argument) : BaseService(argumen
     }
 
     private Task<PlayerParams?> ReadRow(string domain) => QueryFirstAsync<PlayerParams?>(
-        "SELECT * FROM PlayerParams WHERE CreateUserId=@CreateUserId AND [Group]=@Group AND Name=@Name AND Status != -1",
+        OwnedSql.Select<PlayerParams>("[Group]=@Group AND Name=@Name"),
         new { CreateUserId = _playerId, Group = RevisionGroup, Name = domain });
 
     public static IReadOnlyCollection<string>? ScopesFor(IRevisionedSnapshot snapshot) => snapshot switch
@@ -65,7 +68,7 @@ public class RevisionCommand(BaseServiceArgument argument) : BaseService(argumen
         // Natural-key equality follows SQL collation. Resolve stored spelling as well,
         // otherwise a case/accent alias could bypass a fenced weapon's revision.
         var stored = await QueryAsync<string>(
-            "SELECT EntryKey FROM Weapon WHERE CreateUserId=@CreateUserId AND EntryKey IN @Keys",
+            OwnedSql.Select<Weapon>("EntryKey IN @Keys", "EntryKey", activeOnly: false),
             new { CreateUserId = _playerId, Keys = scopes.Distinct().ToArray() });
         return scopes.Concat(stored).Distinct().ToArray();
     }
@@ -78,10 +81,16 @@ public class RevisionCommand(BaseServiceArgument argument) : BaseService(argumen
         {
             string[] resolved = await ResolveScopes(domain, scopes);
             var rows = await QueryAsync<PlayerParams>(
-                "SELECT * FROM PlayerParams WHERE CreateUserId=@CreateUserId AND [Group]=@Group AND Name IN @Names AND Status != -1",
+                OwnedSql.Select<PlayerParams>("[Group]=@Group AND Name IN @Names"),
                 new { CreateUserId = _playerId, Group = RevisionGroup, Names = resolved.Select(scope => ScopeKey(domain, scope)).ToArray() });
             fence = rows.Select(row => long.Parse(row.Value, CultureInfo.InvariantCulture)).DefaultIfEmpty(0).Max();
         }
+        return CheckValues(domain, expected, current, fence);
+    }
+
+    /// <summary>Check 的純判斷：current 為領域 revision，fence 為範圍 revision（無範圍時等於 current）。</summary>
+    internal static long CheckValues(string domain, long? expected, long current, long fence)
+    {
         // Unrelated character/weapon instances can merge; shared state uses a domain fence.
         // Unversioned in-flight snapshots cannot erase an already fenced foreground result.
         if (expected < 0 || (expected.HasValue ? expected > current || expected < fence : fence != 0))
@@ -90,6 +99,63 @@ public class RevisionCommand(BaseServiceArgument argument) : BaseService(argumen
                 new Dictionary<string, string> { ["domain"] = domain, ["revision"] = current.ToString(CultureInfo.InvariantCulture) }));
         }
         return current;
+    }
+
+    // ---- 批次命令（ExecuteAtomicJsonAsync）共用：回執讀取／重播、revision 讀取／推進、回執寫入 ----
+
+    /// <summary>以 RequestId 讀取回執；回執沒有軟刪除語意，不過濾 Status。</summary>
+    internal static SnapshotRead<List<EconomyRequest>> ReceiptsRead(Action<List<EconomyRequest>> assign,
+        string condition = "RequestId = @RequestId") =>
+        OwnedSql.Rows<EconomyRequest>(condition, assign, activeOnly: false);
+
+    /// <summary>讀取領域與範圍 revision 列；參數 @RevisionNames 由 <see cref="RevisionNames"/> 提供。</summary>
+    internal static SnapshotRead<List<PlayerParams>> RevisionsRead(Action<List<PlayerParams>> assign) =>
+        OwnedSql.Rows<PlayerParams>($"[Group] = '{RevisionGroup}' AND Name IN @RevisionNames", assign);
+
+    internal static string[] RevisionNames(string domain, IEnumerable<string>? scopes = null) =>
+        [domain, .. (scopes ?? []).Select(scope => ScopeKey(domain, scope))];
+
+    /// <summary>同 RequestId 已有回執：同意圖回原回執（單一 SELECT），不同意圖回 EconomyRequestConflict；沒有回執回 null。</summary>
+    internal static IReadOnlyList<SqlBatchCommand>? Replay(EconomyRequest? prior, string operation, string payload)
+    {
+        if (prior == null) { return null; }
+        if (prior.Operation != operation || prior.Payload != payload)
+        { throw new BusinessArgumentException(ApiMessageKeys.EconomyRequestConflict); }
+        return [new SqlBatchCommand("SELECT @Receipt;", new { Receipt = prior.Result })];
+    }
+
+    internal static long CurrentValue(IEnumerable<PlayerParams> rows, string name) =>
+        rows.FirstOrDefault(row => row.Group == RevisionGroup && row.Name == name) is { } found
+            ? long.Parse(found.Value, CultureInfo.InvariantCulture) : 0;
+
+    /// <summary>Advance 的批次版：領域與各範圍 revision 都寫成同一個新值，回傳該值。</summary>
+    internal static long AdvanceRows(SqlWriteBatch writes, IEnumerable<PlayerParams> rows, string domain,
+        IEnumerable<string>? scopes = null)
+    {
+        PlayerParams[] existing = rows.ToArray();
+        long next = checked(CurrentValue(existing, domain) + 1);
+        string value = next.ToString(CultureInfo.InvariantCulture);
+        List<PlayerParams> created = [], changed = [];
+        foreach (string name in RevisionNames(domain, scopes).Distinct())
+        {
+            PlayerParams? row = existing.FirstOrDefault(r => r.Group == RevisionGroup && r.Name == name);
+            if (row == null) { created.Add(new PlayerParams { Group = RevisionGroup, Name = name, Value = value }); }
+            else { row.Value = value; changed.Add(row); }
+        }
+        writes.Insert(created);
+        writes.Update(changed);
+        return next;
+    }
+
+    /// <summary>寫入永久回執並以 SELECT 回傳序列化結果（批次的最後一個命令）。</summary>
+    internal static void CompleteReceipt<T>(SqlWriteBatch writes, CommandRequest request, string operation,
+        string payload, long revision, T snapshot)
+    {
+        string result = JsonSerializer.Serialize(new CommandReceipt<T>
+        { RequestId = request.RequestId, Revision = revision, Snapshot = snapshot });
+        writes.Insert([new EconomyRequest { RequestId = request.RequestId, Operation = operation,
+            Payload = payload, Result = result }]);
+        writes.Add("SELECT @Result;", new { Result = result });
     }
 
     public async Task<long> Advance(string domain, IReadOnlyCollection<string>? scopes = null)
@@ -119,26 +185,17 @@ public class RevisionCommand(BaseServiceArgument argument) : BaseService(argumen
         }
     }
 
-    public async Task<CommandReceipt<T>> Execute<T>(ForegroundRequest request, string operation, string domain,
-        object payload, Func<Task<T>> action, IReadOnlyCollection<string>? scopes = null)
-        => await ExecuteCore(request, operation, domain, payload, action,
-            () => Check(domain, request.ExpectedRevision, scopes));
-
     /// <summary>Intent commands share the durable receipt ledger and snapshot transaction,
     /// but never depend on a client domain checkpoint.</summary>
-    public Task<CommandReceipt<T>> ExecuteIntent<T>(CommandRequest request, string operation, string domain,
-        object payload, Func<Task<T>> action) =>
-        ExecuteCore(request, operation, domain, payload, action, null, canonicalPayload: true);
-
-    private async Task<CommandReceipt<T>> ExecuteCore<T>(CommandRequest request, string operation, string domain,
-        object payload, Func<Task<T>> action, Func<Task<long>>? check, bool canonicalPayload = false)
+    public async Task<CommandReceipt<T>> ExecuteIntent<T>(CommandRequest request, string operation, string domain,
+        object payload, Func<Task<T>> action)
     {
         if (request.RequestId == Guid.Empty) { throw new BusinessArgumentException(ApiMessageKeys.EconomyRequestRequired); }
-        string json = canonicalPayload ? CanonicalPayload(payload) : JsonSerializer.Serialize(payload);
+        string json = CanonicalPayload(payload);
         EconomyRequest? prior = await QueryFirstAsync<EconomyRequest?>(
-            "SELECT * FROM EconomyRequest WHERE CreateUserId=@CreateUserId AND RequestId=@RequestId",
+            OwnedSql.Select<EconomyRequest>("RequestId = @RequestId", activeOnly: false),
             new { CreateUserId = _playerId, request.RequestId });
-        // Replay precedes optional revision checks; preserve the original input intent.
+        // Replay precedes any other work; preserve the original input intent.
         if (prior != null)
         {
             if (prior.Operation != operation || prior.Payload != json)
@@ -148,7 +205,6 @@ public class RevisionCommand(BaseServiceArgument argument) : BaseService(argumen
             return JsonSerializer.Deserialize<CommandReceipt<T>>(prior.Result)
                 ?? throw new InvalidOperationException("Invalid command receipt.");
         }
-        if (check != null) { await check(); }
         T snapshot = await action();
         var receipt = new CommandReceipt<T> { RequestId = request.RequestId, Revision = await Read(domain), Snapshot = snapshot };
         await InsertAsync(new EconomyRequest

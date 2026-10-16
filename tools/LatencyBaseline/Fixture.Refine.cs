@@ -151,7 +151,10 @@ internal static partial class Fixture
                 var kill = new EnemyKillRequest
                     { RequestId = Guid.NewGuid(), SessionId = session, EnemyIndex = enemy++ };
                 var wave = new WaveStartRequest { RequestId = Guid.NewGuid(), Wave = 100, Difficulty = 0 };
-                receipts.AddRange([refine.RequestId, kill.RequestId, wave.RequestId]);
+                // Kills are tracked in the wave bitmap and leave no per-kill receipt row.
+                receipts.AddRange([refine.RequestId, wave.RequestId]);
+                // Kills are accepted only for the newest few waves, so the next iteration targets this wave.
+                session = wave.RequestId;
                 var actions = new Func<Task<Sample>>[]
                 {
                     async () =>
@@ -197,7 +200,6 @@ internal static partial class Fixture
                         RequestId = Guid.NewGuid(), Kills = [kill], WaveStarts = [wave],
                         Items = [new() { ItemKey = "diamond", Delta = 1, Category = "currency" }],
                     };
-                    receipts.Add(batch.RequestId);
                     actions =
                     [
                         actions[0],
@@ -254,11 +256,23 @@ internal static partial class Fixture
         Require(achievement.Groups.Single(g => g.Name == "enemy_kills").Total >= enemy &&
             achievement.Groups.Single(g => g.Name == "weapons_collected").Collected.Contains("sword"),
             "achievement progress and collection are derived by the server");
-        var claim = (await Post(http, "Foreground/ClaimAchievement", new
-            { request_id = Guid.NewGuid(), expected_revision = achievement.Revision, achievement_item_id = "enemy_kills_10" }))
-            .Data!["snapshot"]!.Deserialize<AchievementProgressModel>(Json)!;
-        Require(claim.Groups.Single(g => g.Name == "enemy_kills").Items.Single(i => i.Name == "enemy_kills_10").IsReward,
-            "server-derived achievement claim");
+        var firstClaim = await Post(http, "AchievementProgress/ClaimReward", new AchievementClaimRequest
+            { RequestId = Guid.NewGuid(), ExpectedRevision = achievement.Revision, AchievementItemId = "enemy_kills_10" });
+        var claimReceipt = firstClaim.Data!["snapshot"]!.Deserialize<AchievementClaimSnapshot>(Json)!;
+        Require(claimReceipt.Progress.Groups.Single(g => g.Name == "enemy_kills").Items.Single(i => i.Name == "enemy_kills_10").IsReward &&
+            claimReceipt.Items.Single(i => i.ItemKey == "diamond").Amount == diamond + 1,
+            "server-derived achievement claim returns progress and in-stock diamond in one receipt");
+        // 第二次領取不含首次 JIT；兩次都印出 HTTP 毫秒與伺服器端計時事件（SQL 次數／耗時）。
+        var secondClaim = await Post(http, "AchievementProgress/ClaimReward", new AchievementClaimRequest
+            { RequestId = Guid.NewGuid(), ExpectedRevision = claimReceipt.Progress.Revision, AchievementItemId = "weapons_collected_1" });
+        var secondReceipt = secondClaim.Data!["snapshot"]!.Deserialize<AchievementClaimSnapshot>(Json)!;
+        Require(secondReceipt.Items.Single(i => i.ItemKey == "diamond").Amount == diamond + 2, "second claim adds one more diamond");
+        foreach (var (label, claimResult) in new[] { ("first", firstClaim), ("second", secondClaim) })
+        {
+            await Task.Delay(500);
+            Console.WriteLine($"ClaimTiming {label}: http={claimResult.Sample.Ms:F0}ms " +
+                $"{(Breakdown.TryGetValue(claimResult.Sample.RequestId, out var timing) ? timing.ToJsonString() : "no server timing")}");
+        }
         Require(await repository.QueryFirstAsync<int>(
             "SELECT COUNT(*) FROM EconomyRequest WHERE CreateUserId=@Player AND RequestId IN @Requests",
             new { Player = player, Requests = receipts }) == receipts.Count, "one receipt per fresh diagnostic intent");

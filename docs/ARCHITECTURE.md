@@ -61,13 +61,31 @@ Services
 
 `BackgroundSyncCommand.Execute` 使用 repository 的 `ExecuteAtomicJsonAsync` 擁有唯一外層交易，
 Controller 指定 `commandOwnsTransaction: true`，不能再包交易。
-`RevisionCommand.ExecuteIntent` 以既有交易與 ledger 保存固定意圖與回執，不使用 Player 列鎖；
+`RevisionCommand.ExecuteIntent` 以既有交易與 ledger 保存固定意圖與回執（目前僅 Weapon/Acquire），不使用 Player 列鎖；
+`Economy/PurchaseSkill`、`Weapon/Disassemble`、`Character/EquipWeapon` 與部署／戰場／切波命令同樣由
+`commandOwnsTransaction: true` 的批次讀寫擁有交易，各為 2 次 SQL 往返；
 重播不重複扣款／發獎，同 ID 異內容回覆 409，任一工作失敗全部回滾。
 不要用外層 GoldCommand account 包整批，避免舊 account 覆蓋內部最新金幣。
 背景不再儲存客戶端 progress；成就（擊殺、各難度通關波數、武器與詞綴收集）由伺服器依自身資料推導，
 `AchievementProgress/Get` 與 Initialize 即時組出快照，BackgroundSync 與領取請求中的成就快照一律忽略，
 領取時才把推導結果落地並標記領取；kills 依 session 規則累加擊殺、經驗及升級天賦點，
 只寫進度參數而不重建部署／道路。天賦花費與節點、成就領取紀錄仍由原領域合併保護。
+讀取只涵蓋該批次用得到的領域：武器取得不讀取既有武器（查重由寫入批次內的 UPDLOCK 檢查負責，
+回應只帶 `acquisitions[]`，`weapons` 為 null）；天賦列只在請求帶 `talent` 或擊殺造成升級時才讀，
+升級時以 `TalentReadRequired` 回滾後帶天賦讀取重跑一次（一般擊殺批次不付這個成本）。
+擊殺不再每殺寫一列 `enemy_kill` EconomyRequest：已領取的敵人索引存在單一 PlayerParams 列
+`economy/claimed_kills`（`KillLedger`，格式 `{sessionId}:{base64 位元圖};…`，只保留最近 4 個波次）。
+同敵人再次回報（任何 request_id）視為已套用，不發獎也不計數；kill 的 `session_id` 必須是進行中波次
+或位元圖內的最近波次，否則回 `backend.economy.session_not_owned`。批次回執也不再每批新增一列
+`background.sync`：最近 2 批的回執（request_id、意圖雜湊、結果）存在單一 PlayerParams 列
+`economy/sync_receipts`（`SyncReceiptRing`），重送同 request_id 回原結果、不同意圖回 409；
+回執不存庫存快照（避免隨庫存變大）；重放時在同一段 SQL 補上「目前」在庫物品，不會重複套用增量。
+客戶端同時只有一批在途，未知結果重試的一定在這 2 批內。舊版 `background.sync` 列仍可重播但不再新增。
+`wave_start` session 回執仍保留。`EconomyRequestRetentionService` 每 24 小時（啟動後 10 分鐘首次）分批刪除超過
+`EconomyRequestRetention:Days` 的 EconomyRequest，並保留進行中波次的 `wave_start` 列。
+預設 0（停用）：刪除 SQL 尚未對真實資料庫驗證，確認後再以設定（例如 30）啟用。
+LatencyBaseline 的 fixture 後端固定設為 0，不會對共用資料庫執行清理。`WaveComplete` 以位元圖（並相容舊版 `enemy_kill` 收據）驗證全部敵人已回報；
+舊收據不再新增，確認無舊資料後可移除相容讀取。
 Godot 有異動每秒最多派一批、最多一批在途；派送前保存帳號隔離 journal，
 未知結果重試原批次，新事件留至下一批；開機先恢復未決批次。
 自動開波亦走批次並等待 session，前景 action 不等待無關背景排空。
@@ -132,6 +150,8 @@ Repository 建構時不開啟連線，非交易操作結束即關閉，交易持
 多結果查詢改回傳 `ManagedGridReader`，持有額度到 reader Dispose，須使用
 `using`／`await using`，不可在 reader 尚未釋放時對同一 Repository 發出命令。
 EF Core Migration、SqlClient 連線池與非 DB 的 semaphore 不受此機制影響。
+
+Dapper 連線字串未指定 `Min Pool Size` 時預設為 5，且啟動時先開啟一次連線讓連線池補滿；Azure SQL 的實體連線建立約 0.4 秒以上，常駐連線避免並行請求與閒置後的第一個請求各自付出這個成本。
 
 ---
 
@@ -478,7 +498,7 @@ Step 4：依需要覆寫 `SetModel`、`ModelSave`、`ModelDelete`，或在 Contr
 | `POST Character/EquipWeapon` | `AuthorizeApiController` | 是 | `{request_id, character_id, weapon_entry_id}`，null 卸下；只改武器引用，不寫技能，回 `CommandReceipt<CharacterModel>`。 |
 | `POST AchievementProgress/Get` | `AuthorizeApiController` | 是 | 讀取成就進度；無群組資料回 404 envelope。 |
 | `POST AchievementProgress/Save` | `AuthorizeApiController` | 是 | Body `AchievementProgressModel`，以整份快照覆寫。已領取的項目保留領取狀態，請求中的 `is_reward` 會被忽略。 |
-| `POST AchievementProgress/ClaimReward` | `AuthorizeApiController` | 是 | Body `AchievementClaimRequest {achievement_item_id}`。在同一交易內標記已領取並發放 `diamond` ×1；伺服器信任已儲存的 `Total`，因此客戶端須先呼叫 `AchievementProgress/Save`。 |
+| `POST AchievementProgress/ClaimReward` | `AuthorizeApiController` | 是 | Body `AchievementClaimRequest {request_id, expected_revision, achievement_item_id}`。`AchievementClaimCommand` 單次批次讀取、記憶體驗證（進度由伺服器資料推導）、單次批次寫入並 COMMIT：標記已領取、發放 `diamond` ×1、推進 revision 與寫回條；回 `CommandReceipt<AchievementClaimSnapshot {progress, items}>`，`items` 為領取後在庫物品，客戶端不必再呼叫 `Item/GetInStockList`。詳見 [PLAYER-ACTION-CONTRACTS](PLAYER-ACTION-CONTRACTS.md)。 |
 
 上表端點皆為 `[HttpPost]`，包含讀取；不是整個專案所有 Action 都只接受 POST。
 
@@ -515,7 +535,7 @@ Step 4：依需要覆寫 `SetModel`、`ModelSave`、`ModelDelete`，或在 Contr
   - 武器寫入僅公開取得／精煉／批次分解 action，與 Character/EquipWeapon 使用資源寫入衝突及永久回執；不要求整域 checkpoint，禁止用舊 Save/Delete 繞過。詳細意圖比對、亂序回執與材料交易規則見 [WEAPON-CONTRACTS](WEAPON-CONTRACTS.md)。
   - `CharacterService.Save` 只更新本人已擁有的角色，保留角色父列 Id，整份替換該角色技能樹／節點。角色可未部署即可儲存；不改其他角色或進度，不能建立角色。
   - `ItemService.AdjustAmount`（端點 `Item/AdjustAmount`）非冪等。若網路逾時但伺服器已套用，重送會重複加上增量。客戶端應以 `Item/GetInStockList` 端點對帳，不應直接重送。
-  - `ClaimReward` 不重複發獎；已領取再次呼叫回 400，而非再次回成功。
+  - `ClaimReward` 以 `request_id` 冪等（相同意圖重播原回執），不重複發獎；以新 request ID 重領已領取項目回 400，而非再次回成功。
 - 併發：武器儲存與成就領取以 `WITH (UPDLOCK, HOLDLOCK)` 鎖定既有列與鍵區間，避免並行重複插入或重複領取。
 - 角色儲存、進度儲存與武器刪除共用 `Player` 列的 `UPDLOCK, HOLDLOCK`。角色裝備須引用本人有效武器，同一武器不可同時被不同角色裝備；進度部署須引用本人有效角色。角色讀取若發現懸空武器引用會明確拋錯，不偽裝成空裝備。
 - 領域 Service 沒有自訂 1 MB payload 限制或版本上限；仍受 ASP.NET Core／部署平台的請求限制，以及 DTO 與 Service 的輸入檢查約束。例如 GameProgress 檢查座標與角色引用，Character 檢查節點型別與装備引用，Talent 檢查非負版本／點數，Achievement 檢查名稱與目標。

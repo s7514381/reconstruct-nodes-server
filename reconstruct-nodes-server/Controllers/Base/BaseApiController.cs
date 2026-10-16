@@ -24,9 +24,21 @@ namespace ReconstructNodesServer.Controllers
 
         protected virtual async Task<(bool, ApiMessage?)> TransactionFunc(Func<Task> func, Func<Task>? exceptionFunc = null)
         {
-            (bool isSuccess, Exception? ex) = await _lazy.BaseService.Value.TransactionFunc(func, exceptionFunc);
-            if (isSuccess) { return (true, null); }
-            return (false, ReportFailure(ex!));
+            // Snapshot update conflicts (3960) and deadlocks are transient: the whole transaction is
+            // rolled back, so re-running the original intent against a fresh snapshot is safe.
+            const int maxRetries = 2;
+            for (int attempt = 0; ; attempt++)
+            {
+                (bool isSuccess, Exception? ex) = await _lazy.BaseService.Value.TransactionFunc(func, exceptionFunc);
+                if (isSuccess) { return (true, null); }
+                if (attempt < maxRetries && Repositories.SqlConcurrency.IsRetryable(ex!))
+                {
+                    _logger.LogInformation("Resource transaction conflict; retrying ({Attempt}/{Max})", attempt + 1, maxRetries);
+                    await Task.Delay(Random.Shared.Next(10, 40) * (attempt + 1));
+                    continue;
+                }
+                return (false, ReportFailure(ex!));
+            }
         }
 
         protected async Task<(bool, ApiMessage?)> CommandFunc(Func<Task> func)

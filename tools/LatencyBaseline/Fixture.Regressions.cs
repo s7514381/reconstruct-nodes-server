@@ -16,8 +16,7 @@ internal static partial class Fixture
         GameProgressModel progress, AchievementProgressModel achievements, List<string> checks)
     {
         const string claim = "enemy_kills_10";
-        await Post(http, "AchievementProgress/ClaimReward",
-            new AchievementClaimRequest { AchievementItemId = claim });
+        await ClaimAchievement(http, claim);
         achievements = (await Post(http, "AchievementProgress/Get", new { })).Data!
             .Deserialize<AchievementProgressModel>(Json)!;
         var claimed = achievements.Groups.SelectMany(g => g.Items).Single(i => i.Name == claim);
@@ -50,8 +49,8 @@ internal static partial class Fixture
             await AssertSequences(repository, player, actual);
             achievements = actual;
         }
-        await Rejected(http, "AchievementProgress/ClaimReward",
-            new AchievementClaimRequest { AchievementItemId = claim });
+        await Rejected(http, "AchievementProgress/ClaimReward", new AchievementClaimRequest
+            { RequestId = Guid.NewGuid(), ExpectedRevision = achievements.Revision, AchievementItemId = claim });
         checks.Add("PASS: three saves preserve real claim/date, ignore forged claims, reject repeat claim, " +
             "and preserve group/item/collected order with zero-based per-parent SQL Sequence.");
 
