@@ -77,47 +77,4 @@ public class PlayerLifecycleService(BaseServiceArgument argument, RevisionComman
             Battlefield = new() { Version = 1, Columns = 7, Rows = 10, Castle = [5, 8], Roads = roads },
         };
     }
-
-    public Task<CommandReceipt<WaveCompleteResult>> Complete(WaveCompleteRequest request) =>
-        revisions.ExecuteIntent(request, "wave.complete", nameof(GameProgressModel), request, async () =>
-        {
-            if (request.SessionId == Guid.Empty) { throw new BusinessArgumentException(ApiMessageKeys.EconomyKillInvalid); }
-            var receipt = await QueryFirstAsync<EconomyRequest?>("""
-                SELECT * FROM EconomyRequest WHERE CreateUserId = @CreateUserId
-                    AND RequestId = @SessionId AND Operation = 'wave_start';
-                """, new { CreateUserId = _playerId, request.SessionId });
-            if (receipt == null) { throw new BusinessArgumentException(ApiMessageKeys.EconomySessionNotOwned); }
-            GameProgressModel model = await progress.Get()
-                ?? throw new BusinessOperationException(ApiMessageKeys.ProgressMissing);
-            var session = ProgressionRules.ReadSession(receipt, model.InfiniteLevel);
-            string? active = await QueryFirstAsync<string?>("""
-                SELECT Value FROM PlayerParams WHERE CreateUserId = @CreateUserId
-                    AND [Group] = 'economy' AND Name = 'active_wave' AND Status != -1;
-                """, new { CreateUserId = _playerId });
-            if (!Guid.TryParse(active, out var activeId) || activeId != request.SessionId)
-            { throw new BusinessArgumentException(ApiMessageKeys.EconomySessionNotOwned); }
-            var indexes = (await QueryAsync<int>("""
-                SELECT DISTINCT TRY_CONVERT(int, JSON_VALUE(Payload, '$.EnemyIndex'))
-                FROM EconomyRequest WHERE CreateUserId = @CreateUserId AND Operation = 'enemy_kill'
-                    AND TRY_CONVERT(uniqueidentifier, JSON_VALUE(Payload, '$.SessionId')) = @SessionId;
-                """, new { CreateUserId = _playerId, request.SessionId })).ToHashSet();
-            if (session.EnemyCount < 1 || indexes.Count != session.EnemyCount ||
-                indexes.Any(i => i < 0 || i >= session.EnemyCount))
-            { throw new BusinessOperationException(ApiMessageKeys.EconomyEnemyInvalid); }
-            if (model.Wave != session.Wave || model.Difficulty != session.Difficulty)
-            { throw new BusinessArgumentException(ApiMessageKeys.EconomyWaveInvalid); }
-            var next = ProgressionRules.NextWave(model.Wave, model.Difficulty, model.InfiniteLevel);
-            if (!model.WaveCompleted)
-            {
-                while (model.ClearedWaves.Count < 4) { model.ClearedWaves.Add(JsonSerializer.SerializeToElement(0)); }
-                model.ClearedWaves[model.Difficulty] = JsonSerializer.SerializeToElement(
-                    Math.Max(model.ClearedWaves[model.Difficulty].GetInt32(), model.Wave));
-                model.MaxWaveReached = Math.Max(model.MaxWaveReached, model.Wave);
-                model.WaveCompleted = true;
-                model.ExpectedRevision = model.Revision;
-                await progress.Save(model);
-            }
-            return new WaveCompleteResult { Progress = (await progress.Get())!,
-                NextWave = next.Wave, NextDifficulty = next.Difficulty, NextInfiniteLevel = next.InfiniteLevel };
-        });
 }

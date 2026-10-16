@@ -10,6 +10,22 @@ request／receipt 型別與驗證限制見 [WEAPON-CONTRACTS](docs/WEAPON-CONTRA
 
 前端是獨立倉庫 **`reconstruct-nodes`**（Godot 專案），與本後端分開維護，透過 HTTP 呼叫本後端的 API。本文件以本倉庫實作為準，不涵蓋前端倉庫內的設定與驗證。
 
+本機慣例上，前端與本倉庫並排放在同一父目錄（例如 `C:\Users\s7514\source\repos\reconstruct-nodes`），
+整合測試以 `DUAL_PATH_CLIENT_DIRECTORY` 指向其根目錄。
+
+| 前端路徑 | 說明 |
+| --- | --- |
+| `scripts/`、`scenes/` | GDScript 邏輯與 Godot 場景 |
+| `scripts/services/backend_*.gd` | 後端存取層：`backend_session`（記憶體內 token）、`backend_encode`（對應本後端 `Encode.Validate`）、`backend_storage_mapper`（本機快照與 wire 格式互轉） |
+| `test/` | GUT 測試與隔離 runner |
+| `docs/` | 前端專項文件，例如玩家主動操作 API 契約 |
+| `.github/` | 開發原則、架構（`project-structure.md`）、執行文件（`setup-and-run.md`） |
+| `project.godot` | Godot 專案設定 |
+
+連線設定由前端 `scripts/services/environment_config.gd` 解析：`testing` 預設連 `https://localhost:7007/`
+（即本後端的 `https` profile），`production` 連 Azure 部署位址；前後端契約（`Status / Success / MessageKey / MessageArgs / Data`、
+`Encode` header、路由與 receipt）變動時須兩邊同步部署與更新文件。
+
 ## 專案結構
 
 | 路徑 | 說明 |
