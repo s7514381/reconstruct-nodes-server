@@ -11,7 +11,6 @@ namespace ReconstructNodesServer.Services
     public class BaseService(BaseServiceArgument argument)
     {
         protected IDapperRepository _repository { get; private set; } = argument.Repository;
-        protected readonly IConfiguration _configuration = argument.Configuration;
 
         protected LazyServiceArgument _lazy { get; set; } = argument.LazyServiceArgument;
         protected MailSender _mailSender { get; set; } = argument.LazyServiceArgument.MailSender.Value;

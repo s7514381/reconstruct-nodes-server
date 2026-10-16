@@ -2,6 +2,7 @@ namespace ReconstructNodesServer.Library.Models
 {
     public static class ApiMessageKeys
     {
+        public const string ApiNotImplemented = "backend.api.not_implemented";
         public const string AchievementMissing = "backend.achievement.missing";
         public const string AchievementSaveFailed = "backend.achievement.save_failed";
         public const string AchievementClaimFailed = "backend.achievement.claim_failed";
@@ -35,6 +36,7 @@ namespace ReconstructNodesServer.Library.Models
         public const string ShopCountInvalid = "backend.shop.count_invalid";
         public const string EconomyRequestRequired = "backend.economy.request_required";
         public const string EconomyRequestConflict = "backend.economy.request_conflict";
+        public const string ConcurrencyRetry = "backend.concurrency.retry";
         public const string EconomyInsufficientGold = "backend.economy.insufficient_gold";
         public const string EconomyWaveInvalid = "backend.economy.wave_invalid";
         public const string EconomyKillInvalid = "backend.economy.kill_invalid";

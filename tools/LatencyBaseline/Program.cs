@@ -9,8 +9,19 @@ try
     if (args.Contains("--self-test"))
     {
         Fixture.RegressionSelfTest();
+        Fixture.StatisticsSelfTest();
+        Fixture.ReadsSelfTest();
+        Fixture.SelectedModesSelfTest();
+        Fixture.ShopSelfTest();
+        Fixture.RefineSelfTest();
         return 0;
     }
+    string[] modes = ["--concurrent-only", "--regression-only", "--item-only", "--reads-only", "--economy-only", "--saves-only", "--shop-only", "--refine-only", "--background-only"];
+    if (args.Skip(1).Any(option => option.StartsWith("--", StringComparison.Ordinal) &&
+        option != "--run" && !modes.Contains(option)))
+        throw new ArgumentException("Unknown run option");
+    if (modes.Count(args.Contains) > 1 || (modes.Any(args.Contains) && !args.Contains("--run")))
+        throw new InvalidOperationException("Incompatible run modes");
     string baseline = Path.GetFullPath(args[0]);
     var builder = ApplicationBuilderFactory.CreateBuilder(
         ["--contentRoot", baseline, "--environment", "Development"]);
@@ -65,8 +76,10 @@ try
     }
     if (args.Contains("--run"))
         await Fixture.Run(baseline, connection, rtt, args.Contains("--concurrent-only"),
-            args.Contains("--regression-only"));
-    return 0;
+            args.Contains("--regression-only"), args.Contains("--item-only"), args.Contains("--reads-only"),
+            args.Contains("--economy-only"), args.Contains("--saves-only"), args.Contains("--shop-only"),
+            args.Contains("--refine-only"), args.Contains("--background-only"));
+    return args.Contains("--background-only") && !Fixture.BackgroundBudgetMet ? 1 : 0;
 }
 catch (Exception error)
 {

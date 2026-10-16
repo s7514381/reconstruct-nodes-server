@@ -10,24 +10,6 @@ namespace ReconstructNodesServer.Services
     {
         public SystemConfigService(BaseServiceArgument argument) : base(argument) { }
 
-        public virtual async Task<SystemConfigModel> GetModelByKey(SystemConfigGroup group, string key)
-        {
-            string sql = Sql(subWhere: $@"AND Group = @Group
-                                          AND Key = @Key");
-            SystemConfigModel result = await QueryFirstAsync<SystemConfigModel>(sql, new { Group = group, Key = key });
-            await SetModel(result);
-
-            return result;
-        }
-
-        public virtual async Task<IEnumerable<SystemConfigModel>> GetModelListByGroup(SystemConfigGroup group)
-        {
-            string sql = Sql(subWhere: $"AND Group = @Group");
-
-            IEnumerable<SystemConfigModel> list = await QueryAsync<SystemConfigModel>(sql, new { Group = group });
-            return await SetModelList(list);
-        }
-
         public override async Task Seed()
         {
             SystemConfigModel config = new()

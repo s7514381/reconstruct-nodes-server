@@ -6,17 +6,21 @@ namespace ReconstructNodesServer.Services
 {
     public class ItemService(BaseServiceArgument argument) : _ModelService<Item, Item>(argument)
     {
+        internal const string WhitespaceCharacters =
+            "\u0009\u000a\u000b\u000c\u000d\u0020\u0085\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000";
         protected override string? NaturalKeyField => "ItemKey";
 
-        public virtual async Task<IEnumerable<Item>> GetInStockList()
-        {
-            string sql = $@"SELECT *
+        private string InStockSql => $@"SELECT *
                               FROM {_tableName}
                              WHERE Status != -1
                                AND CreateUserId = @CreateUserId
                                AND Amount > 0";
-            return await QueryAsync<Item>(sql, new { CreateUserId = _playerId });
-        }
+
+        public virtual async Task<IEnumerable<Item>> GetInStockList() =>
+            await QueryAsync<Item>(InStockSql, new { CreateUserId = _playerId });
+
+        public SnapshotRead<List<Item>> InStockListRead =>
+            new(InStockSql + ";", async reader => (await reader.ReadAsync<Item>()).ToList());
 
         /// <summary>
         /// 以增量調整物品數量並回傳結果數量，需在交易內呼叫。
@@ -25,59 +29,54 @@ namespace ReconstructNodesServer.Services
         /// </summary>
         public virtual async Task<int> AdjustAmount(string itemKey, int delta, string? category = null)
         {
-            await LockPlayerAsync();
-            // UPDLOCK + HOLDLOCK 同時鎖住既有列與不存在時的鍵區間，避免並行增量遺失更新或重複插入
-            string sql = $@"SELECT TOP 1 *
-                              FROM {_tableName} WITH (UPDLOCK, HOLDLOCK)
-                             WHERE Status != -1
-                               AND CreateUserId = @CreateUserId
-                               AND ItemKey = @ItemKey";
-            Item? item = await QueryFirstAsync<Item?>(sql, new { CreateUserId = _playerId, ItemKey = itemKey });
-
-            if (item == null)
+            Item created = new() { ItemKey = itemKey, CreateUserId = _playerId };
+            try
             {
-                if (delta <= 0) { throw new BusinessOperationException(ApiMessageKeys.ItemInsufficient); }
-
-                Item newItem = new Item
+                return await QueryFirstAsync<int>(AdjustmentSql + " SELECT @Amount;", new
                 {
-                    ItemKey = itemKey,
-                    Amount = delta,
-                    Category = category ?? string.Empty,
-                    CreateUserId = _playerId,
-                };
-                await InsertAsync(newItem);
-                return delta;
-            }
-
-            int amount = checked(item.Amount + delta);
-            if (amount < 0) { throw new BusinessOperationException(ApiMessageKeys.ItemInsufficient); }
-
-            if (amount == 0)
-            {
-                string deleteSql = $@"UPDATE {_tableName}
-                                         SET Amount = 0,
-                                             Status = -1
-                                       WHERE Id = @Id
-                                         AND CreateUserId = @CreateUserId";
-                await ExecuteAsync(deleteSql, new { Id = item.Id, CreateUserId = _playerId });
-            }
-            else
-            {
-                string updateSql = $@"UPDATE {_tableName}
-                                         SET Amount = @Amount,
-                                             Category = @Category
-                                       WHERE Id = @Id
-                                         AND CreateUserId = @CreateUserId";
-                await ExecuteAsync(updateSql, new
-                {
-                    Id = item.Id,
-                    CreateUserId = _playerId,
-                    Amount = amount,
-                    Category = string.IsNullOrWhiteSpace(item.Category) ? (category ?? string.Empty) : item.Category,
+                    CreateUserId = _playerId, ItemKey = itemKey, Delta = delta, Category = category,
+                    NewId = created.Id, created.CreateDate, Status = (int?)created.Status,
+                    Whitespace = WhitespaceCharacters,
                 });
             }
-
-            return amount;
+            catch (System.Data.SqlClient.SqlException error) when (error.Number == 51001)
+            {
+                throw new BusinessOperationException(ApiMessageKeys.ItemInsufficient);
+            }
+            catch (System.Data.SqlClient.SqlException error) when (error.Number == 8115)
+            {
+                throw new OverflowException("Item amount overflowed.", error);
+            }
         }
+
+        internal const string AdjustmentSql = """
+                        DECLARE @Player uniqueidentifier;
+                        SELECT @Player = Id FROM Player WHERE Id = @CreateUserId;
+                        IF @Player IS NULL THROW 51002, 'Item owner is unavailable', 1;
+                        DECLARE @Id uniqueidentifier, @Amount int, @ExistingCategory nvarchar(max);
+                        SELECT TOP 1 @Id = Id, @Amount = Amount, @ExistingCategory = Category
+                        FROM Item WITH (UPDLOCK, HOLDLOCK)
+                        WHERE Status != -1 AND CreateUserId = @CreateUserId AND ItemKey = @ItemKey;
+                        IF @Id IS NULL
+                        BEGIN
+                            IF @Delta <= 0 THROW 51001, 'Insufficient item amount', 1;
+                            SET @Amount = @Delta;
+                            INSERT INTO Item (Id, CreateDate, CreateUserId, Status, ItemKey, Amount, Category)
+                            VALUES (@NewId, @CreateDate, @CreateUserId, @Status, @ItemKey, @Amount, COALESCE(@Category, N''));
+                        END
+                        ELSE
+                        BEGIN
+                            SET @Amount = @Amount + @Delta;
+                            IF @Amount < 0 THROW 51001, 'Insufficient item amount', 1;
+                            IF @Amount = 0
+                                UPDATE Item SET Amount = 0, Status = -1 WHERE Id = @Id AND CreateUserId = @CreateUserId;
+                            ELSE
+                                UPDATE Item SET Amount = @Amount,
+                                    Category = CASE WHEN @ExistingCategory IS NULL OR
+                                        DATALENGTH(TRIM(@Whitespace FROM @ExistingCategory)) = 0
+                                        THEN COALESCE(@Category, N'') ELSE Category END
+                                WHERE Id = @Id AND CreateUserId = @CreateUserId;
+                        END;
+                    """;
     }
 }

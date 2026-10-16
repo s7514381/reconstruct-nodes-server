@@ -17,6 +17,7 @@ namespace ReconstructNodesServer.Controllers
 
         [HttpPost]
         public virtual Task<IActionResult> Draw(ShopDrawRequest request) =>
-            TransactionResultAsync<ShopDrawResult>(() => shop.Draw(request), ApiMessageKeys.ShopDrawFailed);
+            TransactionResultAsync<ShopDrawResult>(() => shop.Draw(request), ApiMessageKeys.ShopDrawFailed,
+                commandOwnsTransaction: true);
     }
 }

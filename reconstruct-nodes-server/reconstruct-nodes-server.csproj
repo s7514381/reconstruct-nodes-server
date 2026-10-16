@@ -11,9 +11,6 @@
   <ItemGroup>
     <PackageReference Include="Azure.Data.Tables" Version="12.10.0" />
     <PackageReference Include="Dapper.Contrib" Version="2.0.78" />
-    <PackageReference Include="FirebaseAdmin" Version="3.2.0" />
-    <PackageReference Include="FirebaseDatabase.net" Version="5.0.0" />
-    <PackageReference Include="Google.Cloud.Firestore" Version="3.10.0" />
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.12" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.12" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="10.0.12">
@@ -29,6 +26,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\reconstruct-nodes-server.Library\reconstruct-nodes-server.Library.csproj" />
+    <InternalsVisibleTo Include="reconstruct-nodes-server.Tests" />
   </ItemGroup>
 
   <ItemGroup>

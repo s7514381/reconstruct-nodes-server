@@ -16,6 +16,16 @@
       "launchUrl": "swagger",
       "applicationUrl": "http://localhost:7007"
     },
+    "latency": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "launchBrowser": true,
+      "launchUrl": "swagger",
+      "applicationUrl": "http://localhost:7007",
+      "environmentVariables": {
+        "API_REQUEST_TIMING": "1"
+      }
+    },
     "https": {
       "commandName": "Project",
       "dotnetRunMessages": true,

@@ -7,16 +7,14 @@ using ReconstructNodesServer.Library.Models;
 namespace ReconstructNodesServer.Services;
 
 /// <summary>
-/// Player-row lock is the common serialization boundary for receipts and snapshots.
-/// Uses the existing parameter table; no destructive schema migration is required.
+/// Snapshot transactions detect resource write conflicts; unique receipt and
+/// parameter keys protect first writes without serializing the player's other resources.
 /// </summary>
 public class RevisionService(BaseServiceArgument argument) : _ModelService<PlayerParams, PlayerParams>(argument)
 {
     public const string RevisionGroup = "server.revisions";
-
     public async Task<RevisionVector> GetVector()
     {
-        await LockPlayerAsync();
         return new RevisionVector
         {
             Talent = await Read(nameof(TalentModel)), Character = await Read(nameof(CharacterModel)),
@@ -24,6 +22,22 @@ public class RevisionService(BaseServiceArgument argument) : _ModelService<Playe
             Weapon = await Read(nameof(WeaponInstanceModel)),
         };
     }
+
+    public SnapshotRead<RevisionVector> VectorRead => new("""
+        SELECT Name, Value FROM PlayerParams WHERE CreateUserId = @CreateUserId
+            AND [Group] = 'server.revisions' AND Status != -1;
+        """, async reader =>
+    {
+        var values = (await reader.ReadAsync<PlayerParams>())
+            .ToDictionary(row => row.Name, row => long.Parse(row.Value, CultureInfo.InvariantCulture));
+        long Of(string domain) => values.GetValueOrDefault(domain);
+        return new RevisionVector
+        {
+            Talent = Of(nameof(TalentModel)), Character = Of(nameof(CharacterModel)),
+            GameProgress = Of(nameof(GameProgressModel)), Achievement = Of(nameof(AchievementProgressModel)),
+            Weapon = Of(nameof(WeaponInstanceModel)),
+        };
+    });
 
     public async Task<long> Read(string domain)
     {
@@ -42,7 +56,7 @@ public class RevisionService(BaseServiceArgument argument) : _ModelService<Playe
         _ => null,
     };
 
-    private static string ScopeKey(string domain, string scope) =>
+    internal static string ScopeKey(string domain, string scope) =>
         domain + "/" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(scope)));
 
     private async Task<string[]> ResolveScopes(string domain, IReadOnlyCollection<string> scopes)
@@ -58,7 +72,6 @@ public class RevisionService(BaseServiceArgument argument) : _ModelService<Playe
 
     public async Task<long> Check(string domain, long? expected, IReadOnlyCollection<string>? scopes = null)
     {
-        await LockPlayerAsync();
         long current = await Read(domain);
         long fence = current;
         if (current > 0 && scopes is { Count: > 0 })
@@ -111,7 +124,7 @@ public class RevisionService(BaseServiceArgument argument) : _ModelService<Playe
         => await ExecuteCore(request, operation, domain, payload, action,
             () => Check(domain, request.ExpectedRevision, scopes));
 
-    /// <summary>Intent commands serialize with the same player lock and receipt ledger,
+    /// <summary>Intent commands share the durable receipt ledger and snapshot transaction,
     /// but never depend on a client domain checkpoint.</summary>
     public Task<CommandReceipt<T>> ExecuteIntent<T>(CommandRequest request, string operation, string domain,
         object payload, Func<Task<T>> action) =>
@@ -121,7 +134,6 @@ public class RevisionService(BaseServiceArgument argument) : _ModelService<Playe
         object payload, Func<Task<T>> action, Func<Task<long>>? check, bool canonicalPayload = false)
     {
         if (request.RequestId == Guid.Empty) { throw new BusinessArgumentException(ApiMessageKeys.EconomyRequestRequired); }
-        await LockPlayerAsync();
         string json = canonicalPayload ? CanonicalPayload(payload) : JsonSerializer.Serialize(payload);
         EconomyRequest? prior = await QueryFirstAsync<EconomyRequest?>(
             "SELECT * FROM EconomyRequest WHERE CreateUserId=@CreateUserId AND RequestId=@RequestId",
@@ -149,7 +161,7 @@ public class RevisionService(BaseServiceArgument argument) : _ModelService<Playe
 
     // JSON object property order is not business intent. Keep array order (affix order
     // can be meaningful); set-valued actions normalize their lists before calling us.
-    private static string CanonicalPayload(object payload)
+    internal static string CanonicalPayload(object payload)
     {
         using var document = JsonDocument.Parse(JsonSerializer.Serialize(payload));
         using var stream = new MemoryStream();

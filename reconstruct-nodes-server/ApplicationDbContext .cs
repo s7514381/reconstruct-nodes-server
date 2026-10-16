@@ -105,6 +105,12 @@ namespace ReconstructNodesServer
                 .IsUnique()
                 .HasFilter("[Status] <> -1");
 
+            modelBuilder.Entity<PlayerParams>().Property(row => row.Group).HasMaxLength(200);
+            modelBuilder.Entity<PlayerParams>().Property(row => row.Name).HasMaxLength(450);
+            modelBuilder.Entity<PlayerParams>()
+                .HasIndex(row => new { row.CreateUserId, row.Group, row.Name }).IsUnique()
+                .HasFilter("[Status] <> -1 AND [CreateUserId] IS NOT NULL");
+
             modelBuilder.Entity<Weapon>()
                 .HasIndex(b => new { b.CreateUserId, b.EntryKey })
                 .IsUnique()

@@ -10,6 +10,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using ReconstructNodesServer.Argument;
+using ReconstructNodesServer.Repositories;
 
 namespace ReconstructNodesServer.Services
 {
@@ -29,12 +30,29 @@ namespace ReconstructNodesServer.Services
             _keyField = CommonUtility.GetKeyAttribute<DBModel>();
         }
 
-        /// <summary>
-        /// 鎖定目前玩家的 Player 列，序列化同一玩家的進度寫入與武器刪除，需在交易內呼叫
-        /// </summary>
-        protected async Task LockPlayerAsync()
+        protected async Task<TResult> ExecuteCommandAsync<TContext, TResult>(
+            Func<Task<TContext>> read, Func<TContext, Task<TResult>> execute)
         {
-            await QueryAsync<Guid>("SELECT Id FROM Player WITH (UPDLOCK, HOLDLOCK) WHERE Id = @PlayerId", new { PlayerId = _playerId });
+            using var transaction = _repository.Transaction == null ? _repository.OpenTransaction() : null;
+            try
+            {
+                TContext context = await read();
+                TResult result = await execute(context);
+                transaction?.Commit();
+                return result;
+            }
+            catch
+            {
+                transaction?.Rollback();
+                throw;
+            }
+        }
+
+        protected async Task<TResult> ReadBatchAsync<TResult>(
+            string sql, object? parameters, Func<ManagedGridReader, Task<TResult>> read)
+        {
+            using var reader = await _repository.QueryMultipleAsync(sql, parameters);
+            return await read(reader);
         }
 
         public virtual string SqlData()

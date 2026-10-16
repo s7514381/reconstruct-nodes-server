@@ -16,61 +16,61 @@ namespace ReconstructNodesServer.Services
 
         public Task<WaveStartResult> StartWave(WaveStartRequest request)
         {
+            int count = WaveEnemyCount(request);
+            return gold.ExecuteBatch<WaveStartResult>(request.RequestId, "wave_start",
+                new { request.Wave, request.Difficulty }, """
+                    DECLARE @ActiveId uniqueidentifier;
+                    SELECT @ActiveId = Id FROM PlayerParams WHERE CreateUserId = @CreateUserId
+                        AND Status != -1 AND [Group] = 'economy' AND Name = 'active_wave';
+                    IF @@ROWCOUNT > 1 THROW 51004, 'Duplicate wave parameter', 1;
+                    IF @ActiveId IS NULL
+                        INSERT INTO PlayerParams (Id, CreateDate, CreateUserId, Status, [Group], Name, Value)
+                        VALUES (NEWID(), @Now, @CreateUserId, @Enabled, 'economy', 'active_wave', CONVERT(nvarchar(36), @RequestId));
+                    ELSE UPDATE PlayerParams SET Value = CONVERT(nvarchar(36), @RequestId)
+                        WHERE Id = @ActiveId AND CreateUserId = @CreateUserId;
+                    SET @Result = (SELECT @RequestId AS session_id, @Wave AS wave, @EnemyCount AS enemy_count,
+                        @Difficulty AS difficulty, @InfiniteLevel AS infinite_level,
+                        @Balance AS gold FOR JSON PATH, WITHOUT_ARRAY_WRAPPER);
+                    """, new { request.Wave, request.Difficulty, request.InfiniteLevel, EnemyCount = count });
+        }
+
+        internal static int WaveEnemyCount(WaveStartRequest request)
+        {
             if (request.Difficulty is < 0 or > 3 || request.Wave < 1 ||
                 (request.Difficulty != 3 && request.Wave > 100))
             {
                 throw new BusinessArgumentException(ApiMessageKeys.EconomyWaveInvalid);
             }
-            int count = checked(6 + request.Wave * 3 + (request.Wave % 5 == 0 ? 1 : 0));
-            return gold.Execute(request.RequestId, "wave_start", new { request.Wave, request.Difficulty }, async account =>
-            {
-                await WriteParameter("economy", "active_wave", request.RequestId.ToString());
-                return new WaveStartResult
-                {
-                    SessionId = request.RequestId, Wave = request.Wave, EnemyCount = count, Gold = account.Balance,
-                };
-            });
+            return checked(6 + request.Wave * 3 + (request.Wave % 5 == 0 ? 1 : 0));
         }
 
         public Task<GoldOperationResult> ReportKill(EnemyKillRequest request)
         {
             if (request.SessionId == Guid.Empty || request.EnemyIndex < 0) { throw new BusinessArgumentException(ApiMessageKeys.EconomyKillInvalid); }
             var payload = new { request.SessionId, request.EnemyIndex };
-            return gold.Execute(request.RequestId, "enemy_kill", payload, async account =>
+            return gold.ExecuteCommand(request.RequestId, "enemy_kill", payload, """
+                    SELECT Result FROM EconomyRequest WHERE CreateUserId = @CreateUserId
+                        AND RequestId = @SessionId AND Operation = 'wave_start';
+                    SELECT CAST(CASE WHEN EXISTS (SELECT 1 FROM EconomyRequest WHERE CreateUserId = @CreateUserId
+                        AND Operation = 'enemy_kill' AND Payload = @Payload) THEN 1 ELSE 0 END AS bit);
+                    SELECT * FROM TalentAcquired WHERE CreateUserId = @CreateUserId AND Status != -1
+                        AND TreeId = 'utility' AND NodeId IN ('gold_1', 'gold_2', 'gold_3');
+                    """, new { request.SessionId }, ReadKillContext, (account, context) =>
             {
-                // A transition does not revoke rewards from the prior owned session.
-                // Ownership, bounded enemy indices and the unique kill payload still apply.
-                EconomyRequest? start = await QueryFirstAsync<EconomyRequest?>(
-                    "SELECT * FROM EconomyRequest WHERE CreateUserId=@CreateUserId AND RequestId=@SessionId AND Operation='wave_start'",
-                    new { CreateUserId = _playerId, request.SessionId });
-                if (start == null) { throw new BusinessArgumentException(ApiMessageKeys.EconomySessionNotOwned); }
-                var session = JsonSerializer.Deserialize<WaveStartResult>(start.Result)
-                    ?? throw new InvalidOperationException("波次紀錄格式錯誤");
-                if (request.EnemyIndex >= session.EnemyCount) { throw new BusinessArgumentException(ApiMessageKeys.EconomyEnemyInvalid); }
-                var claims = await QueryAsync<Guid>(
-                    "SELECT Id FROM EconomyRequest WHERE CreateUserId=@CreateUserId AND Operation='enemy_kill' AND Payload=@Payload",
-                    new { CreateUserId = _playerId, Payload = JsonSerializer.Serialize(payload) });
-                if (claims.Any()) { throw new BusinessArgumentException(ApiMessageKeys.EconomyRewardClaimed); }
-                long reward = checked(8L + session.Wave);
-                if (session.Wave % 5 == 0 && request.EnemyIndex == session.EnemyCount - 1) { reward = checked(reward * 8); }
-                var talents = await QueryAsync<TalentAcquired>(
-                    @"SELECT * FROM TalentAcquired WHERE CreateUserId=@CreateUserId AND Status != -1
-                      AND TreeId='utility' AND NodeId IN ('gold_1','gold_2','gold_3')",
-                    new { CreateUserId = _playerId });
-                foreach (var talent in talents)
-                {
-                    var level = JsonSerializer.Deserialize<JsonElement>(talent.Value);
-                    bool acquired = level.ValueKind == JsonValueKind.True ||
-                        (level.ValueKind == JsonValueKind.Number && level.GetInt32() > 0);
-                    if (level.ValueKind is not (JsonValueKind.True or JsonValueKind.False or JsonValueKind.Number))
-                    {
-                        throw new InvalidOperationException("金幣天賦資料格式錯誤");
-                    }
-                    if (acquired) { reward += talent.NodeId switch { "gold_1" => 1, "gold_2" => 2, "gold_3" => 3, _ => 0 }; }
-                }
+                long reward = KillRewardRules.CalculateClaim(context.Session, context.Claimed, request.EnemyIndex, context.Talents);
                 account.Balance = checked(account.Balance + reward);
                 return new GoldOperationResult { Gold = account.Balance };
             });
+        }
+
+        private sealed record KillContext(string? Session, bool Claimed, List<TalentAcquired> Talents);
+
+        private static async Task<KillContext> ReadKillContext(Repositories.ManagedGridReader reader)
+        {
+            string? session = await reader.ReadSingleOrDefaultAsync<string>();
+            bool claimed = await reader.ReadSingleAsync<bool>();
+            var talents = (await reader.ReadAsync<TalentAcquired>()).ToList();
+            return new KillContext(session, claimed, talents);
         }
 
         public Task<GoldOperationResult> PurchaseSkill(SkillPurchaseRequest request)

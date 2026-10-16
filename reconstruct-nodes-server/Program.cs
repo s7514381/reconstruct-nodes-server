@@ -60,10 +60,11 @@ services.AddTransient(typeof(Lazy<>), typeof(Lazier<>));
 
 services.AddSingleton<MailSender>();
 services.AddSingleton<AzureStoreService>();
-services.AddSingleton<FirebaseService>();
 //
 
 //services.AddHostedService<TimedHostedService>();
+services.AddHostedService(x => new DatabaseWarmupService(sqlConnString,
+    x.GetRequiredService<ILogger<DatabaseWarmupService>>()));
 
 services.AddMemoryCache();
 

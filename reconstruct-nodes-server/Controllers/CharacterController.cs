@@ -13,7 +13,8 @@ namespace ReconstructNodesServer.Controllers
 
         [HttpPost]
         public virtual Task<IActionResult> GetList() =>
-            TransactionResultAsync<List<CharacterModel>>(() => service.GetList(), ApiMessageKeys.CharacterReadFailed);
+            TransactionResultAsync<List<CharacterModel>>(() => service.GetListCommand(),
+                ApiMessageKeys.CharacterReadFailed, commandOwnsTransaction: true);
 
         [HttpPost]
         public virtual Task<IActionResult> Get(Guid id) =>
@@ -23,7 +24,7 @@ namespace ReconstructNodesServer.Controllers
         public virtual async Task<IActionResult> Save(CharacterModel model)
         {
             (bool success, ApiMessage? message) = await TransactionFunc(() => service.Save(model));
-            if (!success) { return StatusCode(400, BackendApiResult<string>.Create(400, message ?? ApiMessageKeys.CharacterSaveFailed)); }
+            if (!success) { return TransactionFailure(message ?? new ApiMessage(ApiMessageKeys.CharacterSaveFailed)); }
             return SnapshotSaved(model, model.Id);
         }
     }

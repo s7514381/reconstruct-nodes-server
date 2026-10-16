@@ -5,13 +5,12 @@ using ReconstructNodesServer.Library.Models;
 
 namespace ReconstructNodesServer.Services
 {
-    public class WeaponService(BaseServiceArgument argument) : _SnapshotService<Weapon, WeaponInstanceModel>(argument)
+    public partial class WeaponService(BaseServiceArgument argument) : _SnapshotService<Weapon, WeaponInstanceModel>(argument)
     {
         protected override string? NaturalKeyField => "EntryKey";
 
         public virtual async Task<IEnumerable<WeaponInstanceModel>> GetInstanceList()
         {
-            await LockPlayerAsync();
             List<Weapon> weapons = await QuerySnapshotRowsAsync<Weapon>(orderBy: row => row.CreateDate);
             if (weapons.Count == 0) { return []; }
 
@@ -28,11 +27,44 @@ namespace ReconstructNodesServer.Services
 
             List<WeaponUniqueValue> uniqueValues = await QuerySnapshotChildrenAsync<WeaponUniqueValue, Weapon>(weaponIds);
 
+            return BuildSnapshots(weapons, affixes, affixValues, uniqueValues, await Revisions.Read(nameof(WeaponInstanceModel)));
+        }
+
+        public Task<IEnumerable<WeaponInstanceModel>> GetInstanceListCommand() =>
+            ReadSnapshotCommandAsync(GetInstanceListRead);
+
+        public SnapshotRead<IEnumerable<WeaponInstanceModel>> GetInstanceListRead =>
+            new("""
+                SELECT * FROM Weapon WHERE CreateUserId = @CreateUserId AND Status != -1 ORDER BY CreateDate;
+                SELECT c.* FROM WeaponAffix c INNER JOIN Weapon p ON p.Id = c.WeaponId
+                WHERE p.CreateUserId = @CreateUserId AND c.CreateUserId = @CreateUserId AND p.Status != -1 ORDER BY c.Sequence;
+                SELECT c.* FROM WeaponAffixValue c INNER JOIN WeaponAffix p ON p.Id = c.WeaponAffixId
+                INNER JOIN Weapon w ON w.Id = p.WeaponId
+                WHERE p.CreateUserId = @CreateUserId AND c.CreateUserId = @CreateUserId
+                    AND w.CreateUserId = @CreateUserId AND w.Status != -1 ORDER BY c.Sequence;
+                SELECT c.* FROM WeaponUniqueValue c INNER JOIN Weapon p ON p.Id = c.WeaponId
+                WHERE p.CreateUserId = @CreateUserId AND c.CreateUserId = @CreateUserId AND p.Status != -1 ORDER BY c.Sequence;
+                SELECT Value FROM PlayerParams WHERE CreateUserId = @CreateUserId
+                    AND [Group] = 'server.revisions' AND Name = 'WeaponInstanceModel' AND Status != -1;
+                """, async reader =>
+            {
+                var weapons = (await reader.ReadAsync<Weapon>()).ToList();
+                var affixes = await reader.ReadAsync<WeaponAffix>();
+                var values = await reader.ReadAsync<WeaponAffixValue>();
+                var unique = await reader.ReadAsync<WeaponUniqueValue>();
+                string? revision = await reader.ReadSingleOrDefaultAsync<string>();
+                return BuildSnapshots(weapons, affixes, values, unique,
+                    revision == null ? 0 : long.Parse(revision, CultureInfo.InvariantCulture));
+            });
+
+        internal static IEnumerable<WeaponInstanceModel> BuildSnapshots(IEnumerable<Weapon> weapons,
+            IEnumerable<WeaponAffix> affixes, IEnumerable<WeaponAffixValue> affixValues,
+            IEnumerable<WeaponUniqueValue> uniqueValues, long revision)
+        {
             ILookup<Guid?, WeaponAffix> affixesByWeapon = affixes.ToLookup(a => a.WeaponId);
             ILookup<Guid?, WeaponAffixValue> valuesByAffix = affixValues.ToLookup(v => v.WeaponAffixId);
             ILookup<Guid?, WeaponUniqueValue> uniqueByWeapon = uniqueValues.ToLookup(u => u.WeaponId);
 
-            long revision = await Revisions.Read(nameof(WeaponInstanceModel));
             return weapons.Select(weapon =>
             {
                 List<WeaponAffixSnapshot> affixSnapshots = affixesByWeapon[weapon.Id]
@@ -70,12 +102,11 @@ namespace ReconstructNodesServer.Services
         // the command ledger and player lock already protect this transaction.
         internal async Task SaveForCommand(WeaponInstanceModel model, bool acquire = false)
         {
-            await LockPlayerAsync();
             ValidateSnapshot(model);
             if (acquire)
             {
                 int count = await QueryFirstAsync<int>(
-                    "SELECT COUNT(1) FROM Weapon WHERE CreateUserId=@CreateUserId AND EntryKey=@EntryKey",
+                    "SELECT COUNT(1) FROM Weapon WITH (UPDLOCK, HOLDLOCK) WHERE CreateUserId=@CreateUserId AND EntryKey=@EntryKey",
                     new { CreateUserId = _playerId, EntryKey = model.Id });
                 // Include tombstones: a late acquire must never resurrect a disassembled entry.
                 if (count != 0) { throw new BusinessArgumentException(ApiMessageKeys.EconomyRequestConflict); }
@@ -85,6 +116,9 @@ namespace ReconstructNodesServer.Services
         }
 
         protected override void ValidateSnapshot(WeaponInstanceModel model)
+            => ValidateWeapon(model);
+
+        internal static void ValidateWeapon(WeaponInstanceModel model)
         {
             if (string.IsNullOrWhiteSpace(model.Id) || model.Id.Length > 450 ||
                 string.IsNullOrWhiteSpace(model.WeaponId) || model.WeaponId.Length > 450 ||
@@ -131,7 +165,6 @@ namespace ReconstructNodesServer.Services
 
         internal async Task<int> DeleteForCommand(string naturalKey)
         {
-            await LockPlayerAsync();
             await EnsureNotEquippedAsync(naturalKey);
             return await base.DeleteByNaturalKey(naturalKey);
         }

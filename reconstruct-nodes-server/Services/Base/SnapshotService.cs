@@ -4,6 +4,7 @@ using ReconstructNodesServer.Library.Utility;
 using System.Linq.Expressions;
 using System.Reflection;
 using Dapper;
+using ReconstructNodesServer.Repositories;
 
 namespace ReconstructNodesServer.Services
 {
@@ -86,6 +87,37 @@ namespace ReconstructNodesServer.Services
             string hint = lockRows ? " WITH (UPDLOCK, HOLDLOCK)" : "";
             return (await QueryAsync<T>($"SELECT * FROM {Table<T>()}{hint} WHERE CreateUserId = @CreateUserId{filter}{order}",
                 new { CreateUserId = _playerId, Ids = ids })).ToList();
+        }
+
+        protected Task<TResult> ReadSnapshotCommandAsync<TResult>(SnapshotRead<TResult> read) =>
+            ReadSnapshotCommandAsync(read.Sql, read.Read);
+
+        protected async Task<TResult> ReadSnapshotCommandAsync<TResult>(
+            string sql, Func<ManagedGridReader, Task<TResult>> read)
+        {
+            if (_repository.Transaction != null)
+            {
+                throw new InvalidOperationException("Snapshot command cannot own a nested transaction.");
+            }
+            await using var reader = await _repository.QueryMultipleAsync("""
+                BEGIN TRY
+                    SET TRANSACTION ISOLATION LEVEL SNAPSHOT;
+                    BEGIN TRAN;
+                """ + sql + """
+                    COMMIT;
+                    SELECT CAST(1 AS int);
+                END TRY
+                BEGIN CATCH
+                    IF XACT_STATE() <> 0 ROLLBACK;
+                    THROW;
+                END CATCH;
+                """, new { CreateUserId = _playerId });
+            TResult result = await read(reader);
+            if (await reader.ReadSingleAsync<int>() != 1 || !reader.IsConsumed)
+            {
+                throw new InvalidOperationException("Snapshot command did not finish its transaction.");
+            }
+            return result;
         }
 
         protected Task<T?> QuerySnapshotParentAsync<T>() where T : ModelBase =>

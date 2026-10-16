@@ -9,16 +9,6 @@ namespace ReconstructNodesServer.Services
 {
     public class EmailVerifyService(BaseServiceArgument argument) : _ModelService<EmailVerify, EmailVerifyModel>(argument)
     {
-        public async Task<EmailVerify?> GetVerifyDataByEmail(string email)
-        {
-            string sql = $@"select top 1 *
-                              from EmailVerify
-                             where Email = @Email
-                               and IsVerification = @IsVerification";
-            var result = await QueryFirstAsync<EmailVerify>(sql, new { email = email, IsVerification = true });
-            return result;
-        }
-
         public async Task VerificationSuccess(Guid id)
         {
             string sql = $@"UPDATE EmailVerify

@@ -10,7 +10,7 @@ using ReconstructNodesServer.Utility;
 
 internal static partial class Fixture
 {
-    // Invoked only with --run --regression-only; always uses Run's NEW disposable fixture.
+    // Shared by --regression-only and --saves-only; always uses Run's NEW disposable fixture.
     // No triggers, schema changes or existing-player data are needed.
     private static async Task Regressions(HttpClient http, DapperRepository repository, Guid player,
         GameProgressModel progress, AchievementProgressModel achievements, List<string> checks)
@@ -37,7 +37,7 @@ internal static partial class Fixture
                     item.RewardDate = new DateTime(2001, 1, 1);
                 }
             }
-            await Save(http, "AchievementProgress/Save", achievements);
+            await SaveBackground(http, achievements);
             var actual = (await Post(http, "AchievementProgress/Get", new { })).Data!
                 .Deserialize<AchievementProgressModel>(Json)!;
             AssertAchievementOrder(achievements, actual);
@@ -88,12 +88,14 @@ internal static partial class Fixture
                 ["normal"] = JsonSerializer.SerializeToElement(new { completed = pass, flags = new[] { 3, 1 } }),
                 ["intro"] = JsonSerializer.SerializeToElement(pass),
             };
+            var authoritativeBattlefield = Clone(progress.Battlefield);
             progress.Battlefield.Roads.Reverse();
             var expected = Clone(progress);
+            expected.Battlefield = authoritativeBattlefield;
             expected.Gold = gold;
             expected.UnlockedBulletKinds = Clone(protectedBullets);
             expected.UnlockedAuxiliaryKinds = Clone(protectedAuxiliary);
-            await Save(http, "GameProgress/Save", progress);
+            await SaveBackground(http, progress);
             var actual = (await Post(http, "GameProgress/Get", new { })).Data!
                 .Deserialize<GameProgressModel>(Json)!;
             AssertProgressRoundtrip(expected, actual);
@@ -145,7 +147,7 @@ internal static partial class Fixture
             var invalid = before.Deserialize<AchievementProgressModel>(Json)!;
             invalid.ExpectedRevision = invalid.Revision;
             invalid.Groups[0].Items[0].Name = new string('x', maxCharacters.Value + 1);
-            await Rejected(http, "AchievementProgress/Save", invalid);
+            await Rejected(http, "GameProgress/BackgroundSync (achievement)", invalid);
             var after = (await Post(http, "AchievementProgress/Get", new { })).Data!;
             Require(JsonNode.DeepEquals(before, after), "rejected detail insert leaves full snapshot/revision unchanged");
             checks.Add("PASS: oversized detail HTTP save rejected with snapshot/revision unchanged; " +
@@ -212,14 +214,26 @@ internal static partial class Fixture
         }
     }
 
-    private static async Task Rejected(HttpClient http, string route, object body)
+    private static async Task Rejected(HttpClient http, string route, object body,
+        HttpStatusCode status = HttpStatusCode.BadRequest, string? messageKey = null)
     {
+        if (body is GameProgressModel or TalentModel or AchievementProgressModel or BackgroundSyncRequest
+            or WaveStartRequest or EnemyKillRequest or ItemDeltaRequest or WeaponAcquireRequest)
+        {
+            route = "GameProgress/BackgroundSync";
+            body = BackgroundBatch(body);
+        }
         using var request = new HttpRequestMessage(HttpMethod.Post, route) { Content = JsonContent.Create(body) };
         request.Headers.Add("Encode", Encode.New());
         using var response = await http.SendAsync(request);
-        Require(response.StatusCode == HttpStatusCode.BadRequest, $"expected rejection {route}");
+        Require(response.StatusCode == status, $"expected rejection {route}");
         var envelope = JsonNode.Parse(await response.Content.ReadAsByteArrayAsync())!;
         Require(envelope["Success"]!.GetValue<bool>() == false, $"business rejection {route}");
+        if (messageKey != null)
+            Require(envelope["MessageKey"]!.GetValue<string>() == messageKey, $"rejection key {route}");
+        if (TrackRegressionRequests)
+            Require(RegressionCorrelations.TryAdd(response.Headers.GetValues("X-Request-Timing-Id").Single(),
+                (int)status), "unique rejected regression correlation");
     }
 
     public static void RegressionSelfTest()

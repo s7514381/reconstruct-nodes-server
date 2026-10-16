@@ -10,10 +10,6 @@ public class ForegroundService(
     public Task<CommandReceipt<AchievementProgressModel>> ClaimAchievement(AchievementSnapshotClaimRequest request) =>
         revisions.Execute(request, "foreground.achievement_claim", nameof(AchievementProgressModel), request, async () =>
         {
-            var snapshot = System.Text.Json.JsonSerializer.Deserialize<AchievementProgressModel>(
-                System.Text.Json.JsonSerializer.Serialize(request.Snapshot))!;
-            snapshot.ExpectedRevision = request.ExpectedRevision;
-            await achievements.Save(snapshot);
             await achievements.ClaimReward(request.AchievementItemId);
             return (await achievements.Get())!;
         });
@@ -73,6 +69,7 @@ public class ForegroundService(
         WaveStartResult session = await economy.StartWave(new WaveStartRequest
         {
             RequestId = ChildRequestId(requestId, "wave"), Wave = model.Wave, Difficulty = model.Difficulty,
+            InfiniteLevel = model.InfiniteLevel,
         });
         return new WaveTransitionSnapshot { Progress = (await progress.Get())!, Session = session };
     }

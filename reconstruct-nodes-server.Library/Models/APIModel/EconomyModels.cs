@@ -11,6 +11,8 @@ namespace ReconstructNodesServer.Library.Models
         public int Wave { get; set; }
         [JsonPropertyName("difficulty")]
         public int Difficulty { get; set; }
+        [JsonIgnore]
+        public int InfiniteLevel { get; set; } = 1;
     }
 
     public class EnemyKillRequest
@@ -49,5 +51,27 @@ namespace ReconstructNodesServer.Library.Models
         public int Wave { get; set; }
         [JsonPropertyName("enemy_count")]
         public int EnemyCount { get; set; }
+        [JsonPropertyName("difficulty")]
+        public int Difficulty { get; set; }
+        [JsonPropertyName("infinite_level")]
+        public int InfiniteLevel { get; set; } = 1;
+    }
+
+    public sealed class WaveCompleteRequest : CommandRequest
+    {
+        [JsonPropertyName("session_id")]
+        public Guid SessionId { get; set; }
+    }
+
+    public sealed class WaveCompleteResult
+    {
+        [JsonPropertyName("progress")]
+        public required GameProgressModel Progress { get; init; }
+        [JsonPropertyName("next_wave")]
+        public int NextWave { get; init; }
+        [JsonPropertyName("next_difficulty")]
+        public int NextDifficulty { get; init; }
+        [JsonPropertyName("next_infinite_level")]
+        public int NextInfiniteLevel { get; init; }
     }
 }

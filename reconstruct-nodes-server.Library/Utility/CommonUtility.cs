@@ -12,11 +12,6 @@ namespace ReconstructNodesServer.Library.Utility
 {
     public static class CommonUtility
     {
-        public static List<string> Endpoints = new List<string>
-        {
-            "https://timwu19950429-cjfggjb9eactfvf9.japaneast-01.azurewebsites.net",
-        };
-
         public static T CastBy<T>(this object source)
         {
             if (source == null)

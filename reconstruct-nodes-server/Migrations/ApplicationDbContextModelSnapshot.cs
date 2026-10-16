@@ -636,10 +636,12 @@ namespace ReconstructNodesServer.Migrations
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("Group")
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("Name")
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
 
                     b.Property<int?>("Sequence")
                         .HasColumnType("int");
@@ -655,6 +657,10 @@ namespace ReconstructNodesServer.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("CreateUserId");
+
+                    b.HasIndex("CreateUserId", "Group", "Name")
+                        .IsUnique()
+                        .HasFilter("[Status] <> -1 AND [CreateUserId] IS NOT NULL");
 
                     b.ToTable("PlayerParams");
                 });

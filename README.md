@@ -270,7 +270,7 @@ try {
 ```
 
 測試涵蓋：新訪客唯一核心 kind=3、初始火球 kind=1／空手、重讀 GUID 不變；
-只為該 fixture 透過 HTTP `Weapon/Acquire` 建立武器並重播同請求，再經
+只為該 fixture 透過 HTTP `GameProgress/BackgroundSync.weapon_acquisitions` 建立武器並重播同請求，再經
 `Character/EquipWeapon` 穿裝；legacy Character/Save 保存技能時保留權威武器引用。
 另驗證保存空技能、相同 ClientId 重登保持空配置、
 還原技能再重登保持 GUID／武器／技能。finally 先停止自有 PID，再以精確
@@ -298,10 +298,43 @@ Azurite 關閉即丟棄記憶體日誌。若測試程序被強制終止，finall
 - 一般角色（kind 0～2）由 `Shop/Draw` 取得：單抽 100 金幣、十連 900，新角色配發普通基礎武器，重複發碎片。`Character/Save` 不能建立角色。抽卡需穩定 `request_id`，重送不重複扣款。
 - `Shop/Draw` 新收據包含 `state: {version: 1, characters, weapons, shards}`：characters／weapons 僅含本次首次建立的完整模型（新實例 revision 0），shards 為本批次各碎片提交後的絕對數量。新角色預設技能與武器、扣款、收據同交易提交，前端不需再次保存才可顯示結果。重播保留原始收據；舊紀錄省略 state，由客戶端讀取最新權威快照。重試或相關寫入競態不得以舊收據覆蓋最新配置／數量。Godot 編輯器測試版的單抽按鈕至完整結果繪製目標為 ≤1000ms，驗證入口見客戶端執行文件。
 - 核心沿用 `Character` 與相同 GUID／配置 DTO，固定 **kind = 3**，不新增核心 endpoint 或資料表。新舊帳號首次 `Character/GetList`（或 `Get`）在既有交易與玩家鎖內自動補齊唯一核心；無費用、無初始武器，初始技能樹為 `[{ "kind": 1, "auxiliary_nodes": [] }]`。火球值已核對遊戲 `BulletData.FIREBALL -> ActiveSkill.FIREBALL = 1`，不是 4。已存在核心不重設技能或武器，明確保存的空技能清單會保留。
-- 前端先讀 `Character/GetList` 取得核心真實 `id`，再用 `Character/Save` 保存相同 `id`、`kind: 3`、`skill_trees` 與可選 `weapon_entry_id`（空值表示卸下）；Save 回傳原 GUID。核心免費可用火球及既有通用基本技能，其他主動／輔助技能仍需解鎖；武器仍驗證本人擁有及跨角色唯一裝備。核心不進商店抽取池，不能放入 `GameProgress/Save.deployment_log`（沿用 `backend.progress.character_not_owned` 拒絕），沒有角色刪除／撤回 API。一般部署費不適用核心，核心常駐位置由前端接線；後端只保存核心配置。
+- 前端先讀 `Character/GetList` 取得核心真實 `id`；技能配置與穿卸裝使用各自前景 action。核心免費可用火球及既有通用基本技能，其他主動／輔助技能仍需解鎖；武器仍驗證本人擁有及跨角色唯一裝備。核心不進商店抽取池，也不能成為前景部署引用，沒有角色刪除／撤回 API。一般部署費不適用核心，核心常駐位置由前端接線；後端只保存核心配置。
 - 本次核心擴充不需 migration；不會主動批次改寫帳號或共享資料庫，未讀角色清單的帳號於下一次讀取時補齊。服務層直接呼叫 `GetList`／`Get` 也必須沿用既有 repository transaction，不能脫離交易使用玩家鎖。
-- 金幣仍由 `PlayerParams` 保存（`Group = game_progress`、`Name = gold`）。`GoldService` 只負責後端金幣交易，不使用獨立金幣表；`GameProgress/Save` 不採用請求的 `gold`，也不刪除既有金幣列。`Shop/GetGold` 讀取餘額。新增 `AddAuthoritativeGoldAndShopRequests` migration 僅建立冪等交易紀錄並檢查既有金幣資料；套用前須核對及備份。
-- `Economy/StartWave` 建立波次 session，`Economy/ReportKill` 驗證 session 與敵人索引並防重複領獎，`Economy/PurchaseSkill` 扣款解鎖技能。新增部署由 `GameProgress/Save` 每筆扣 60，需提供穩定 `request_id`；技能購買每次 100。金幣、波次 session 與技能解鎖參數不能經通用 CRUD 或進度快照繞過。
+- 金幣仍由 `PlayerParams` 保存（`Group = game_progress`、`Name = gold`）。`GoldService` 負責後端金幣交易，不使用獨立金幣表；客戶端進度不覆寫餘額。`Shop/GetGold` 讀取餘額。`AddAuthoritativeGoldAndShopRequests` migration 建立冪等交易紀錄並檢查既有金幣資料；套用前須核對及備份。
+- `GameProgress/BackgroundSync` 批次提交天賦／成就快照、物品增量、武器取得、自動開波及擊殺，不再接收新的 progress 存檔。相同批次 ID／payload 回原回執，同 ID 異意圖回 409，任一失敗全部回滾。前景 `Economy/PurchaseSkill`、部署／戰場／手動切波維持原路由；部署每筆 60、技能購買每次 100。
+
+### 玩家進度生命週期
+
+前後端須同步部署；舊版尚未提交、帶非空 progress 的背景 journal 會明確拒絕，不會靜默清除。
+已提交的相同批次仍重播原回執。
+`tools/LatencyBaseline/Fixture.Background.cs` 仍是舊版整份 progress 保存基準，
+尚未遷移至此生命週期，不可用來驗收新版延遲；本次未量測真實 HTTP／SQL 延遲。
+
+- `POST GameProgress/Initialize` 無 body，於同一交易建立缺少的進度與天賦、取得角色、金幣、目錄、成就、物品、武器與 revision vector；重複呼叫不重設既有狀態。空物品／武器及尚無成就是合法初始狀態。
+- 擊殺事件確認成功時才增加 `lifetime_enemies_defeated`。後端依 session 的波次、難度、無限等級及敵人序號計算經驗，包含每五波最後一隻 boss 的八倍經驗、五分之一經驗、等級上限 100，以及每升一級一點天賦。重送不重複累計；只更新進度參數，不重寫部署／道路。
+- `POST GameProgress/WaveComplete` 接受 `{request_id, session_id}`，不需 expected_revision。驗證本人目前 active session 的每一隻敵人已回報擊殺後，保存 `cleared_waves`、最大波數、完成狀態，回傳 `{request_id, revision, snapshot: {progress, next_wave, next_difficulty, next_infinite_level}}`。第 100 波完成後依既有規則切換難度；下一波仍經 wave_starts 建立 session。
+- 前端自動呼叫 WaveComplete，確認前不進入下一波；未知結果沿用 journal 中同一 request ID 重試。確定的 4xx 拒絕會回報並阻擋，不無限建立新交易。
+- 已移除 progress 專用背景保存與啟動前 flush；其他交易的確認／重試仍保留。新的非空 progress 請求明確拒絕，既有已提交整包回執仍可重播；舊版未提交且帶 progress 的 journal 不能直接當成已成功或清除。
+- `skill_suffixes`、`refine_item_counts` 不再讀寫或輸出；既有資料庫歷史列保留，不隨前景 progress 儲存刪除。
+
+### 統一背景批次真 HTTP 驗證
+
+在本 repo 根目錄執行（需既有 Development 設定、SQL 連線及 Godot 隔離 runner）：
+
+```powershell
+$env:BACKGROUND_SYNC_HTTP_TESTS = '1'
+$env:BACKGROUND_SYNC_GODOT_TESTS = '1'
+$env:CORE_HTTP_SERVER_DIRECTORY = Join-Path $PWD 'reconstruct-nodes-server'
+$env:DUAL_PATH_CLIENT_DIRECTORY = Join-Path (Split-Path $PWD) 'reconstruct-nodes'
+dotnet test .\reconstruct-nodes-server.Tests\reconstruct-nodes-server.Tests.csproj --filter 'FullyQualifiedName~BackgroundSync_RealHttp'
+```
+
+fixture 啟動自己持有的 loopback 站台，建立唯一 `background-sync-fixture-*` 訪客，
+驗證聚合初始化、事件批次、固定意圖重播、不重複金幣／物品、409、中途失敗整批回滾、
+完整擊殺後通關、通關重播與重新初始化不重設進度，
+並以正式 Godot boot／repository／scheduler 實際送批次。
+finally 停止自己建立的程序、依唯一帳號清除資料並檢查無殘留；不讀玩家 token。
+不啟用 `BACKGROUND_SYNC_GODOT_TESTS` 時只驗後端 HTTP，不代表前端已驗收。
 - 角色／經濟已完成前後端新契約串接，通過單元、實際 SQL Server 與正式前端 AppShell 的 HTTP 整合驗證；不相容舊本機抽卡流程。前端依後端角色清單判定擁有權，交易後對帳金幣，不再自行抽卡或修改遠端餘額。
 - 通用 CRUD 與舊 `/Login` 保留原有回應格式，不全部使用 `BackendApiResult<T>`。
 - 繼承 `BaseApiController` 的 API 在非 DEBUG 組建檢查 `Encode`；

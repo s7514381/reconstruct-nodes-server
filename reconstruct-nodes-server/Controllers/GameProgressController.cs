@@ -2,31 +2,35 @@ using Microsoft.AspNetCore.Mvc;
 using ReconstructNodesServer.Library.Models;
 using ReconstructNodesServer.Argument;
 using ReconstructNodesServer.Services;
+using ReconstructNodesServer.Models;
 
 namespace ReconstructNodesServer.Controllers
 {
-    public class GameProgressController(BaseApiArgument argument, GameProgressService service) : AuthorizeApiController(argument)
+    public class GameProgressController(BaseApiArgument argument, GameProgressService service,
+        BackgroundSyncService background, PlayerLifecycleService lifecycle) : AuthorizeApiController(argument)
     {
         /// <summary>
         /// 讀取目前玩家的遊戲進度；尚未儲存過時回傳 404 封包（前端據此判定為 MISSING）
         /// </summary>
         [HttpPost]
         public virtual Task<IActionResult> Get() =>
-            TransactionResultAsync<GameProgressModel?>(() => service.Get(), ApiMessageKeys.ProgressReadFailed, ApiMessageKeys.ProgressMissing);
+            TransactionResultAsync<GameProgressModel?>(() => service.GetCommand(), ApiMessageKeys.ProgressReadFailed,
+                ApiMessageKeys.ProgressMissing, commandOwnsTransaction: true);
 
-        /// <summary>
-        /// 以整份遊戲進度快照覆寫目前玩家的資料
-        /// </summary>
         [HttpPost]
-        public virtual async Task<IActionResult> Save(GameProgressModel model)
-        {
-            (bool success, ApiMessage? message) = await TransactionFunc(async () =>
-            {
-                await service.Save(model);
-            });
+        [ProducesResponseType(typeof(BackendApiResult<BackgroundSyncResponse>), 200)]
+        public virtual Task<IActionResult> BackgroundSync(BackgroundSyncRequest request) =>
+            TransactionResultAsync(() => background.Execute(request), ApiMessageKeys.ProgressSaveFailed,
+                commandOwnsTransaction: true);
 
-            if (!success) { return StatusCode(400, BackendApiResult<string>.Create(400, message ?? ApiMessageKeys.ProgressSaveFailed)); }
-            return SnapshotSaved(model, string.Empty);
-        }
+        [HttpPost]
+        [ProducesResponseType(typeof(BackendApiResult<PlayerInitializationResponse>), 200)]
+        public virtual Task<IActionResult> Initialize() =>
+            TransactionResultAsync(() => lifecycle.Initialize(), ApiMessageKeys.ProgressSaveFailed);
+
+        [HttpPost]
+        public virtual Task<IActionResult> WaveComplete(WaveCompleteRequest request) =>
+            TransactionResultAsync(() => lifecycle.Complete(request), ApiMessageKeys.ProgressSaveFailed);
+
     }
 }

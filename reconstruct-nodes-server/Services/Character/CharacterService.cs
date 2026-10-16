@@ -3,6 +3,7 @@ using System.Text.Json;
 using ReconstructNodesServer.Argument;
 using ReconstructNodesServer.Library.DBModel;
 using ReconstructNodesServer.Library.Models;
+using ReconstructNodesServer.Library.Models.Enum;
 
 namespace ReconstructNodesServer.Services
 {
@@ -16,9 +17,8 @@ namespace ReconstructNodesServer.Services
 
         public virtual async Task<List<CharacterModel>> GetList()
         {
-            await LockPlayerAsync();
             List<Character> characters = await QuerySnapshotRowsAsync<Character>(orderBy: row => row.Kind);
-            // GetList/Get 已由 controller 包在交易內，玩家鎖讓新舊帳號的首次讀取互斥。
+            // 唯一角色鍵保護首次初始化，Snapshot transaction 保持快照一致。
             // 只初始化不存在的核心；已保存的空技能與裝備都是有效配置。
             if (!characters.Any(row => row.Kind == CoreKind))
             {
@@ -36,11 +36,65 @@ namespace ReconstructNodesServer.Services
             var nodes = trees.Count == 0 ? new List<CharacterSkillNode>() :
                 await QuerySnapshotChildrenAsync<CharacterSkillNode, CharacterSkillTree>(
                     trees.Select(tree => tree.Id).ToArray(), activeChildrenOnly: true);
+            var weapons = (await _lazy.WeaponService.Value.GetInstanceList()).ToDictionary(weapon => weapon.Id);
+            return BuildSnapshots(characters, trees, nodes, weapons, await Revisions.Read(nameof(CharacterModel)));
+        }
+
+        public Task<List<CharacterModel>> GetListCommand() => ReadSnapshotCommandAsync(GetListRead);
+
+        public SnapshotRead<List<CharacterModel>> GetListRead => new($"""
+            IF NOT EXISTS (SELECT 1 FROM Character WITH (UPDLOCK, HOLDLOCK) WHERE CreateUserId = @CreateUserId AND Status != -1 AND Kind = {CoreKind})
+            BEGIN
+                DECLARE @Core uniqueidentifier = NEWID();
+                INSERT INTO Character (Id, CreateDate, CreateUserId, Status, Kind)
+                VALUES (@Core, GETDATE(), @CreateUserId, {(int)EStatus.啟用}, {CoreKind});
+                INSERT INTO CharacterSkillTree (Id, CreateDate, CreateUserId, Status, CharacterId, Kind, Sequence)
+                VALUES (NEWID(), GETDATE(), @CreateUserId, {(int)EStatus.啟用}, @Core, {CoreDefaultSkillKind}, 0);
+            END
+            SELECT * FROM Character WHERE CreateUserId = @CreateUserId AND Status != -1 ORDER BY Kind;
+            SELECT c.* FROM CharacterSkillTree c INNER JOIN Character p ON p.Id = c.CharacterId
+            WHERE p.CreateUserId = @CreateUserId AND c.CreateUserId = @CreateUserId
+                AND p.Status != -1 AND c.Status != -1 ORDER BY c.Sequence;
+            SELECT c.* FROM CharacterSkillNode c INNER JOIN CharacterSkillTree p ON p.Id = c.CharacterSkillTreeId
+                INNER JOIN Character a ON a.Id = p.CharacterId
+            WHERE p.CreateUserId = @CreateUserId AND c.CreateUserId = @CreateUserId AND a.CreateUserId = @CreateUserId
+                AND p.Status != -1 AND c.Status != -1 AND a.Status != -1 ORDER BY c.Sequence;
+            SELECT w.* INTO #EquippedWeapons FROM Weapon w
+            WHERE w.CreateUserId = @CreateUserId AND w.Status != -1
+                AND EXISTS (SELECT 1 FROM Character c WHERE c.CreateUserId = @CreateUserId
+                    AND c.Status != -1 AND c.WeaponEntryKey = w.EntryKey);
+            SELECT * FROM #EquippedWeapons;
+            SELECT c.* FROM WeaponAffix c INNER JOIN #EquippedWeapons p ON p.Id = c.WeaponId
+            WHERE c.CreateUserId = @CreateUserId ORDER BY c.Sequence;
+            SELECT c.* FROM WeaponAffixValue c INNER JOIN WeaponAffix p ON p.Id = c.WeaponAffixId
+                INNER JOIN #EquippedWeapons w ON w.Id = p.WeaponId
+            WHERE p.CreateUserId = @CreateUserId AND c.CreateUserId = @CreateUserId ORDER BY c.Sequence;
+            SELECT c.* FROM WeaponUniqueValue c INNER JOIN #EquippedWeapons p ON p.Id = c.WeaponId
+            WHERE c.CreateUserId = @CreateUserId ORDER BY c.Sequence;
+            DROP TABLE #EquippedWeapons;
+            SELECT Value FROM PlayerParams WHERE CreateUserId = @CreateUserId
+                AND [Group] = 'server.revisions' AND Name = 'CharacterModel' AND Status != -1;
+            """, async reader =>
+        {
+            var characters = (await reader.ReadAsync<Character>()).ToList();
+            var trees = await reader.ReadAsync<CharacterSkillTree>();
+            var nodes = await reader.ReadAsync<CharacterSkillNode>();
+            var weapons = await reader.ReadAsync<Weapon>();
+            var affixes = await reader.ReadAsync<WeaponAffix>();
+            var values = await reader.ReadAsync<WeaponAffixValue>();
+            var unique = await reader.ReadAsync<WeaponUniqueValue>();
+            string? revision = await reader.ReadSingleOrDefaultAsync<string>();
+            return BuildSnapshots(characters, trees, nodes,
+                WeaponService.BuildSnapshots(weapons, affixes, values, unique, 0).ToDictionary(weapon => weapon.Id),
+                revision == null ? 0 : long.Parse(revision, System.Globalization.CultureInfo.InvariantCulture));
+        });
+
+        private static List<CharacterModel> BuildSnapshots(IEnumerable<Character> characters,
+            IEnumerable<CharacterSkillTree> trees, IEnumerable<CharacterSkillNode> nodes,
+            Dictionary<string, WeaponInstanceModel> weapons, long revision)
+        {
             var treesByCharacter = trees.ToLookup(tree => tree.CharacterId);
             var nodesByTree = nodes.ToLookup(node => node.CharacterSkillTreeId);
-            var weapons = (await _lazy.WeaponService.Value.GetInstanceList()).ToDictionary(weapon => weapon.Id);
-
-            long revision = await Revisions.Read(nameof(CharacterModel));
             return characters.Select(row =>
             {
                 CharacterModel model = new()
@@ -88,6 +142,14 @@ namespace ReconstructNodesServer.Services
                 ValidateWeaponKey(model.WeaponEntryId);
                 string? weaponKey = string.IsNullOrEmpty(model.WeaponEntryId) ? null : model.WeaponEntryId;
                 await ValidateWeaponAsync(weaponKey, model.Kind);
+                if (weaponKey != null)
+                {
+                    int owned = await ExecuteAsync("""
+                        UPDATE Weapon SET Rarity = Rarity
+                        WHERE CreateUserId = @CreateUserId AND EntryKey = @EntryKey AND Status != -1;
+                        """, new { CreateUserId = _playerId, EntryKey = weaponKey });
+                    if (owned != 1) { throw new BusinessArgumentException(ApiMessageKeys.WeaponNotOwned); }
+                }
                 // Update only equipment. Skill trees are never deleted/reinserted by this action.
                 await ExecuteAsync(
                     "UPDATE Character SET WeaponEntryKey=@WeaponEntryKey, WeaponQualityVersion=@Quality WHERE Id=@Id AND CreateUserId=@CreateUserId AND Status != -1",
@@ -141,7 +203,6 @@ namespace ReconstructNodesServer.Services
 
         protected override async Task SaveSnapshot(CharacterModel model)
         {
-            await LockPlayerAsync();
             if (model.Id.HasValue)
             {
                 var owned = (await QuerySnapshotRowsAsync<Character>(ids: [model.Id.Value])).SingleOrDefault();

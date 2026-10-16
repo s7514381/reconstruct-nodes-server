@@ -20,7 +20,6 @@ namespace ReconstructNodesServer.Argument
         public Lazy<AzureStoreService> AzureStoreService { get; set; }
         public Lazy<ManyToManyService> ManyToManyService { get; set; }
         public Lazy<AchievementService> AchievementService { get; set; }
-        public Lazy<FirebaseService> FirebaseService { get; set; }
         public Lazy<PlayerParamsService> PlayerParamsService { get; set; }
         public Lazy<WeaponService> WeaponService { get; set; }
         public Lazy<GoldService> GoldService { get; set; }
@@ -35,7 +34,6 @@ namespace ReconstructNodesServer.Argument
             Lazy<AzureStoreService> azureStoreService,
             Lazy<ManyToManyService> manyToManyService,
             Lazy<AchievementService> achievementService,
-            Lazy<FirebaseService> firebaseService,
             Lazy<PlayerParamsService> playerParamsService,
             Lazy<WeaponService> weaponService,
             Lazy<GoldService> goldService)
@@ -49,7 +47,6 @@ namespace ReconstructNodesServer.Argument
             AzureStoreService = azureStoreService;
             ManyToManyService = manyToManyService;
             AchievementService = achievementService;
-            FirebaseService = firebaseService;
             PlayerParamsService = playerParamsService;
             WeaponService = weaponService;
             GoldService = goldService;

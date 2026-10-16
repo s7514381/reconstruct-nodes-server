@@ -4,7 +4,7 @@ using ReconstructNodesServer.Library.Models;
 namespace ReconstructNodesServer.Services;
 
 public class WeaponCommandService(BaseServiceArgument argument, RevisionService revisions,
-    WeaponService weapons, ItemService items, CharacterService characters) : BaseService(argument)
+    WeaponService weapons, CharacterService characters) : BaseService(argument)
 {
     public Task<CommandReceipt<WeaponInstanceModel>> Acquire(WeaponAcquireRequest request) =>
         revisions.ExecuteIntent(request, "weapon.acquire", nameof(WeaponInstanceModel), request, async () =>
@@ -15,20 +15,7 @@ public class WeaponCommandService(BaseServiceArgument argument, RevisionService 
         });
 
     public Task<CommandReceipt<WeaponRefineSnapshot>> Refine(WeaponRefineRequest request) =>
-        revisions.ExecuteIntent(request, "weapon.refine", nameof(WeaponInstanceModel), request, async () =>
-        {
-            WeaponInstanceModel original = (await weapons.GetInstanceList()).SingleOrDefault(w => w.Id == request.WeaponEntryId)
-                ?? throw new BusinessArgumentException(ApiMessageKeys.WeaponNotOwned);
-            WeaponInstanceModel candidate = RefinementRules.Refine(original, request.CrystalId);
-            // Both the generated result and the debit are protected by the enclosing SQL transaction.
-            int amount = await items.AdjustAmount(request.CrystalId, -1);
-            await weapons.SaveForCommand(candidate);
-            return new WeaponRefineSnapshot
-            {
-                Weapon = (await weapons.GetInstanceList()).Single(w => w.Id == request.WeaponEntryId),
-                CrystalId = request.CrystalId, MaterialCount = amount,
-            };
-        });
+        weapons.RefineForCommand(request);
 
     public Task<CommandReceipt<WeaponDisassembleSnapshot>> Disassemble(WeaponDisassembleRequest request)
     {

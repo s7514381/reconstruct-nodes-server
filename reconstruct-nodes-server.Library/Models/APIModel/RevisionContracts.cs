@@ -63,8 +63,6 @@ public sealed class AchievementSnapshotClaimRequest : ForegroundRequest
 {
     [JsonPropertyName("achievement_item_id")]
     public string AchievementItemId { get; set; } = "";
-    [JsonPropertyName("snapshot")]
-    public AchievementProgressModel Snapshot { get; set; } = new();
 }
 
 public sealed class TalentNodeCommandRequest : ForegroundRequest

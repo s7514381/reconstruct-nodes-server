@@ -39,12 +39,6 @@ namespace ReconstructNodesServer.Library.Models
         [JsonPropertyName("unlocked_character_kinds")]
         public Dictionary<string, JsonElement> UnlockedCharacterKinds { get; set; } = new();
 
-        [JsonPropertyName("skill_suffixes")]
-        public Dictionary<string, JsonElement> SkillSuffixes { get; set; } = new();
-
-        [JsonPropertyName("refine_item_counts")]
-        public Dictionary<string, JsonElement> RefineItemCounts { get; set; } = new();
-
         [JsonPropertyName("progression")]
         public Dictionary<string, JsonElement> Progression { get; set; } = new();
 

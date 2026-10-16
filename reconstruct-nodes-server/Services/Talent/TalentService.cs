@@ -15,16 +15,40 @@ namespace ReconstructNodesServer.Services
         /// </summary>
         public virtual async Task<TalentModel?> GetSnapshot()
         {
-            await LockPlayerAsync();
             Talent? talent = await QuerySnapshotParentAsync<Talent>();
             if (talent == null) { return null; }
 
             List<TalentAcquired> acquired = await QuerySnapshotChildrenAsync<TalentAcquired, Talent>([talent.Id]);
             List<TalentLegacyCategory> legacy = await QuerySnapshotChildrenAsync<TalentLegacyCategory, Talent>([talent.Id]);
 
-            return new TalentModel
+            return BuildSnapshot(talent, acquired, legacy, await Revisions.Read(nameof(TalentModel)));
+        }
+
+        public Task<TalentModel?> GetSnapshotCommand() => ReadSnapshotCommandAsync(GetSnapshotRead);
+
+        public SnapshotRead<TalentModel?> GetSnapshotRead => new("""
+            SELECT TOP 1 * FROM Talent WHERE Status != -1 AND CreateUserId = @CreateUserId;
+            SELECT c.* FROM TalentAcquired c INNER JOIN Talent p ON p.Id = c.TalentId
+            WHERE p.CreateUserId = @CreateUserId AND c.CreateUserId = @CreateUserId AND p.Status != -1 ORDER BY c.Sequence;
+            SELECT c.* FROM TalentLegacyCategory c INNER JOIN Talent p ON p.Id = c.TalentId
+            WHERE p.CreateUserId = @CreateUserId AND c.CreateUserId = @CreateUserId AND p.Status != -1 ORDER BY c.Sequence;
+            SELECT Value FROM PlayerParams WHERE CreateUserId = @CreateUserId
+                AND [Group] = 'server.revisions' AND Name = 'TalentModel' AND Status != -1;
+            """, async reader =>
+        {
+            Talent? talent = await reader.ReadFirstOrDefaultAsync<Talent>();
+            var acquired = await reader.ReadAsync<TalentAcquired>();
+            var legacy = await reader.ReadAsync<TalentLegacyCategory>();
+            string? revision = await reader.ReadSingleOrDefaultAsync<string>();
+            return talent == null ? null : BuildSnapshot(talent, acquired, legacy,
+                revision == null ? 0 : long.Parse(revision, System.Globalization.CultureInfo.InvariantCulture));
+        });
+
+        internal static TalentModel BuildSnapshot(Talent talent, IEnumerable<TalentAcquired> acquired,
+            IEnumerable<TalentLegacyCategory> legacy, long revision) =>
+            new TalentModel
             {
-                Revision = await Revisions.Read(nameof(TalentModel)),
+                Revision = revision,
                 Version = talent.Version,
                 TalentPoints = talent.TalentPoints,
                 TotalSpentPoints = talent.TotalSpentPoints,
@@ -32,12 +56,15 @@ namespace ReconstructNodesServer.Services
                 AcquiredTalents = ToNodeMap(acquired.Select(a => (a.TreeId, a.NodeId, a.Value))),
                 LegacyCategoryTalents = ToNodeMap(legacy.Select(l => (l.TreeId, l.NodeId, l.Value))),
             };
-        }
 
         /// <summary>
         /// 以整份天賦快照覆寫目前玩家的資料：父表 upsert，子表整批刪除後重插。需在交易內呼叫。
         /// </summary>
         public override Task Save(TalentModel model) => base.Save(model);
+
+        private static IEnumerable<(string TreeId, string NodeId, string Value)> EnumerateNodes(
+            Dictionary<string, Dictionary<string, JsonElement>> nodes) =>
+            nodes.SelectMany(tree => tree.Value.Select(node => (tree.Key, node.Key, node.Value.GetRawText())));
 
         protected override void ValidateSnapshot(TalentModel model) => ValidateTalent(model);
 
@@ -76,9 +103,8 @@ namespace ReconstructNodesServer.Services
         private async Task InsertNodesAsync<TNode>(Dictionary<string, Dictionary<string, JsonElement>> treeNodes, Func<string, string, string, TNode> create)
             where TNode : ModelBase
         {
-            var nodes = treeNodes.SelectMany(tree => tree.Value.Select(node =>
-                (TreeId: tree.Key, NodeId: node.Key, Value: node.Value)));
-            await InsertSnapshotRowsAsync(nodes, (node, _) => create(node.TreeId, node.NodeId, node.Value.GetRawText()));
+            var nodes = EnumerateNodes(treeNodes);
+            await InsertSnapshotRowsAsync(nodes, (node, _) => create(node.TreeId, node.NodeId, node.Value));
         }
 
         private static Dictionary<string, Dictionary<string, JsonElement>> ToNodeMap(IEnumerable<(string TreeId, string NodeId, string Value)> rows)
@@ -99,7 +125,7 @@ namespace ReconstructNodesServer.Services
         /// <summary>
         /// 寫入前檢查數值與節點格式，避免格式錯誤造成資料不完整
         /// </summary>
-        private static void ValidateTalent(TalentModel model)
+        internal static void ValidateTalent(TalentModel model)
         {
             if (model.Version < 0 || model.PointsRecalculationVersion < 0)
             {

@@ -9,6 +9,23 @@
 
 ## 版本與重試
 
+### GameProgress 生命週期入口
+
+`POST /GameProgress/Initialize` 不需 body：建立缺少的 progress／talent，已有存檔不重設，
+回傳角色、金幣、目錄、進度、天賦、成就、物品、武器及 revisions，供開機單次 hydration。
+
+`POST /GameProgress/WaveComplete` 使用 `{request_id, session_id}`，不需 expected_revision。
+伺服器確認 session 屬於玩家、仍為 active_wave 且每個敵人索引皆有擊殺回執，才保存
+cleared_waves／max_wave_reached／wave_completed。回傳
+`{request_id, revision, snapshot: {progress, next_wave, next_difficulty, next_infinite_level}}`；
+相同意圖重送重播回執，不重複保存。下一波由 wave_starts 正式建立 session。
+
+累積擊殺、經驗及升級天賦點由 BackgroundSync 的 kills 更新，不再接收客戶端整份 progress。
+skill_suffixes／refine_item_counts 不再保存或回傳，資料庫歷史群組保留；progress 專用 flush 已移除。
+這兩個入口使用 request transaction，不取得 Player row lock。
+
+### 既有命令版本
+
 - `Revisions` 無 body，回傳 `{talent,character,game_progress,achievement,weapon}`（int64）。
 - 既有 Talent、Character、GameProgress、AchievementProgress、WeaponInstance 快照均新增
   `revision`（int64）、`expected_revision`（nullable int64）。既有 `version` 是內容版本，不是持久化版本。

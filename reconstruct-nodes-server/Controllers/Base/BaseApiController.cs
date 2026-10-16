@@ -26,13 +26,36 @@ namespace ReconstructNodesServer.Controllers
         {
             (bool isSuccess, Exception? ex) = await _lazy.BaseService.Value.TransactionFunc(func, exceptionFunc);
             if (isSuccess) { return (true, null); }
+            return (false, ReportFailure(ex!));
+        }
+
+        protected async Task<(bool, ApiMessage?)> CommandFunc(Func<Task> func)
+        {
+            try
+            {
+                await func();
+                return (true, null);
+            }
+            catch (Exception error)
+            {
+                return (false, ReportFailure(error));
+            }
+        }
+
+        private ApiMessage ReportFailure(Exception ex)
+        {
+            if (Repositories.SqlConcurrency.IsRetryable(ex))
+            {
+                _logger.LogWarning(ex, "Resource transaction conflict; retry the original intent");
+                return new ApiMessage(ApiMessageKeys.ConcurrencyRetry);
+            }
             if (ex is IApiBusinessError businessError)
             {
                 _logger.LogWarning(ex, "API transaction rejected");
-                return (false, businessError.ApiMessage);
+                return businessError.ApiMessage;
             }
             _logger.LogError(ex, "API transaction failed");
-            return (false, new ApiMessage(ApiMessageKeys.ErrorUnexpected));
+            return new ApiMessage(ApiMessageKeys.ErrorUnexpected);
         }
 
         protected IActionResult TransactionFailure(ApiMessage? message)
@@ -43,6 +66,7 @@ namespace ReconstructNodesServer.Controllers
         }
 
         protected static int FailureStatus(ApiMessage? message) =>
+            message?.Key == ApiMessageKeys.ConcurrencyRetry ? 503 :
             message?.Key is "concurrency.revision_conflict" or ApiMessageKeys.EconomyRequestConflict ? 409 : 400;
 
         protected IActionResult SnapshotSaved<T>(IRevisionedSnapshot snapshot, T data)
@@ -55,10 +79,13 @@ namespace ReconstructNodesServer.Controllers
         }
 
         protected async Task<IActionResult> TransactionResultAsync<T>(
-            Func<Task<T>> action, string failureMessage, string? notFoundMessage = null) where T : class?
+            Func<Task<T>> action, string failureMessage, string? notFoundMessage = null,
+            bool commandOwnsTransaction = false) where T : class?
         {
             T? result = null;
-            (bool success, ApiMessage? message) = await TransactionFunc(async () => result = await action());
+            (bool success, ApiMessage? message) = commandOwnsTransaction
+                ? await CommandFunc(async () => result = await action())
+                : await TransactionFunc(async () => result = await action());
             if (!success)
             {
                 int status = FailureStatus(message);
@@ -85,7 +112,7 @@ namespace ReconstructNodesServer.Controllers
                 rows = await deleteFunc(key);
             });
 
-            if (!success) { return StatusCode(400, BackendApiResult<int>.Create(400, message ?? failMessage)); }
+            if (!success) { return TransactionFailure(message ?? new ApiMessage(failMessage)); }
             return Ok(BackendApiResult<int>.Create(200, string.Empty, rows));
         }
 

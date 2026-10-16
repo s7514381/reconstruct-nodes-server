@@ -84,7 +84,7 @@ namespace ReconstructNodesServer.Utility
                     { "IPAddress", context.Connection.RemoteIpAddress?.ToString() },
                     { "LoadTime", sw.ElapsedMilliseconds },
                 };
-                Console.WriteLine($"Request to {context.Request.Path} took {sw.ElapsedMilliseconds} ms");
+                Console.WriteLine($"Request to {context.Request.Path} took {sw.ElapsedMilliseconds} ms 時間:{DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss.fff")}");
             }
             catch (Exception ex)
             {

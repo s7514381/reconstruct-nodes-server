@@ -9,15 +9,13 @@ namespace ReconstructNodesServer.Controllers
     {
         [HttpPost]
         public virtual Task<IActionResult> GetInstanceList() =>
-            TransactionResultAsync<IEnumerable<WeaponInstanceModel>>(() => service.GetInstanceList(), ApiMessageKeys.ErrorUnexpected);
-
-        [HttpPost]
-        public Task<IActionResult> Acquire(WeaponAcquireRequest request) =>
-            TransactionResultAsync(() => commands.Acquire(request), ApiMessageKeys.WeaponSaveFailed);
+            TransactionResultAsync<IEnumerable<WeaponInstanceModel>>(() => service.GetInstanceListCommand(),
+                ApiMessageKeys.ErrorUnexpected, commandOwnsTransaction: true);
 
         [HttpPost]
         public Task<IActionResult> Refine(WeaponRefineRequest request) =>
-            TransactionResultAsync(() => commands.Refine(request), ApiMessageKeys.WeaponSaveFailed);
+            TransactionResultAsync(() => commands.Refine(request), ApiMessageKeys.WeaponSaveFailed,
+                commandOwnsTransaction: true);
 
         [HttpPost]
         public Task<IActionResult> Disassemble(WeaponDisassembleRequest request) =>

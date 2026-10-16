@@ -8,26 +8,12 @@ namespace ReconstructNodesServer.Controllers
     public class AchievementProgressController(BaseApiArgument argument, AchievementProgressService service) : AuthorizeApiController(argument)
     {
         /// <summary>
-        /// 讀取目前玩家的成就進度；尚未儲存過時回傳 404 封包（前端據此判定為 MISSING）
+        /// 讀取目前玩家的成就進度；進度與收集由伺服器資料推導
         /// </summary>
         [HttpPost]
         public virtual Task<IActionResult> Get() =>
-            TransactionResultAsync<AchievementProgressModel?>(() => service.Get(), ApiMessageKeys.ErrorUnexpected, ApiMessageKeys.AchievementMissing);
-
-        /// <summary>
-        /// 以整份成就快照覆寫目前玩家的資料
-        /// </summary>
-        [HttpPost]
-        public virtual async Task<IActionResult> Save(AchievementProgressModel model)
-        {
-            (bool success, ApiMessage? message) = await TransactionFunc(async () =>
-            {
-                await service.Save(model);
-            });
-
-            if (!success) { return StatusCode(400, BackendApiResult<string>.Create(400, message ?? ApiMessageKeys.AchievementSaveFailed)); }
-            return SnapshotSaved(model, string.Empty);
-        }
+            TransactionResultAsync<AchievementProgressModel?>(() => service.GetCommand(), ApiMessageKeys.ErrorUnexpected,
+                ApiMessageKeys.AchievementMissing, commandOwnsTransaction: true);
 
         /// <summary>
         /// 領取已達成成就的獎勵；標記與發放獎勵在同一交易內完成
@@ -40,7 +26,7 @@ namespace ReconstructNodesServer.Controllers
                 await service.ClaimReward(request.AchievementItemId);
             });
 
-            if (!success) { return StatusCode(400, BackendApiResult<string>.Create(400, message ?? ApiMessageKeys.AchievementClaimFailed)); }
+            if (!success) { return TransactionFailure(message ?? new ApiMessage(ApiMessageKeys.AchievementClaimFailed)); }
             return Ok(BackendApiResult<string>.Create(200, string.Empty, string.Empty));
         }
     }

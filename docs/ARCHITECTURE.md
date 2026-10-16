@@ -39,6 +39,82 @@ Services
 
 資料流向：`前端 → HTTP → Controller → Service → BaseService → IDapperRepository → DapperRepository → SQL Server`。Controller 處理 HTTP、部分輸入檢查與交易邊界；領域 SQL 與業務規則主要位於 Service。EF Core 的 `ApplicationDbContext` 負責模型與 Migration，Dapper 負責上述 Service 的資料操作。
 
+### 領域 batch 與交易所有權
+
+#### 統一背景入口與初始化邊界
+
+`GameProgressController.BackgroundSync(BackgroundSyncRequest)` 為指定的單一背景入口，
+回覆型別為 `BackendApiResult<BackgroundSyncResponse>`。
+請求統整 kills、wave_starts、talent、achievement、items 與 weapon_acquisitions；
+沿用現有強型別領域 DTO，不包含前景購買／領獎／精煉等操作。
+回覆以 request_id 對應整批確認，並保留 gold、sessions、acquisitions 及受影響的權威資料；
+可選欄位 null 不代表清空狀態。
+
+`GameProgressController.Initialize()` 為聚合初始化入口，在交易內建立缺少的進度與天賦，不重設既有資料。
+回覆 `BackendApiResult<PlayerInitializationResponse>`，包含角色、金幣、既有商店目錄、
+進度、天賦、成就、物品、武器與 revision vector。必要欄位使用 required，
+成就尚未建立時允許 null，物品／武器可為空清單；登入仍由既有認證入口負責。
+
+`BackgroundSyncService.Execute` 使用 repository 的 `ExecuteAtomicJsonAsync` 擁有唯一外層交易，
+Controller 指定 `commandOwnsTransaction: true`，不能再包交易。
+`RevisionService.ExecuteIntent` 以既有交易與 ledger 保存固定意圖與回執，不使用 Player 列鎖；
+重播不重複扣款／發獎，同 ID 異內容回覆 409，任一工作失敗全部回滾。
+不要用外層 GoldService account 包整批，避免舊 account 覆蓋內部最新金幣。
+背景不再儲存客戶端 progress；成就（擊殺、各難度通關波數、武器與詞綴收集）由伺服器依自身資料推導，
+`AchievementProgress/Get` 與 Initialize 即時組出快照，BackgroundSync 與領取請求中的成就快照一律忽略，
+領取時才把推導結果落地並標記領取；kills 依 session 規則累加擊殺、經驗及升級天賦點，
+只寫進度參數而不重建部署／道路。天賦花費與節點、成就領取紀錄仍由原領域合併保護。
+Godot 有異動每秒最多派一批、最多一批在途；派送前保存帳號隔離 journal，
+未知結果重試原批次，新事件留至下一批；開機先恢復未決批次。
+自動開波亦走批次並等待 session，前景 action 不等待無關背景排空。
+`GameProgress/WaveComplete` 為自動完成命令，只接受 request_id 與 session_id。
+確認本人 active session 全部敵人已回報擊殺後，保存通關紀錄、最大波數及完成狀態，
+回傳進度與下一波目標；重送使用同一永久回執。前端確認後才進入波間等待，
+下一波仍經 wave_starts 建立 session。Initialize 與 WaveComplete 均由 Controller 包交易。
+progress 專用 flush 已移除；skill_suffixes、refine_item_counts 不再輸出／讀寫，歷史 DB 列保留。
+
+#### 既有領域執行路徑
+
+快照清單讀取的 HTTP 入口呼叫 Service 的 `Get*Command`，
+由單次參數化 SQL batch 管理 Snapshot 一致性讀取與提交，不取得玩家列鎖；Controller 使用 `CommandFunc`
+或 `TransactionResultAsync(commandOwnsTransaction: true)`，不能再外包一個 client transaction。
+`_SnapshotService` 的讀取 helper 使用現有 `QueryMultipleAsync`，完整消費提交確認結果後才回傳；
+寫入統一由組合交易內 `Save`／revision 檢查與推進承接，舊獨立 SaveCommand 已移除。
+衝突、業務拒絕及非預期錯誤仍使用原 HTTP／本地化訊息邊界，不以預設資料代替失敗。
+
+同一領域原有 `Get`／`Save` 方法仍供已持有外層交易的組合用例使用
+（例如天賦命令、角色穿裝與武器操作），模型映射及可重用寫入 batch 共用；
+不能在這些組合呼叫中另行提交。物品 `AdjustAmount` 只使用呼叫端交易，
+保留分類補入、負數拒絕、溢位與歸零軟刪除；舊頂層 AdjustAmountCommand 已移除。
+波次／抽取透過 `GoldService.ExecuteBatch` 共用回執與金幣資源原子寫入，
+回執重播先於業務檢查；已有 repository transaction 時由原外層負責提交。
+抽取仍依結果順序判斷持有、新角色與碎片，碎片增量重用共用物品 SQL；
+回應保留逐抽結果與最終持有量，不把機率或獎勵判定改為背景作業。
+
+### `_ModelService` 泛型命令試點：ReportKill
+
+`_ModelService.ExecuteCommandAsync<TContext, TResult>(read, execute)` 管理交易生命週期：
+讀取與後續操作共同成功才提交，例外回滾並原樣傳遞；已有 repository transaction 時不另開、
+提交或回滾外層交易。它不含玩家、金幣、回執、SQL 變數或特定 DTO 的假設。
+`ReadBatchAsync<TResult>(sql, parameters, read)` 管理多結果 reader 與映射，
+先完整物化必要資料並釋放 reader，再進行後續寫入，避免持有 repository gate 時重入。
+
+`ReportKill` 與 `BackgroundSync` 使用泛型命令骨架；`GoldService` 組合基底的泛型命令與批次讀取，
+負責玩家互斥、回執重播與金幣／回執共同保存；`EconomyService` 處理 session／重複擊殺驗證，
+`KillRewardRules.Calculate` 為不存取 DB 的 C# 獎勵公式。規則不再同時存在 C# 與擊殺 SQL 兩份。
+共用持久化 SQL 與既有 batch 路徑使用同一份，不為試點複製金幣／回執寫入。
+
+此形狀也可套用非經濟模型，不需要重寫交易與 reader 清理；跨 Weapon／Talent 模型、
+不同結果型別的測試驗證同一基底方法，但尚未遷移這些正式 API。
+代價是 C# 計算位於讀取與保存之間，client transaction 的開始、讀取、保存與提交仍需多次往返。
+因此此試點是可維護性的比較版本，不能宣稱比原單次 SQL batch 快或已達 100 ms。
+
+獨立 I/O 可使用 `List<Task>`／`Task.WhenAll`，但同一 repository 的連線與交易仍序列化，
+不為並行移除 gate 或拆開原子操作。交易內往返優先以 batch／多結果查詢縮減；
+非同步 I/O 不須額外 `Task.Run`。量測與隔離實作見 [延遲診斷](LATENCY-DIAGNOSTICS.md)。
+單次 batch 不代表固定低於 100 ms；驗收須分別檢查每端點的後端 P95、
+功能回歸與 fixture 清理，並觀察 SQL CPU／IO。不可僅以平均值或往返次數宣稱達標。
+
 `Program.cs` 將 `IDapperRepository` 與公開、非抽象的 Argument／Service／Filter 類別註冊為 scoped；`Lazy<T>` 為 transient，`MailSender`、`AzureStoreService`、`FirebaseService` 為 singleton。DB limiter 明確以 singleton 註冊並排除反射 scoped 掃描。`TimedHostedService` 的註冊目前被註解，啟動流程不會自動執行遷移。
 
 `DbConnectionLimitService` 與 `DbOperateLimitService` 共用移植的 `SemaphoreSlimService`
@@ -428,11 +504,11 @@ Step 4：依需要覆寫 `SetModel`、`ModelSave`、`ModelDelete`，或在 Contr
 
 - 讀取結果的區分：object 型 endpoint（`GameProgress`、`Talent`、`AchievementProgress`）無資料時回 HTTP 404，且 envelope 的 `Status` 為 404，代表「尚未建立」。不含 envelope 的 404（例如路由不存在）由客戶端視為讀取失敗，不可當成無資料。
 - 清單型 endpoint（`Character`、`Item`、`Weapon`）無資料時回 200 空陣列。
-- 寫入（`Save*`、`AdjustAmount`、`Item/Delete`、武器業務 action、`ClaimReward`）包在 request-scoped 交易內；Character 與 GameProgress 讀取也開交易並取得共用玩家鎖，避免讀到替換明細的中間狀態；其他讀取不因此改變。武器命令使用 `TransactionResultAsync` 沿用既有錯誤分類與 envelope。
+- 寫入（`Save*`、`AdjustAmount`、`Item/Delete`、武器業務 action、`ClaimReward`）使用 Snapshot 交易、資源鍵及原子寫入；Character 與 GameProgress 以一致性快照避免讀到替換明細的中間狀態，不再使用玩家列鎖。精煉無外層交易時分成短快照讀取及版本條件提交。武器命令保留既有 envelope，預期資源衝突以 HTTP 503 / `backend.concurrency.retry` 回報，客戶端保留原 request ID。
 - 冪等性：
   - `GameProgressService.Save`（端點 `GameProgress/Save`）為整份覆寫，重送安全。以 `Player` 列的 `UPDLOCK, HOLDLOCK` 序列化（與武器業務命令共用），再以實體 `DELETE`（非軟刪除）清除此玩家的子表列與 `game_progress*` 的 `PlayerParams` 列後重新寫入。進度沒有父列。
   - `TalentService.Save` 以 `UPDLOCK, HOLDLOCK` 鎖定父列後更新或新增，再實體刪除並重建子列。`AchievementProgressService.Save`（端點 `AchievementProgress/Save`）先鎖定群組並記錄已領取狀態，再實體刪除本人群組與子列後全部重建；保留仍存在之同名項目的領取狀態。這是領域快照覆寫，不保證重送後 DB Id／CreateDate 不變。
-  - 武器寫入僅公開取得／精煉／批次分解 action，與 Character/EquipWeapon 共用玩家鎖及永久回執；不要求整域 checkpoint，禁止用舊 Save/Delete 繞過。詳細意圖比對、亂序回執與材料交易規則見 [WEAPON-CONTRACTS](WEAPON-CONTRACTS.md)。
+  - 武器寫入僅公開取得／精煉／批次分解 action，與 Character/EquipWeapon 使用資源寫入衝突及永久回執；不要求整域 checkpoint，禁止用舊 Save/Delete 繞過。詳細意圖比對、亂序回執與材料交易規則見 [WEAPON-CONTRACTS](WEAPON-CONTRACTS.md)。
   - `CharacterService.Save` 只更新本人已擁有的角色，保留角色父列 Id，整份替換該角色技能樹／節點。角色可未部署即可儲存；不改其他角色或進度，不能建立角色。
   - `ItemService.AdjustAmount`（端點 `Item/AdjustAmount`）非冪等。若網路逾時但伺服器已套用，重送會重複加上增量。客戶端應以 `Item/GetInStockList` 端點對帳，不應直接重送。
   - `ClaimReward` 不重複發獎；已領取再次呼叫回 400，而非再次回成功。
@@ -466,10 +542,10 @@ Step 4：依需要覆寫 `SetModel`、`ModelSave`、`ModelDelete`，或在 Contr
 
 後端抽卡與金幣：
 - 單抽 100 金幣、十連 900；戰士／弓箭手／法師等機率且每抽獨立，使用伺服器亂數，無保底。首次取得配發並裝備普通劍／弓／法杖，重複角色發對應碎片 ×1；同批十連亦會辨識剛取得的角色。
-- 金幣仍依玩家保存於 `PlayerParams`（`Group = game_progress`、`Name = gold`、`Value` 為整數字串），沒有獨立金幣表。`GoldService` 負責解析／驗證餘額及後端交易，並以共用玩家鎖序列化寫入。GameProgress/Get 的 gold 由此列取得，Save 不寫入客戶端餘額，刪除進度列時亦排除 gold。通用 PlayerParams 的 gold 寫入／改名／刪除入口拒絕。
+- 金幣仍依玩家保存於 `PlayerParams`（`Group = game_progress`、`Name = gold`、`Value` 為整數字串），沒有獨立金幣表。`GoldService` 負責解析／驗證餘額及後端交易，以該資源列原子更新與 Snapshot 衝突保護寫入；有效參數唯一鍵保護首次建立。GameProgress/Get 的 gold 由此列取得，Save 不寫入客戶端餘額，刪除進度列時亦排除 gold。通用 PlayerParams 的 gold 寫入／改名／刪除入口拒絕。
 - `EconomyRequest` 以 `(CreateUserId, RequestId)` 唯一；同一抽卡 request_id 與相同次數重送時回原抽卡结果，不重新抽選、扣款或發獎。相同 request_id 用於不同操作或次數會被拒絕。
 - 抽卡紀錄的 gold 是當次完成時餘額，重播後若要顯示最新餘額需再讀 Shop/GetGold，不可把歷史餘額當成目前餘額。
-- ShopController 交易包住 GoldService 與 ShopService 的全部寫入；先取得玩家鎖，餘額不足或任何發放失敗回滾。真 SQL 測試已驗證並行同 request 不重扣、發獎中途失敗回滾，HTTP 驗證另涵蓋交易端點。
+- ShopController 的 Snapshot 交易包住 GoldService 與 ShopService 的全部寫入，不取得玩家鎖；餘額不足、資源衝突或任何發放失敗均回滾。真 SQL 測試驗證同 request 不重扣、發獎中途失敗回滾，HTTP 驗證另涵蓋交易端點。
 - `POST Economy/StartWave`：`{request_id,wave,difficulty}` → `{session_id,wave,enemy_count,gold}`。難度 0..3；有限模式波次 1..100，無限模式為正整數。敵人数為 `6 + wave * 3 + (wave % 5 == 0 ? 1 : 0)`。
 - `POST Economy/ReportKill`：`{request_id,session_id,enemy_index}` → `{gold}`。只接受目前波次 session、索引範圍內的敵人；不同 request_id 不能對同敵人再次領獎。獎勵 `8 + wave`，每五波最後一敵為 BOSS，乘 8，再加已取得的金幣天賦加成。戰鬥仍由前端模擬，這是事件驗證／防重複，不是完整防作弊戰鬥驗證。
 - `POST Economy/PurchaseSkill`：`{request_id,type,kind?,loot_id?}` → `{gold}`。`type` 為 `active` 或 `auxiliary`，每項 100，已解鎖不可再次購買；主動技能 kind 0..6、輔助技能限已知清單，Basic 0 無需購買。

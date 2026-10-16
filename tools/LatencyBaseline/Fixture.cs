@@ -16,9 +16,16 @@ internal static partial class Fixture
     private static readonly JsonSerializerOptions Json = new() { PropertyNameCaseInsensitive = true };
     private sealed record Sample(double Ms, string RequestId);
     private sealed record RouteReport(string Route, Sample First, List<Sample> Samples,
-        double MeanMs, bool Below100Ms);
+        double MeanMs, bool Below100Ms)
+    {
+        public LatencyStats? Backend { get; set; }
+        public LatencyStats Http => Statistics(Samples.Select(s => s.Ms));
+    }
     private sealed record ConcurrentPair(string SaveRoute, Sample Save, Sample Kill);
     private static readonly ConcurrentDictionary<string, JsonNode> Breakdown = new();
+    private static int DuplicateTimingIds;
+    private static readonly ConcurrentDictionary<string, int> RegressionCorrelations = new();
+    private static bool TrackRegressionRequests;
     private static string Stage = "initial";
     private sealed class FixtureAssertion(string rule) : Exception
     {
@@ -30,7 +37,9 @@ internal static partial class Fixture
     }
 
     public static async Task Run(string baseline, string connection, List<double> rtt,
-        bool concurrentOnly = false, bool regressionOnly = false)
+        bool concurrentOnly = false, bool regressionOnly = false, bool itemOnly = false, bool readsOnly = false,
+        bool economyOnly = false, bool savesOnly = false, bool shopOnly = false, bool refineOnly = false,
+        bool backgroundOnly = false)
     {
         string clientId = $"core-http-fixture-{Guid.NewGuid():N}";
         string reportDirectory = Path.Combine(Path.GetDirectoryName(baseline)!,
@@ -41,7 +50,16 @@ internal static partial class Fixture
         List<RouteReport> reports = [];
         List<ConcurrentPair> concurrentSamples = [];
         List<string> regressionChecks = [];
+        List<string> itemChecks = [];
+        List<string> readChecks = [];
+        List<string> selectedChecks = [];
+        var refineDiagnostics = new RefineDiagnostics();
+        bool selectedRegressionsPassed = false;
+        string mode = backgroundOnly ? "background" : refineOnly ? "refine" : shopOnly ? "shop" : economyOnly ? "economy" : savesOnly ? "saves" : readsOnly ? "reads" :
+            itemOnly ? "item" : regressionOnly ? "regression" : concurrentOnly ? "concurrent" : "latency";
+        string[] selectedRoutes = backgroundOnly ? ["GameProgress/BackgroundSync (all)"] : shopOnly ? ShopRoutes : economyOnly ? EconomyRoutes : savesOnly ? SaveRoutes : readsOnly ? ReadRoutes : [];
         bool cleaned = false;
+        bool correlationVerified = false;
         try
         {
             using var repository = Repository(connection);
@@ -58,11 +76,13 @@ internal static partial class Fixture
                 "--skipApiVersionCheck", "--tableHost", "127.0.0.1", "--tablePort", tablePort.ToString());
             await Ready(emulator, tablePort);
             Stage = "start captured backend";
+            var backendConnection = new System.Data.SqlClient.SqlConnectionStringBuilder(connection);
+            if (refineOnly) backendConnection.ApplicationName = clientId;
             backend = Start("dotnet", baseline, new()
             {
                 ["ASPNETCORE_ENVIRONMENT"] = "Development",
                 ["DOTNET_ENVIRONMENT"] = "Development",
-                ["ConnectionStrings__DefaultConnection"] = connection,
+                ["ConnectionStrings__DefaultConnection"] = backendConnection.ConnectionString,
                 ["AzureStorage__ConnectionString"] =
                     $"DefaultEndpointsProtocol=http;AccountName=corefixture;AccountKey={key};TableEndpoint=http://127.0.0.1:{tablePort}/corefixture;",
                 ["SmtpConfig__Password"] = "unused-fixture-password",
@@ -82,6 +102,53 @@ internal static partial class Fixture
             http.DefaultRequestHeaders.Add("Authorization", token.ToString());
             playerId = await repository.QueryFirstAsync<Guid>(
                 "SELECT Id FROM Player WHERE ClientId=@ClientId AND IsClientLogin=1", new { ClientId = clientId });
+            if (backgroundOnly)
+            {
+                await MeasureBackground(http, repository, playerId.Value, Measure);
+                selectedRegressionsPassed = true;
+                Stage = "background completed";
+                return;
+            }
+            if (itemOnly)
+            {
+                Stage = "item command regressions";
+                await ItemCommandRegressions(http, repository, playerId.Value, itemChecks);
+                Stage = "item regressions completed";
+                return;
+            }
+            if (shopOnly)
+            {
+                Stage = "shop funding and regressions";
+                TrackRegressionRequests = true;
+                try
+                {
+                    await FundShop(http, checked(102L * (DrawCost(1) + DrawCost(10))));
+                    await ShopRegressions(http, repository, playerId.Value, selectedChecks);
+                }
+                finally { TrackRegressionRequests = false; }
+                selectedRegressionsPassed = true;
+                await MeasureShop(http, Measure);
+                Stage = "shop completed";
+                return;
+            }
+            if (economyOnly)
+            {
+                Stage = "economy regressions";
+                TrackRegressionRequests = true;
+                try { await EconomyRegressions(http, repository, playerId.Value, clientId, selectedChecks); }
+                finally { TrackRegressionRequests = false; }
+                selectedRegressionsPassed = true;
+                await MeasureEconomy(http, Measure);
+                Stage = "economy completed";
+                return;
+            }
+            if (refineOnly)
+            {
+                Stage = "initialize refine fixture";
+                await InitializeRefineFixture(http, repository, playerId.Value, clientId, refineDiagnostics);
+                Stage = "refine completed";
+                return;
+            }
             var characters = await Post(http, "Character/GetList", new { });
             CharacterModel core = characters.Data!.Deserialize<List<CharacterModel>>(Json)!.Single();
             Require(core.Kind == 3 && core.Id.HasValue, "valid core3");
@@ -104,27 +171,40 @@ internal static partial class Fixture
                 Groups = AchievementGroups(),
             };
             Stage = "seed representative snapshots";
-            var initialWave = await Post(http, "Economy/StartWave",
-                new WaveStartRequest { RequestId = Guid.NewGuid(), Wave = 100, Difficulty = 0 });
+            var initialWave = await PostBackground(http, new WaveStartRequest { RequestId = Guid.NewGuid(), Wave = 100, Difficulty = 0 });
             Guid killSession = initialWave.Data!["session_id"]!.GetValue<Guid>();
-            await Post(http, "Economy/ReportKill", new EnemyKillRequest
+            await PostBackground(http, new EnemyKillRequest
                 { RequestId = Guid.NewGuid(), SessionId = killSession, EnemyIndex = 306 });
             progress.RequestId = Guid.NewGuid();
-            await Save(http, "GameProgress/Save", progress);
-            await Save(http, "AchievementProgress/Save", achievements);
-            await Save(http, "Talent/Save", new TalentModel { Version = 1 });
+            await SaveBackground(http, progress);
+            await SaveBackground(http, achievements);
+            await SaveBackground(http, new TalentModel { Version = 1 });
             long gold = (await Post(http, "Shop/GetGold", new { })).Data!.GetValue<long>();
             int amount = 0;
             // Seed and verify nonempty inventory, so read routes do not benchmark empty defaults.
-            amount = (await Post(http, "Item/AdjustAmount", new ItemDeltaRequest { ItemKey = "diamond", Delta = 1, Category = "currency" }))
+            amount = (await PostBackground(http, new ItemDeltaRequest { ItemKey = "diamond", Delta = 1, Category = "currency" }))
                 .Data!.GetValue<int>();
-            var weapon = await Post(http, "Weapon/Acquire", new WeaponAcquireRequest
+            var weapon = await PostBackground(http, new WeaponAcquireRequest
             {
                 RequestId = Guid.NewGuid(),
                 Weapon = new WeaponInstanceModel { Id = "latency-staff", WeaponId = "staff",
                     WeaponFamilyId = "staff", Rarity = "common" },
             });
             Require(weapon.Data != null, "weapon provision");
+
+            if (refineOnly)
+            {
+                Stage = "refine diagnostics";
+                TrackRegressionRequests = true;
+                try
+                {
+                    await DiagnoseRefine(http, repository, playerId.Value, clientId, progress,
+                        killSession, gold, refineDiagnostics);
+                }
+                finally { TrackRegressionRequests = false; }
+                Stage = "refine completed";
+                return;
+            }
 
             if (regressionOnly)
             {
@@ -138,16 +218,16 @@ internal static partial class Fixture
             {
                 // Supplemental contention evidence, separate from the 100-per-endpoint baseline.
                 int index = 0;
-                foreach (string saveRoute in new[] { "GameProgress/Save", "AchievementProgress/Save" })
+                foreach (string saveRoute in new[] { "GameProgress/BackgroundSync (progress)", "GameProgress/BackgroundSync (achievement)" })
                 {
-                    Stage = $"concurrent {saveRoute} + Economy/ReportKill";
+                    Stage = $"concurrent {saveRoute} + GameProgress/BackgroundSync (kills)";
                     for (int i = 0; i < 11; i++)
                     {
                         progress.RequestId = Guid.NewGuid();
                         achievements.Groups[0].Total += 1;
-                        Task<Sample> saveTask = saveRoute == "GameProgress/Save"
-                            ? Save(http, saveRoute, progress) : Save(http, saveRoute, achievements);
-                        Task<Result> killTask = Post(http, "Economy/ReportKill", new EnemyKillRequest
+                        Task<Sample> saveTask = saveRoute == "GameProgress/BackgroundSync (progress)"
+                            ? SaveBackground(http, progress) : SaveBackground(http, achievements);
+                        Task<Result> killTask = PostBackground(http, new EnemyKillRequest
                         {
                             RequestId = Guid.NewGuid(), SessionId = killSession, EnemyIndex = index++,
                         });
@@ -185,6 +265,35 @@ internal static partial class Fixture
                 assertion(result.Data);
                 return result.Sample;
             }
+            if (savesOnly)
+            {
+                Stage = "snapshot save regressions";
+                TrackRegressionRequests = true;
+                try
+                {
+                    await Regressions(http, repository, playerId.Value, progress, achievements, selectedChecks);
+                    await SnapshotCommandRegressions(http, repository, playerId.Value, selectedChecks);
+                }
+                finally { TrackRegressionRequests = false; }
+                selectedRegressionsPassed = true;
+                await MeasureSaves(http, Measure);
+                Stage = "saves completed";
+                return;
+            }
+            if (readsOnly)
+            {
+                Stage = "seed rich read snapshots";
+                await SeedRichReads(http, repository, playerId.Value, clientId, core, achievements);
+                Stage = "legacy reads inside outer transaction";
+                var expected = await LegacyReadSnapshots(repository, playerId.Value, progress);
+                foreach (string route in ReadRoutes)
+                {
+                    await Measure(route, _ => Read(route, data => AssertSnapshotEqual(expected[route], data)));
+                    readChecks.Add($"{route}: all 101 HTTP snapshots match the legacy service Get inside an outer transaction.");
+                }
+                Stage = "reads completed";
+                return;
+            }
             await Measure("Session/Validate", _ => Read("Session/Validate",
                 d => Require(d?["LoginKind"]?.GetValue<string>() == "guest", "guest session")));
             await Measure("Character/GetList", _ => Read("Character/GetList",
@@ -204,19 +313,18 @@ internal static partial class Fixture
             await Measure("GameProgress/Get", _ => Read("GameProgress/Get",
                 d => Require(d!["battlefield"]!["roads"]!.AsArray().Count == 8 &&
                     d["deployment_log"]!.AsArray().Count == 0, "roads and castle-only core persisted")));
-            await Measure("GameProgress/Save", async _ =>
+            await Measure("GameProgress/BackgroundSync (progress)", async _ =>
             {
                 progress.RequestId = Guid.NewGuid();
-                return await Save(http, "GameProgress/Save", progress);
+                return await SaveBackground(http, progress);
             });
             await Measure("Talent/GetSnapshot", _ => Read("Talent/GetSnapshot",
                 d => Require(d!["version"]!.GetValue<int>() == 1, "talent version")));
             await Measure("Item/GetInStockList", _ => Read("Item/GetInStockList",
                 d => Require(d!.AsArray().Count > 0, "nonempty fixture inventory")));
-            await Measure("Item/AdjustAmount", async _ =>
+            await Measure("GameProgress/BackgroundSync (items)", async _ =>
             {
-                var result = await Post(http, "Item/AdjustAmount",
-                    new ItemDeltaRequest { ItemKey = "diamond", Delta = 1, Category = "currency" });
+                var result = await PostBackground(http, new ItemDeltaRequest { ItemKey = "diamond", Delta = 1, Category = "currency" });
                 Require(result.Data!.GetValue<int>() == ++amount, "exact item delta");
                 return result.Sample;
             });
@@ -224,32 +332,53 @@ internal static partial class Fixture
                 d => Require(d!.AsArray().Count == 1, "fixture weapon")));
             await Measure("AchievementProgress/Get", _ => Read("AchievementProgress/Get",
                 d => Require(d!["groups"]!.AsArray().Count == 6, "six populated achievement groups")));
-            await Measure("AchievementProgress/Save", async i =>
+            await Measure("GameProgress/BackgroundSync (achievement)", async i =>
             {
                 achievements.Groups[0].Total = 25 + i;
-                return await Save(http, "AchievementProgress/Save", achievements);
+                return await SaveBackground(http, achievements);
             });
-            await Measure("Economy/StartWave", async _ =>
+            await Measure("GameProgress/BackgroundSync (wave_starts)", async _ =>
             {
                 Guid id = Guid.NewGuid();
-                var result = await Post(http, "Economy/StartWave",
-                    new WaveStartRequest { RequestId = id, Wave = 100, Difficulty = 0 });
+                var result = await PostBackground(http, new WaveStartRequest { RequestId = id, Wave = 100, Difficulty = 0 });
                 Require(result.Data!["session_id"]!.GetValue<Guid>() == id &&
                     result.Data["enemy_count"]!.GetValue<int>() == 307, "fresh owned wave");
                 return result.Sample;
             });
-            await Measure("Economy/ReportKill", async i =>
+            await Measure("GameProgress/BackgroundSync (kills)", async i =>
             {
-                var result = await Post(http, "Economy/ReportKill", new EnemyKillRequest
+                var result = await PostBackground(http, new EnemyKillRequest
                 { RequestId = Guid.NewGuid(), SessionId = killSession, EnemyIndex = i });
                 gold += 108;
                 Require(result.Data!["gold"]!.GetValue<long>() == gold, "exact unique kill reward");
                 return result.Sample;
             });
+            // Provision through real rewards outside measured samples; never replay a kill.
+            // Include both first draws in the budget (101 * (100 + 900)).
+            gold = await FundShop(http, checked(101L * (DrawCost(1) + DrawCost(10))));
+            foreach (int count in new[] { 1, 10 })
+                await Measure($"Shop/Draw (count={count})", async _ =>
+                {
+                    Guid id = Guid.NewGuid();
+                    var draw = await Post(http, "Shop/Draw", new ShopDrawRequest { RequestId = id, Count = count });
+                    gold -= DrawCost(count);
+                    Require(draw.Data!["request_id"]!.GetValue<Guid>() == id &&
+                        draw.Data["results"]!.AsArray().Count == count &&
+                        draw.Data["gold"]!.GetValue<long>() == gold, "fresh draw exact receipt and debit");
+                    return draw.Sample;
+                });
+            var talent = (await Post(http, "Talent/GetSnapshot", new { })).Data!.Deserialize<TalentModel>(Json)!;
+            var authoritativeNodes = JsonSerializer.SerializeToNode(talent.AcquiredTalents);
+            talent.TalentPoints++;
+            await Measure("GameProgress/BackgroundSync (talent)", _ => SaveBackground(http, talent));
+            var talentReadback = (await Post(http, "Talent/GetSnapshot", new { })).Data!.Deserialize<TalentModel>(Json)!;
+            Require(talentReadback.TalentPoints == talent.TalentPoints, "background-earned talent points");
+            AssertSnapshotEqual(authoritativeNodes, JsonSerializer.SerializeToNode(talentReadback.AcquiredTalents));
             Stage = "final readback";
             Require((await Post(http, "Shop/GetGold", new { })).Data!.GetValue<long>() == gold, "gold readback");
             var savedProgress = await Post(http, "GameProgress/Get", new { });
             Require(savedProgress.Data!["battlefield"]!["roads"]!.AsArray().Count == 8, "roads readback");
+            Stage = "completed";
         }
         catch (Exception error)
         {
@@ -267,22 +396,78 @@ internal static partial class Fixture
                 finally
                 {
                     try { await Cleanup(connection, clientId, playerId); cleaned = true; }
-                    finally { await Persist(); }
+                    finally
+                    {
+                        // Stop drains redirected output before validating correlation.
+                        try
+                        {
+                            ValidateCorrelation(reports, concurrentSamples);
+                            correlationVerified = true;
+                        }
+                        finally { await Persist(); }
+                    }
                 }
             }
         }
 
         async Task Persist()
         {
+            BackgroundBudgetMet = backgroundOnly && reports.Count == 1 && reports[0].Samples.Count == 100 &&
+                reports[0].Http.P95Ms <= 300 && correlationVerified && cleaned && selectedRegressionsPassed;
             // Deliberate requested report artifact, not a process log or private config dump.
             var output = new { CapturedBackend = Path.GetFileName(baseline), Stage, CleanupVerified = cleaned,
+                Mode = mode,
+                ExpectedWorkloads = selectedRoutes.Length > 0 ? selectedRoutes.Length : itemOnly || regressionOnly || concurrentOnly || refineOnly ? 0 : 18,
                 SelectOneRtt = rtt, Routes = reports,
-                Complete = reports.Count == 15, AllMeansBelow100Ms = reports.Count == 15 && reports.All(r => r.Below100Ms),
-                Concurrency = concurrentOnly
+                CorrelationVerified = correlationVerified,
+                DuplicateTimingEvents = DuplicateTimingIds,
+                Complete = LatencyComplete(reports.Count, correlationVerified, cleaned, Stage),
+                BackgroundP95Within300Ms = BackgroundBudgetMet,
+                BackgroundSqlCommandCounts = backgroundOnly && correlationVerified
+                    ? reports.SelectMany(r => r.Samples).Select(s =>
+                        Breakdown[s.RequestId]["Metrics"]!["Sql"]!["Count"]!.GetValue<int>()).Distinct().Order().ToArray()
+                    : null,
+                SelectedWorkloadsComplete = backgroundOnly || economyOnly || savesOnly || shopOnly
+                    ? SelectionComplete(reports.Select(r => r.Route), selectedRoutes, correlationVerified, cleaned,
+                        Stage == $"{mode} completed" && selectedRegressionsPassed)
+                    : readsOnly
+                    ? ReadsComplete(reports.Select(r => r.Route), correlationVerified, cleaned, Stage, readChecks.Count)
+                    : LatencyComplete(reports.Count, correlationVerified, cleaned, Stage),
+                ReadRegressionChecks = readChecks,
+                ReadRegressionsComplete = readsOnly &&
+                    ReadsComplete(reports.Select(r => r.Route), correlationVerified, cleaned, Stage, readChecks.Count),
+                SelectedRegressionChecks = selectedChecks,
+                SelectedRegressionsComplete = selectedRegressionsPassed && correlationVerified && cleaned,
+                RegressionCorrelations = RegressionCorrelations.ToDictionary(p => p.Key, p => p.Value),
+                AllSelectedBackendP95Below100Ms = reports.Count == (selectedRoutes.Length > 0 ? selectedRoutes.Length : 18) &&
+                    correlationVerified && reports.All(r => r.Backend?.P95Ms < 100),
+                AllMeansBelow100Ms = reports.Count == 18 && reports.All(r => r.Below100Ms),
+                AllBackendP95Below100Ms = reports.Count == 18 && correlationVerified && reports.All(r => r.Backend?.P95Ms < 100),
+                Concurrency = refineOnly
+                    ? $"Targeted diagnostics: {refineDiagnostics.Iterations} sequential and concurrent six-route groups; first group per scenario excluded from summaries."
+                    : concurrentOnly
                     ? "Supplemental: one first pair then 10 measured save/kill pairs per save route."
                     : "Sequential per-route baseline; concurrent scenario recorded separately.",
                 ConcurrentScenarios = concurrentSamples,
                 RegressionChecks = regressionChecks,
+                RefineDiagnostics = refineOnly ? refineDiagnostics : null,
+                RefineDiagnosticsComplete = refineOnly &&
+                    RefineComplete(refineDiagnostics.Observations.Count, Stage, cleaned, correlationVerified,
+                        refineDiagnostics.Iterations),
+                RefineSummary = refineOnly && correlationVerified
+                    ? refineDiagnostics.Observations.Where(o => o.Iteration > 0)
+                        .GroupBy(o => new { o.Scenario, o.Route })
+                        .Select(group => new
+                        {
+                            group.Key.Scenario, group.Key.Route, Samples = group.Count(),
+                            Http = Statistics(group.Select(o => o.Sample.Ms)),
+                            Backend = Statistics(group.Select(o => CorrelatedElapsed(o.Sample.RequestId, 200))),
+                        }).ToArray()
+                    : null,
+                ItemCommandChecks = itemChecks,
+                ItemCorrelations = ItemCorrelations.ToDictionary(p => p.Key, p => p.Value),
+                ItemRegressionsComplete = itemOnly && Stage == "item regressions completed" &&
+                    cleaned && correlationVerified && itemChecks.Count == 7,
                 Breakdown = Breakdown.ToDictionary(pair => pair.Key, pair => pair.Value) };
             await File.WriteAllTextAsync(Path.Combine(reportDirectory, "baseline.json"),
                 JsonSerializer.Serialize(output, new JsonSerializerOptions { WriteIndented = true }));
@@ -316,6 +501,9 @@ internal static partial class Fixture
         sw.Stop();
         if (response.StatusCode != HttpStatusCode.OK)
         {
+            Console.Error.WriteLine($"Rejected {route}: HTTP {(int)response.StatusCode}, content-type={response.Content.Headers.ContentType?.MediaType}");
+            Require(response.Content.Headers.ContentType?.MediaType == "application/json",
+                $"non-JSON failure {route}");
             var failure = JsonNode.Parse(bytes);
             string? messageKey = failure?["MessageKey"]?.GetValue<string>();
             if (messageKey != null && System.Text.RegularExpressions.Regex.IsMatch(messageKey, @"\A[a-zA-Z0-9_.]+\z"))
@@ -325,15 +513,17 @@ internal static partial class Fixture
         var envelope = JsonNode.Parse(bytes)!;
         Require(envelope["Success"]!.GetValue<bool>(), $"business {route}");
         string id = response.Headers.GetValues("X-Request-Timing-Id").Single();
+        if (TrackRegressionRequests)
+            Require(RegressionCorrelations.TryAdd(id, 200), "unique regression timing correlation");
         long? revision = response.Headers.TryGetValues("X-State-Revision", out var values)
             ? long.Parse(values.Single()) : null;
         return new(envelope["Data"]?.DeepClone(), new(sw.Elapsed.TotalMilliseconds, id), revision);
     }
 
-    private static async Task<Sample> Save<T>(HttpClient http, string route, T model) where T : IRevisionedSnapshot
+    private static async Task<Sample> SaveBackground<T>(HttpClient http, T model) where T : IRevisionedSnapshot
     {
         model.ExpectedRevision ??= model.Revision;
-        var result = await Post(http, route, model);
+        var result = await PostBackground(http, model);
         Require(result.Revision.HasValue, "save revision returned");
         model.Revision = result.Revision!.Value;
         model.ExpectedRevision = result.Revision;
@@ -361,7 +551,8 @@ internal static partial class Fixture
             if (collect && item.Data?.StartsWith("{\"Kind\":\"RequestTiming\",", StringComparison.Ordinal) == true)
             {
                 var node = JsonNode.Parse(item.Data)!;
-                Breakdown[node["RequestId"]!.GetValue<string>()] = node;
+                if (!Breakdown.TryAdd(node["RequestId"]!.GetValue<string>(), node))
+                    Interlocked.Increment(ref DuplicateTimingIds);
             }
         };
         process.ErrorDataReceived += (_, _) => { };

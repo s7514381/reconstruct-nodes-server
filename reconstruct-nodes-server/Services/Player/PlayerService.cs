@@ -144,16 +144,5 @@ namespace ReconstructNodesServer.Services
                 );
         }
 
-        public async Task<Player?> PlusSlot(int count)
-        {
-            string sql = $@"UPDATE Player
-                               SET InventorySlotCount = ISNULL(InventorySlotCount, 0) + @Count
-                            OUTPUT INSERTED.*
-                             WHERE Id = @Id";
-            var result = await QueryFirstAsync<Player?>(sql, new { Id = _playerId,  Count = count });
-            return result;
-        }
-
-
     }
 }

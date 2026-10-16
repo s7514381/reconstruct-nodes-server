@@ -46,5 +46,10 @@ namespace ReconstructNodesServer.Repositories
         ManagedGridReader QueryMultiple(string sql, object? param = null);
 
         Task<ManagedGridReader> QueryMultipleAsync(string sql, object? param = null);
+
+        Task<string> ExecuteAtomicJsonAsync(string readSql, object? parameters,
+            Func<ManagedGridReader, Task<IReadOnlyList<SqlBatchCommand>>> prepare);
     }
+
+    public sealed record SqlBatchCommand(string Sql, object? Parameters);
 }

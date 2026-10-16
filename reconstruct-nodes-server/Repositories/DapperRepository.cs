@@ -168,13 +168,67 @@ namespace ReconstructNodesServer.Repositories
             }
         }
 
+        public async Task<string> ExecuteAtomicJsonAsync(string readSql, object? parameters,
+            Func<ManagedGridReader, Task<IReadOnlyList<SqlBatchCommand>>> prepare)
+        {
+            bool ownsTransaction = Transaction == null;
+            for (int attempt = 0; ; attempt++)
+            {
+                try { return await ExecuteAtomicJsonAttempt(readSql, parameters, prepare); }
+                catch (Exception error) when (ownsTransaction && attempt < 2 && SqlConcurrency.IsRetryable(error))
+                {
+                    using var retry = RequestTiming.Measure("ConcurrencyRetry");
+                    Console.WriteLine($"Resource transaction retry {attempt + 1}.");
+                }
+            }
+        }
+
+        private async Task<string> ExecuteAtomicJsonAttempt(string readSql, object? parameters,
+            Func<ManagedGridReader, Task<IReadOnlyList<SqlBatchCommand>>> prepare)
+        {
+            ManagedTransaction? owned;
+            using (RequestTiming.Measure("BatchBegin"))
+            { owned = Transaction == null ? OpenTransaction() : null; }
+            using var transaction = owned;
+            try
+            {
+                IReadOnlyList<SqlBatchCommand> commands;
+                using (RequestTiming.Measure("BatchReadAndPrepare"))
+                {
+                    await using var reader = await QueryMultipleAsync(readSql, parameters);
+                    commands = await prepare(reader);
+                    if (!reader.IsConsumed) { throw new InvalidOperationException("Atomic batch must consume every read result."); }
+                }
+                if (commands.Count == 0) { throw new InvalidOperationException("Atomic batch has no result command."); }
+                using var writeTiming = RequestTiming.Measure("BatchWriteAndCommit");
+                foreach (var command in commands.SkipLast(1))
+                { await ExecuteAsync(command.Sql, command.Parameters); }
+                var last = commands[^1];
+                // The provider starts the transaction. Commit in the final batch to avoid
+                // another network round trip; Dapper drains results before returning.
+                string result = await QueryFirstAsync<string>(
+                    last.Sql + (transaction != null ? "\nCOMMIT;" : ""), last.Parameters);
+                return result;
+            }
+            catch (Exception original)
+            {
+                if (transaction != null)
+                {
+                    try { transaction.Rollback(); }
+                    catch (Exception rollback)
+                    { throw new AggregateException("Atomic batch failed and rollback failed.", original, rollback); }
+                }
+                throw;
+            }
+        }
+
         public ManagedTransaction OpenTransaction() => Run(() =>
         {
             if (Transaction != null)
             {
                 throw new InvalidOperationException("Repository 已有進行中的交易。");
             }
-            Transaction = _connection.BeginTransaction();
+            Transaction = _connection.BeginTransaction(System.Data.IsolationLevel.Snapshot);
             _transactionTiming = RequestTiming.Measure("TransactionLifetime");
             _managedTransaction = new ManagedTransaction(
                 () => RunTransactionAction(transaction => transaction.Commit()),
