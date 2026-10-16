@@ -108,11 +108,11 @@ internal static partial class Fixture
         // Never perform HTTP while holding the player lock: the command owns its transaction.
         using var transaction = repository.OpenTransaction();
         var argument = CreateServiceArgument(repository, player);
-        var characters = await new CharacterService(argument).GetList();
-        var progress = await new GameProgressService(argument).Get();
-        var talent = await new TalentService(argument).GetSnapshot();
-        var weapons = (await new WeaponService(argument).GetInstanceList()).ToList();
-        var achievements = await new AchievementProgressService(argument, new ItemService(argument)).Get();
+        var characters = await new CharacterService(argument, new CharacterSkillTreeService(argument), new CharacterSkillNodeService(argument)).GetList();
+        var progress = await new GameProgressCommand(argument, new DeploymentService(argument), new BattlefieldRoadService(argument), new PlayerParamsService(argument), new RevisionCommand(argument)).Get();
+        var talent = await new TalentService(argument, new TalentAcquiredService(argument), new TalentLegacyCategoryService(argument)).GetSnapshot();
+        var weapons = (await new WeaponService(argument, new WeaponAffixService(argument), new WeaponAffixValueService(argument), new WeaponUniqueValueService(argument)).GetInstanceList()).ToList();
+        var achievements = await new AchievementProgressCommand(argument, new ItemService(argument), new AchievementService(argument), new AchievementDetailService(argument), new AchievementCollectedService(argument), new RevisionCommand(argument)).Get();
 
         Require(weapons.Count == 3, "rich equipped and unequipped inventory");
         foreach (var seed in new[] { RichWeapon("latency-rich-equipped", 0), RichWeapon("latency-rich-spare", 100) })

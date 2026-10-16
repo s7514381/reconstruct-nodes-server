@@ -4,8 +4,8 @@ using ReconstructNodesServer.Library.Models;
 namespace ReconstructNodesServer.Services;
 
 public class ForegroundService(
-    BaseServiceArgument argument, RevisionService revisions, CharacterService characters,
-    AchievementProgressService achievements, GameProgressService progress, EconomyService economy) : BaseService(argument)
+    BaseServiceArgument argument, RevisionCommand revisions, CharacterService characters,
+    AchievementProgressCommand achievements, GameProgressCommand progress, EconomyCommand economy) : BaseService(argument)
 {
     public Task<CommandReceipt<AchievementProgressModel>> ClaimAchievement(AchievementSnapshotClaimRequest request) =>
         revisions.Execute(request, "foreground.achievement_claim", nameof(AchievementProgressModel), request, async () =>

@@ -27,7 +27,7 @@ JSON 物件欄位順序不影響新業務命令的冪等比對；詞綴陣列順
 
 ## 權威與不變量
 
-- `RevisionService.ExecuteIntent` 重用 `EconomyRequest` ledger 與 Snapshot transaction；
+- `RevisionCommand.ExecuteIntent` 重用 `EconomyRequest` ledger 與 Snapshot transaction；
   不再取得玩家列鎖。有效資源自然鍵與 request ID 唯一約束保護首次寫入；
   先查已保存回執，不作客戶端 revision fence。
   同 ID 同意圖只回原始回執，不再扣材料、擲骰、取得或刪除；同 ID 不同操作／意圖

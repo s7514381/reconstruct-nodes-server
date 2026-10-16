@@ -4,7 +4,7 @@ using ReconstructNodesServer.Library.Models;
 
 namespace ReconstructNodesServer.Services;
 
-public partial class BackgroundSyncService
+public partial class BackgroundSyncCommand
 {
     // 每個領域各自一段讀取，只有請求用得到的領域才會加入批次；所有片段共用 @CreateUserId。
     private SnapshotReadBatch BuildReads(BackgroundSyncRequest request, BatchState state, out object parameters)
@@ -31,7 +31,7 @@ public partial class BackgroundSyncService
                 .Select(k => JsonSerializer.Serialize(new { k.SessionId, k.EnemyIndex }))),
             Scopes = JsonSerializer.Serialize(request.WeaponAcquisitions
                 .Where(w => w.Weapon != null && !string.IsNullOrWhiteSpace(w.Weapon.Id))
-                .Select(w => RevisionService.ScopeKey(nameof(WeaponInstanceModel), w.Weapon.Id))),
+                .Select(w => RevisionCommand.ScopeKey(nameof(WeaponInstanceModel), w.Weapon.Id))),
         };
         return batch;
     }

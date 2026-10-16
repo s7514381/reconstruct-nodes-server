@@ -9,7 +9,9 @@ namespace ReconstructNodesServer.Services
     /// 成就進度服務：Achievement 每個群組一列（Total 為進度），AchievementDetail 為群組內項目與領取狀態，
     /// AchievementCollected 為已收集的武器與詞綴。
     /// </summary>
-    public class AchievementProgressService(BaseServiceArgument argument, ItemService itemService) : _SnapshotService<Achievement, AchievementProgressModel>(argument)
+    public class AchievementProgressCommand(BaseServiceArgument argument, ItemService itemService,
+        AchievementService achievementService, AchievementDetailService detailService,
+        AchievementCollectedService collectedService, RevisionCommand Revisions) : BaseService(argument)
     {
         // 與用戶端 AchievementItem.REWARD_ID、REWARD_AMOUNT 保持一致
         private const string RewardItemKey = "diamond";
@@ -24,8 +26,8 @@ namespace ReconstructNodesServer.Services
         public virtual async Task<AchievementProgressModel?> Get()
         {
             List<Achievement> groups = await QueryGroupsAsync(lockRows: false);
-            ILookup<Guid?, AchievementDetail> details = (await QuerySnapshotChildrenAsync<AchievementDetail, Achievement>()).ToLookup(d => d.AchievementId);
-            ILookup<Guid?, AchievementCollected> collected = (await QuerySnapshotChildrenAsync<AchievementCollected, Achievement>()).ToLookup(c => c.AchievementId);
+            ILookup<Guid?, AchievementDetail> details = (await detailService.QueryChildrenAsync<Achievement>()).ToLookup(d => d.AchievementId);
+            ILookup<Guid?, AchievementCollected> collected = (await collectedService.QueryChildrenAsync<Achievement>()).ToLookup(c => c.AchievementId);
             var inputs = new AchievementInputs(
                 (await QueryAsync<ParamRow>(InputParamsSql, new { CreateUserId = _playerId })).ToList(),
                 (await QueryAsync<string>(InputWeaponsSql, new { CreateUserId = _playerId })).ToList(),
@@ -166,10 +168,7 @@ namespace ReconstructNodesServer.Services
         }
 
         // 成就只由伺服器推導，不接受整份快照寫入。
-        protected override void ValidateSnapshot(AchievementProgressModel model) =>
-            throw new NotSupportedException("Achievement snapshots are derived by the server.");
-
-        protected override Task SaveSnapshot(AchievementProgressModel model) =>
+        public Task Save(AchievementProgressModel model) =>
             throw new NotSupportedException("Achievement snapshots are derived by the server.");
 
         internal static (List<Achievement> Groups, List<AchievementDetail> Details,
@@ -273,7 +272,7 @@ namespace ReconstructNodesServer.Services
             { throw new BusinessOperationException(ApiMessageKeys.AchievementIncomplete); }
 
             // 領取前把伺服器推導的進度落地，後續的領取標記與獎勵才有對應的資料列。
-            Dictionary<string, AchievementDetail> previous = (await QuerySnapshotChildrenAsync<AchievementDetail, Achievement>())
+            Dictionary<string, AchievementDetail> previous = (await detailService.QueryChildrenAsync<Achievement>())
                 .Where(d => d.IsReward).ToDictionary(d => d.Name);
             var rows = BuildRows(current, previous);
             await PersistRows(rows.Groups, rows.Details, rows.Collected);
@@ -293,6 +292,6 @@ namespace ReconstructNodesServer.Services
         }
 
         private Task<List<Achievement>> QueryGroupsAsync(bool lockRows) =>
-            QuerySnapshotRowsAsync<Achievement>(orderBy: row => row.Sequence, lockRows: lockRows);
+            achievementService.QueryOwnedRowsAsync(orderBy: row => row.Sequence, lockRows: lockRows);
     }
 }

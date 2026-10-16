@@ -5,7 +5,7 @@ using ReconstructNodesServer.Library.Models;
 
 namespace ReconstructNodesServer.Services
 {
-    public class EconomyService(BaseServiceArgument argument, GoldService gold) : _ModelService<PlayerParams, PlayerParams>(argument)
+    public class EconomyCommand(BaseServiceArgument argument, GoldCommand gold) : BaseService(argument)
     {
         private static readonly HashSet<string> AuxiliarySkills =
         [
@@ -96,7 +96,7 @@ namespace ReconstructNodesServer.Services
                 {
                     throw new BusinessArgumentException(ApiMessageKeys.SkillUnlocked);
                 }
-                GoldService.Spend(account, 100);
+                GoldCommand.Spend(account, 100);
                 await WriteParameter(group, name, "true");
                 return new GoldOperationResult { Gold = account.Balance };
             });

@@ -8,18 +8,19 @@ namespace ReconstructNodesServer.Services
     /// <summary>
     /// 天賦樹服務：父表 Talent 每位玩家一列，已取得節點與舊分支節點各自拆表。
     /// </summary>
-    public class TalentService(BaseServiceArgument argument) : _SnapshotService<Talent, TalentModel>(argument)
+    public class TalentService(BaseServiceArgument argument, TalentAcquiredService acquiredService,
+        TalentLegacyCategoryService legacyService) : _SnapshotService<Talent, TalentModel>(argument)
     {
         /// <summary>
         /// 讀取目前玩家的天賦樹，沒有資料時回傳 null
         /// </summary>
         public virtual async Task<TalentModel?> GetSnapshot()
         {
-            Talent? talent = await QuerySnapshotParentAsync<Talent>();
+            Talent? talent = await QueryOwnedFirstAsync();
             if (talent == null) { return null; }
 
-            List<TalentAcquired> acquired = await QuerySnapshotChildrenAsync<TalentAcquired, Talent>([talent.Id]);
-            List<TalentLegacyCategory> legacy = await QuerySnapshotChildrenAsync<TalentLegacyCategory, Talent>([talent.Id]);
+            List<TalentAcquired> acquired = await acquiredService.QueryChildrenAsync<Talent>([talent.Id]);
+            List<TalentLegacyCategory> legacy = await legacyService.QueryChildrenAsync<Talent>([talent.Id]);
 
             return BuildSnapshot(talent, acquired, legacy, await Revisions.Read(nameof(TalentModel)));
         }
@@ -80,18 +81,18 @@ namespace ReconstructNodesServer.Services
 
             if (!isNew)
             {
-                await DeleteSnapshotChildrenAsync<TalentAcquired, Talent>(talent.Id);
-                await DeleteSnapshotChildrenAsync<TalentLegacyCategory, Talent>(talent.Id);
+                await acquiredService.DeleteChildrenAsync<Talent>(talent.Id);
+                await legacyService.DeleteChildrenAsync<Talent>(talent.Id);
             }
 
-            await InsertNodesAsync(model.AcquiredTalents ?? new(), (treeId, nodeId, value) => new TalentAcquired
+            await InsertNodesAsync(acquiredService, model.AcquiredTalents ?? new(), (treeId, nodeId, value) => new TalentAcquired
             {
                 TalentId = talent.Id,
                 TreeId = treeId,
                 NodeId = nodeId,
                 Value = value,
             });
-            await InsertNodesAsync(model.LegacyCategoryTalents ?? new(), (treeId, nodeId, value) => new TalentLegacyCategory
+            await InsertNodesAsync(legacyService, model.LegacyCategoryTalents ?? new(), (treeId, nodeId, value) => new TalentLegacyCategory
             {
                 TalentId = talent.Id,
                 TreeId = treeId,
@@ -100,11 +101,12 @@ namespace ReconstructNodesServer.Services
             });
         }
 
-        private async Task InsertNodesAsync<TNode>(Dictionary<string, Dictionary<string, JsonElement>> treeNodes, Func<string, string, string, TNode> create)
-            where TNode : ModelBase
+        private async Task InsertNodesAsync<TNode>(_RowService<TNode> service,
+            Dictionary<string, Dictionary<string, JsonElement>> treeNodes, Func<string, string, string, TNode> create)
+            where TNode : ModelBase, new()
         {
             var nodes = EnumerateNodes(treeNodes);
-            await InsertSnapshotRowsAsync(nodes, (node, _) => create(node.TreeId, node.NodeId, node.Value));
+            await service.InsertOwnedRowsAsync(nodes, (node, _) => create(node.TreeId, node.NodeId, node.Value));
         }
 
         private static Dictionary<string, Dictionary<string, JsonElement>> ToNodeMap(IEnumerable<(string TreeId, string NodeId, string Value)> rows)

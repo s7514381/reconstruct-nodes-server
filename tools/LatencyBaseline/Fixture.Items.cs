@@ -82,8 +82,8 @@ internal static partial class Fixture
         lazy.MailSender = new Lazy<MailSender>(() => new MailSender(configuration));
         lazy.PlayerService = new Lazy<PlayerService>(() => new PlayerService(argument)
             { Player = new ReconstructNodesServer.Library.DBModel.Player { Id = playerId } });
-        lazy.WeaponService = new Lazy<WeaponService>(() => new WeaponService(argument));
-        lazy.GoldService = new Lazy<GoldService>(() => new GoldService(argument));
+        lazy.WeaponService = new Lazy<WeaponService>(() => new WeaponService(argument, new WeaponAffixService(argument), new WeaponAffixValueService(argument), new WeaponUniqueValueService(argument)));
+        lazy.GoldCommand = new Lazy<GoldCommand>(() => new GoldCommand(argument));
         return argument;
     }
 

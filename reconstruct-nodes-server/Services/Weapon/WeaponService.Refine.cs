@@ -13,7 +13,7 @@ public partial class WeaponService
     {
         if (request.RequestId == Guid.Empty)
         { throw new BusinessArgumentException(ApiMessageKeys.EconomyRequestRequired); }
-        string payload = RevisionService.CanonicalPayload(request);
+        string payload = RevisionCommand.CanonicalPayload(request);
         long expectedRevision = 0;
         string? replay = null;
         try
@@ -75,8 +75,8 @@ public partial class WeaponService
                     }
                     var now = DateTime.Now;
                     foreach (string name in new[] { nameof(WeaponInstanceModel),
-                        RevisionService.ScopeKey(nameof(WeaponInstanceModel), row.EntryKey),
-                        RevisionService.ScopeKey(nameof(WeaponInstanceModel), request.WeaponEntryId) }.Distinct())
+                        RevisionCommand.ScopeKey(nameof(WeaponInstanceModel), row.EntryKey),
+                        RevisionCommand.ScopeKey(nameof(WeaponInstanceModel), request.WeaponEntryId) }.Distinct())
                     {
                         writes.Add("""
                             UPDATE PlayerParams SET Value = @Value WHERE CreateUserId = @CreateUserId

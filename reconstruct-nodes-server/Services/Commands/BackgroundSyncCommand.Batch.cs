@@ -6,7 +6,7 @@ using ReconstructNodesServer.Repositories;
 
 namespace ReconstructNodesServer.Services;
 
-public partial class BackgroundSyncService
+public partial class BackgroundSyncCommand
 {
     internal sealed class BatchState
     {
@@ -36,7 +36,7 @@ public partial class BackgroundSyncService
 
     internal IReadOnlyList<SqlBatchCommand> PrepareBatch(BackgroundSyncRequest request, BatchState state)
     {
-        string payload = RevisionService.CanonicalPayload(request);
+        string payload = RevisionCommand.CanonicalPayload(request);
         var receipts = state.Receipts.ToDictionary(r => r.RequestId);
         if (Replay<CommandReceipt<BackgroundSyncResponse>>(receipts, request.RequestId, "background.sync", payload) is { } prior)
         { return [new SqlBatchCommand("SELECT @Receipt;", new { Receipt = JsonSerializer.Serialize(prior) })]; }
@@ -47,7 +47,7 @@ public partial class BackgroundSyncService
         var newParameters = new List<PlayerParams>();
         var updatedParameters = new Dictionary<Guid, PlayerParams>();
         long Revision(string domain) => state.Parameters
-            .Where(p => p.Group == RevisionService.RevisionGroup && p.Name == domain)
+            .Where(p => p.Group == RevisionCommand.RevisionGroup && p.Name == domain)
             .Select(p => long.Parse(p.Value, CultureInfo.InvariantCulture)).SingleOrDefault();
         void CheckMissingSnapshot(bool exists, string domain)
         {
@@ -73,9 +73,9 @@ public partial class BackgroundSyncService
         long Advance(string domain, string? scope = null)
         {
             long next = checked(Revision(domain) + 1);
-            Parameter(RevisionService.RevisionGroup, domain, next.ToString(CultureInfo.InvariantCulture));
+            Parameter(RevisionCommand.RevisionGroup, domain, next.ToString(CultureInfo.InvariantCulture));
             if (scope != null)
-            { Parameter(RevisionService.RevisionGroup, RevisionService.ScopeKey(domain, scope), next.ToString(CultureInfo.InvariantCulture)); }
+            { Parameter(RevisionCommand.RevisionGroup, RevisionCommand.ScopeKey(domain, scope), next.ToString(CultureInfo.InvariantCulture)); }
             return next;
         }
         void Receipt<T>(Guid id, string operation, string intent, T result)
@@ -87,20 +87,20 @@ public partial class BackgroundSyncService
         }
 
         PlayerParams? goldRow = state.Parameters.SingleOrDefault(p => p.Group == "game_progress" && p.Name == "gold");
-        long balance = goldRow == null ? GoldService.StartingGold : GoldService.ReadBalance(goldRow);
+        long balance = goldRow == null ? GoldCommand.StartingGold : GoldCommand.ReadBalance(goldRow);
         bool goldChanged = false;
         int talentPointsEarned = 0;
         bool progressChanged = false;
         var response = new BackgroundSyncResponse { RequestId = request.RequestId };
         var serverProgress = request.Kills.Count > 0 || request.WaveStarts.Count > 0
-            ? GameProgressService.BuildSnapshot(state.Parameters.Where(p => p.Group == "game_progress" ||
+            ? GameProgressCommand.BuildSnapshot(state.Parameters.Where(p => p.Group == "game_progress" ||
                 p.Group.StartsWith("game_progress.", StringComparison.Ordinal)).ToList(), [], [],
                 Revision(nameof(GameProgressModel)), balance)
                 ?? throw new BusinessOperationException(ApiMessageKeys.ProgressMissing)
             : null;
         foreach (WaveStartRequest wave in request.WaveStarts)
         {
-            int enemyCount = EconomyService.WaveEnemyCount(wave);
+            int enemyCount = EconomyCommand.WaveEnemyCount(wave);
             string intent = JsonSerializer.Serialize(new { wave.Wave, wave.Difficulty });
             var session = Replay<WaveStartResult>(receipts, wave.RequestId, "wave_start", intent);
             if (session == null)
@@ -197,7 +197,7 @@ public partial class BackgroundSyncService
         }
         foreach (WeaponAcquireRequest acquisition in request.WeaponAcquisitions)
         {
-            string intent = RevisionService.CanonicalPayload(acquisition);
+            string intent = RevisionCommand.CanonicalPayload(acquisition);
             var replay = Replay<CommandReceipt<WeaponInstanceModel>>(receipts, acquisition.RequestId, "weapon.acquire", intent);
             if (replay != null) { response.Acquisitions.Add(replay); continue; }
             if (acquisition.Weapon == null) { throw new BusinessArgumentException(ApiMessageKeys.RequestInvalid); }

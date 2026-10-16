@@ -7,7 +7,7 @@ using ReconstructNodesServer.Repositories;
 
 namespace ReconstructNodesServer.Services
 {
-    public class GoldService(BaseServiceArgument argument) : _ModelService<PlayerParams, PlayerParams>(argument)
+    public class GoldCommand(BaseServiceArgument argument) : BaseService(argument)
     {
         public const long StartingGold = 1200;
         internal sealed class GoldBalance(long balance)

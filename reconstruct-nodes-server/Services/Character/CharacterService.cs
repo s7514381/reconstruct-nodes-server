@@ -7,7 +7,8 @@ using ReconstructNodesServer.Library.Models.Enum;
 
 namespace ReconstructNodesServer.Services
 {
-    public class CharacterService(BaseServiceArgument argument) : _SnapshotService<Character, CharacterModel>(argument)
+    public class CharacterService(BaseServiceArgument argument, CharacterSkillTreeService treeService,
+        CharacterSkillNodeService nodeService) : _SnapshotService<Character, CharacterModel>(argument)
     {
         public const int CoreKind = 3;
         // BulletData.FIREBALL -> ActiveSkill.FIREBALL（遊戲端穩定種類值）。
@@ -17,14 +18,14 @@ namespace ReconstructNodesServer.Services
 
         public virtual async Task<List<CharacterModel>> GetList()
         {
-            List<Character> characters = await QuerySnapshotRowsAsync<Character>(orderBy: row => row.Kind);
+            List<Character> characters = await QueryOwnedRowsAsync(orderBy: row => row.Kind);
             // 唯一角色鍵保護首次初始化，Snapshot transaction 保持快照一致。
             // 只初始化不存在的核心；已保存的空技能與裝備都是有效配置。
             if (!characters.Any(row => row.Kind == CoreKind))
             {
                 Character core = new() { Kind = CoreKind };
-                await InsertSnapshotRowAsync(core);
-                await InsertSnapshotRowAsync(new CharacterSkillTree
+                await InsertOwnedRowAsync(core);
+                await treeService.InsertOwnedRowAsync(new CharacterSkillTree
                 {
                     CharacterId = core.Id, Kind = CoreDefaultSkillKind, Sequence = 0,
                 });
@@ -32,9 +33,9 @@ namespace ReconstructNodesServer.Services
             }
 
             Guid[] ids = characters.Select(row => row.Id).ToArray();
-            var trees = await QuerySnapshotChildrenAsync<CharacterSkillTree, Character>(ids, activeChildrenOnly: true);
+            var trees = await treeService.QueryChildrenAsync<Character>(ids, activeChildrenOnly: true);
             var nodes = trees.Count == 0 ? new List<CharacterSkillNode>() :
-                await QuerySnapshotChildrenAsync<CharacterSkillNode, CharacterSkillTree>(
+                await nodeService.QueryChildrenAsync<CharacterSkillTree>(
                     trees.Select(tree => tree.Id).ToArray(), activeChildrenOnly: true);
             var weapons = (await _lazy.WeaponService.Value.GetInstanceList()).ToDictionary(weapon => weapon.Id);
             return BuildSnapshots(characters, trees, nodes, weapons, await Revisions.Read(nameof(CharacterModel)));
@@ -205,7 +206,7 @@ namespace ReconstructNodesServer.Services
         {
             if (model.Id.HasValue)
             {
-                var owned = (await QuerySnapshotRowsAsync<Character>(ids: [model.Id.Value])).SingleOrDefault();
+                var owned = (await QueryOwnedRowsAsync(ids: [model.Id.Value])).SingleOrDefault();
                 if (owned == null) { throw new BusinessArgumentException(ApiMessageKeys.CharacterNotFound); }
                 if (owned.Kind != model.Kind) { throw new BusinessArgumentException(ApiMessageKeys.CharacterKindImmutable); }
                 // Legacy character snapshots still own skill configuration, never equipment.

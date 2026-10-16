@@ -13,8 +13,8 @@ internal static partial class Fixture
 
     private static int DrawCost(int count) => count switch
     {
-        1 => ShopService.Catalog.SingleCost,
-        10 => ShopService.Catalog.TenCost,
+        1 => ShopCommand.Catalog.SingleCost,
+        10 => ShopCommand.Catalog.TenCost,
         _ => throw new InvalidOperationException("Invalid fixture draw count"),
     };
 
@@ -87,7 +87,7 @@ internal static partial class Fixture
         int sameBatchDuplicates = 0;
         foreach (var reward in receipt.Results)
         {
-            var offer = ShopService.Catalog.Characters.Single(o => o.Kind == reward.CharacterKind);
+            var offer = ShopCommand.Catalog.Characters.Single(o => o.Kind == reward.CharacterKind);
             if (characters.TryGetValue(reward.CharacterKind, out var owned))
             {
                 Require(reward.IsDuplicate && reward.CharacterId == owned.Id &&
@@ -175,7 +175,7 @@ internal static partial class Fixture
     public static void ShopSelfTest()
     {
         Guid id = Guid.NewGuid(), characterId = Guid.NewGuid();
-        var offer = ShopService.Catalog.Characters.Single(c => c.Kind == 0);
+        var offer = ShopCommand.Catalog.Characters.Single(c => c.Kind == 0);
         var before = new ShopInventory(2_000, new(), new(), new());
         var receipt = new ShopDrawResult
         {

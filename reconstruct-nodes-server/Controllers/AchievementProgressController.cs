@@ -5,7 +5,7 @@ using ReconstructNodesServer.Services;
 
 namespace ReconstructNodesServer.Controllers
 {
-    public class AchievementProgressController(BaseApiArgument argument, AchievementProgressService service) : AuthorizeApiController(argument)
+    public class AchievementProgressController(BaseApiArgument argument, AchievementProgressCommand service) : AuthorizeApiController(argument)
     {
         /// <summary>
         /// 讀取目前玩家的成就進度；進度與收集由伺服器資料推導

@@ -14,57 +14,11 @@ using ReconstructNodesServer.Repositories;
 
 namespace ReconstructNodesServer.Services
 {
-    public abstract class _ModelService<DBModel, ViewModel> : BaseService
+    public abstract class _ModelService<DBModel, ViewModel> : _RowService<DBModel>
         where DBModel : ModelBase, new()
         where ViewModel : DBModel, new()
     {
-        public string? _tableName;
-        public string? _keyField;
-        public Guid? _playerId => _player?.Id;
-        public Player? _player => _lazy.PlayerService.Value.Player;
-        protected bool softDelete { get; set; } = true;
-
-        public _ModelService(BaseServiceArgument argument) : base(argument)
-        {
-            _tableName = CommonUtility.GetTableAttribute<DBModel>();
-            _keyField = CommonUtility.GetKeyAttribute<DBModel>();
-        }
-
-        protected async Task<TResult> ExecuteCommandAsync<TContext, TResult>(
-            Func<Task<TContext>> read, Func<TContext, Task<TResult>> execute)
-        {
-            using var transaction = _repository.Transaction == null ? _repository.OpenTransaction() : null;
-            try
-            {
-                TContext context = await read();
-                TResult result = await execute(context);
-                transaction?.Commit();
-                return result;
-            }
-            catch
-            {
-                transaction?.Rollback();
-                throw;
-            }
-        }
-
-        protected async Task<TResult> ReadBatchAsync<TResult>(
-            string sql, object? parameters, Func<ManagedGridReader, Task<TResult>> read)
-        {
-            using var reader = await _repository.QueryMultipleAsync(sql, parameters);
-            return await read(reader);
-        }
-
-        public virtual string SqlData()
-        {
-            return $"SELECT * FROM {_tableName} WHERE {_keyField} = @Id";
-        }
-
-        public virtual async Task<DBModel> GetData(Guid id)
-        {
-            DBModel result = await QueryFirstAsync<DBModel>(SqlData(), new { Id = id });
-            return result;
-        }
+        public _ModelService(BaseServiceArgument argument) : base(argument) { }
 
         public virtual async Task<ViewModel?> GetModel(Guid id)
         {
@@ -72,27 +26,6 @@ namespace ReconstructNodesServer.Services
             if (viewModel != null) { await SetModel(viewModel); }
 
             return viewModel;
-        }
-
-        public virtual string Sql(
-            string select = "", string from = "", string join = "", 
-            string where = "", string subWhere = "", string order = "")
-        {
-            if (string.IsNullOrEmpty(select)) { select = $"SELECT main.* ";  }
-            if (string.IsNullOrEmpty(from)) { from = $"FROM {_tableName} AS main "; }
-            if (string.IsNullOrEmpty(where)) { where = $"WHERE main.[Status] != -1"; }
-
-            return $@"{select} {from} {join} {where} {subWhere} {order}"; 
-        }
-
-        public virtual string SqlDataList(string subWhere = "")
-        {
-            return Sql(subWhere: $"AND CreateUserId = @CreateUserId {subWhere}");
-        }
-
-        public virtual async Task<IEnumerable<DBModel>> GetDataList()
-        {
-            return await QueryAsync<DBModel>(SqlDataList(), new { CreateUserId = _playerId });
         }
 
         public virtual async Task<IEnumerable<ViewModel>> GetModelList()
@@ -172,19 +105,6 @@ namespace ReconstructNodesServer.Services
         protected virtual async Task SetModel(ViewModel viewModel) { }
 
         /// <summary>
-        /// 資料是否存在
-        /// </summary>
-        /// <param name="id"></param>
-        /// <returns></returns>
-        public virtual async Task<bool> IsExist(Guid id)
-        {
-            return await QueryFirstAsync<int>($@"
-                SELECT COUNT(1) 
-                  FROM {_tableName} WITH (NOLOCK)
-                 WHERE {_keyField} = @KeyValue", new { KeyValue = id }) > 0;
-        }
-
-        /// <summary>
         /// 完整儲存，沒有特殊需求一律呼叫這支
         /// </summary>
         /// <param name="viewModel"></param>
@@ -212,39 +132,6 @@ namespace ReconstructNodesServer.Services
             await Task.WhenAll(tasks);
         }
 
-        public virtual async Task SaveData(DBModel model)
-        {
-            List<DBModel> list = new() { model };
-            await SaveData(list);
-        }
-
-        public virtual async Task SaveData(IEnumerable<DBModel> list)
-        {
-            if (list?.Any() != true) return;
-
-            List<Task> tasks = new();
-            HashSet<Guid> hashExistIds = await GetExistIdSet(list.Select(x => x.Id));
-
-            foreach (var item in list)
-            {
-                tasks.AddTask(async () => {
-                    if (hashExistIds.Contains(item.Id)) { await UpdateAsync(item); }
-                    else { await InsertAsync(item); }
-                });
-            }
-            await Task.WhenAll(tasks);
-        }
-
-        /// <summary>
-        /// 查詢指定 Id 中已存在於資料庫的集合，供 Save / SaveData 判斷新增或更新；僅計入本人資料，他人 Id 不會被當成既有資料而覆寫
-        /// </summary>
-        private async Task<HashSet<Guid>> GetExistIdSet(IEnumerable<Guid> ids)
-        {
-            string sql = Sql(subWhere: $" AND CreateUserId = @CreateUserId AND {_keyField} in @IdList");
-            IEnumerable<Guid> existIds = await QueryAsync<Guid>(sql, new { CreateUserId = _playerId, IdList = ids }, "IsExist");
-            return [.. existIds];
-        }
-
         protected virtual async Task UpdateModel(ViewModel viewModel)
         {
             viewModel.CreateUserId = _playerId;
@@ -270,60 +157,7 @@ namespace ReconstructNodesServer.Services
         /// <returns></returns>
         protected virtual async Task ModelSave(ViewModel viewModel) { }
 
-        public virtual string SqlDelete(string subWhere) 
-        {
-            if (string.IsNullOrEmpty(subWhere)) { subWhere = " and 1 = 0 ";  }
-            string sql;
-
-            if (softDelete) { sql = $@"update {_tableName} set Status = -1 where Status != -1 "; }
-            else { sql = $@"delete {_tableName} where Status != -1 "; }
-            sql += subWhere;
-
-            return sql;
-        }
-
-        /// <summary>
-        /// 自然鍵欄位名稱（例如 EntryKey、ItemKey），使用 DeleteByNaturalKey 前需由子類別指定
-        /// </summary>
-        protected virtual string? NaturalKeyField => null;
-
         protected virtual async Task ModelDelete(ViewModel model) { }
-
-        /// <summary>
-        /// 依自然鍵軟刪除本人資料；需要額外檢查時由子類別 override 並呼叫 base
-        /// </summary>
-        /// <param name="naturalKey">自然鍵值</param>
-        /// <returns>受影響筆數</returns>
-        public virtual async Task<int> DeleteByNaturalKey(string naturalKey)
-        {
-            if (string.IsNullOrEmpty(NaturalKeyField))
-            {
-                throw new InvalidOperationException($"{GetType().Name} 未設定 NaturalKeyField");
-            }
-
-            string sql = SqlDelete($"and CreateUserId = @CreateUserId and {NaturalKeyField} = @NaturalKey");
-            return await ExecuteAsync(sql, new { CreateUserId = _playerId, NaturalKey = naturalKey });
-        }
-
-        /// <summary>
-        /// 硬刪除本人擁有的列，可選擇再以父鍵欄位限定範圍
-        /// </summary>
-        protected async Task<int> DeleteOwnedRowsAsync(string tableName, string? parentColumn = null, Guid? parentId = null,
-            string? ownedParentTable = null, string? ancestorColumn = null)
-        {
-            string sql = $"DELETE FROM {tableName} WHERE CreateUserId = @CreateUserId";
-            if (ownedParentTable != null)
-            {
-                if (string.IsNullOrEmpty(parentColumn) || string.IsNullOrEmpty(ancestorColumn))
-                {
-                    throw new ArgumentException("關聯刪除必須指定父鍵與祖先鍵");
-                }
-                sql += $" AND {parentColumn} IN (SELECT Id FROM {ownedParentTable} WHERE {ancestorColumn} = @ParentId AND CreateUserId = @CreateUserId)";
-            }
-            else if (!string.IsNullOrEmpty(parentColumn)) { sql += $" AND {parentColumn} = @ParentId"; }
-
-            return await ExecuteAsync(sql, new { CreateUserId = _playerId, ParentId = parentId });
-        }
 
         /// <summary>
         /// 刪除
@@ -379,16 +213,6 @@ namespace ReconstructNodesServer.Services
             });
 
             await Task.WhenAll(tasks);
-        }
-
-        /// <summary>
-        /// 篩出指定 Id 中屬於目前玩家的集合
-        /// </summary>
-        private async Task<HashSet<Guid>> GetOwnedIdSet(IEnumerable<Guid> ids)
-        {
-            string sql = $"SELECT {_keyField} FROM {_tableName} WHERE CreateUserId = @CreateUserId AND {_keyField} IN @IdList";
-            IEnumerable<Guid> ownedIds = await QueryAsync<Guid>(sql, new { CreateUserId = _playerId, IdList = ids });
-            return [.. ownedIds];
         }
 
         public virtual async Task TestSave()
@@ -492,7 +316,6 @@ namespace ReconstructNodesServer.Services
             });
         }
 
-        public virtual async Task Seed() { }
 
     }
 

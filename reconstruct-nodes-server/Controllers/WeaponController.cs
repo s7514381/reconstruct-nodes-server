@@ -5,7 +5,7 @@ using ReconstructNodesServer.Services;
 
 namespace ReconstructNodesServer.Controllers
 {
-    public class WeaponController(BaseApiArgument argument, WeaponService service, WeaponCommandService commands) : AuthorizeApiController(argument)
+    public class WeaponController(BaseApiArgument argument, WeaponService service, WeaponCommand commands) : AuthorizeApiController(argument)
     {
         [HttpPost]
         public virtual Task<IActionResult> GetInstanceList() =>

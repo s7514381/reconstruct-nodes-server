@@ -6,8 +6,8 @@ using ReconstructNodesServer.Services;
 namespace ReconstructNodesServer.Controllers;
 
 /// <summary>All commands execute inside the existing request-scoped SQL transaction.</summary>
-public class ForegroundController(BaseApiArgument argument, ForegroundService service, TalentCommandService talents,
-    RevisionService revisions) : AuthorizeApiController(argument)
+public class ForegroundController(BaseApiArgument argument, ForegroundService service, TalentCommand talents,
+    RevisionCommand revisions) : AuthorizeApiController(argument)
 {
     [HttpPost]
     public Task<IActionResult> Revisions() =>

@@ -22,7 +22,7 @@ namespace ReconstructNodesServer.Argument
         public Lazy<AchievementService> AchievementService { get; set; }
         public Lazy<PlayerParamsService> PlayerParamsService { get; set; }
         public Lazy<WeaponService> WeaponService { get; set; }
-        public Lazy<GoldService> GoldService { get; set; }
+        public Lazy<GoldCommand> GoldCommand { get; set; }
         //
         public LazyServiceArgument(
             Lazy<MailSender> mailSender,
@@ -36,7 +36,7 @@ namespace ReconstructNodesServer.Argument
             Lazy<AchievementService> achievementService,
             Lazy<PlayerParamsService> playerParamsService,
             Lazy<WeaponService> weaponService,
-            Lazy<GoldService> goldService)
+            Lazy<GoldCommand> goldService)
         {
             MailSender = mailSender;
             BaseService = baseService;
@@ -49,7 +49,7 @@ namespace ReconstructNodesServer.Argument
             AchievementService = achievementService;
             PlayerParamsService = playerParamsService;
             WeaponService = weaponService;
-            GoldService = goldService;
+            GoldCommand = goldService;
         }
 
     }

@@ -2,7 +2,7 @@ using ReconstructNodesServer.Library.Models;
 
 namespace ReconstructNodesServer.Services;
 
-public class TalentCommandService(RevisionService revisions, TalentService talents)
+public class TalentCommand(RevisionCommand revisions, TalentService talents)
 {
     public Task<CommandReceipt<TalentModel>> Learn(TalentNodeCommandRequest request) =>
         Change(request, "foreground.talent_learn", request, model => TalentRules.Learn(model, request.TreeId, request.NodeId));

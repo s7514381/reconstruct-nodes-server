@@ -6,9 +6,9 @@ using ReconstructNodesServer.Models;
 
 namespace ReconstructNodesServer.Services;
 
-public class PlayerLifecycleService(BaseServiceArgument argument, RevisionService revisions,
-    GameProgressService progress, TalentService talents, CharacterService characters,
-    ItemService items, WeaponService weapons, AchievementProgressService achievements)
+public class PlayerLifecycleService(BaseServiceArgument argument, RevisionCommand revisions,
+    GameProgressCommand progress, TalentService talents, CharacterService characters,
+    ItemService items, WeaponService weapons, AchievementProgressCommand achievements)
     : _ModelService<PlayerParams, PlayerParams>(argument)
 {
     public async Task<PlayerInitializationResponse> Initialize()
@@ -36,8 +36,8 @@ public class PlayerLifecycleService(BaseServiceArgument argument, RevisionServic
         await batch.ExecuteAsync(_repository, _playerId);
         return new PlayerInitializationResponse
         {
-            Characters = charactersRead.Value, Gold = progressRead.Value?.Gold ?? GoldService.StartingGold,
-            Catalog = ShopService.Catalog, Progress = progressRead.Value, Talent = talentRead.Value,
+            Characters = charactersRead.Value, Gold = progressRead.Value?.Gold ?? GoldCommand.StartingGold,
+            Catalog = ShopCommand.Catalog, Progress = progressRead.Value, Talent = talentRead.Value,
             Achievement = achievementRead.Value, Items = itemsRead.Value,
             Weapons = weaponsRead.Value.ToList(), Revisions = revisionsRead.Value,
         };

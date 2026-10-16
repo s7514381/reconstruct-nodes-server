@@ -12,7 +12,7 @@ public sealed class PlayerInitializationResponse
     [JsonPropertyName("gold")]
     public required long Gold { get; init; }
     [JsonPropertyName("catalog")]
-    public required ShopService.ShopCatalog Catalog { get; init; }
+    public required ShopCommand.ShopCatalog Catalog { get; init; }
     // null represents a missing save, not a failed read.
     [JsonPropertyName("progress")]
     public required GameProgressModel? Progress { get; init; }

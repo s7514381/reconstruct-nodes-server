@@ -5,7 +5,7 @@ using ReconstructNodesServer.Library.Models;
 
 namespace ReconstructNodesServer.Services;
 
-public partial class BackgroundSyncService(BaseServiceArgument argument) : _ModelService<PlayerParams, PlayerParams>(argument)
+public partial class BackgroundSyncCommand(BaseServiceArgument argument) : BaseService(argument)
 {
     public async Task<BackgroundSyncResponse> Execute(BackgroundSyncRequest request)
     {

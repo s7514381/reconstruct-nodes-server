@@ -5,11 +5,11 @@ using ReconstructNodesServer.Services;
 
 namespace ReconstructNodesServer.Controllers
 {
-    public class ShopController(BaseApiArgument argument, ShopService shop, GoldService gold) : AuthorizeApiController(argument)
+    public class ShopController(BaseApiArgument argument, ShopCommand shop, GoldCommand gold) : AuthorizeApiController(argument)
     {
         [HttpPost]
         public virtual IActionResult GetCatalog() =>
-            Ok(BackendApiResult<ShopService.ShopCatalog>.Create(200, string.Empty, ShopService.Catalog));
+            Ok(BackendApiResult<ShopCommand.ShopCatalog>.Create(200, string.Empty, ShopCommand.Catalog));
 
         [HttpPost]
         public virtual async Task<IActionResult> GetGold() =>

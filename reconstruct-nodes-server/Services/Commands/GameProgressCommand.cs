@@ -10,7 +10,8 @@ namespace ReconstructNodesServer.Services
     /// 遊戲進度服務：無父表。純量與設定存於 PlayerParams（Group 以 game_progress 開頭）；
     /// 部署只引用獨立保存的角色，戰場道路依 CreateUserId 拆表。
     /// </summary>
-    public class GameProgressService(BaseServiceArgument argument) : _SnapshotService<PlayerParams, GameProgressModel>(argument)
+    public class GameProgressCommand(BaseServiceArgument argument, DeploymentService deploymentService,
+        BattlefieldRoadService roadService, PlayerParamsService paramsService, RevisionCommand Revisions) : BaseService(argument)
     {
         private const string ProgressGroup = GameProgressParamGroups.Progress;
         private const string SettingGroupPrefix = GameProgressParamGroups.SettingPrefix;
@@ -51,7 +52,7 @@ namespace ReconstructNodesServer.Services
         public virtual async Task<GameProgressModel?> Get()
         {
             string rowSql = $@"SELECT *
-                                 FROM {_tableName}
+                                 FROM {paramsService._tableName}
                                 WHERE Status != -1
                                   AND CreateUserId = @CreateUserId
                                   AND {ProgressRowFilter}
@@ -59,9 +60,9 @@ namespace ReconstructNodesServer.Services
             List<PlayerParams> progressRows = (await QueryAsync<PlayerParams>(rowSql, new { CreateUserId = _playerId })).ToList();
             if (!progressRows.Any(row => row.Group == ProgressGroup && row.Name == ProgressKey.Version)) { return null; }
             return BuildSnapshot(progressRows,
-                await QuerySnapshotRowsAsync<Deployment>(orderBy: row => row.Sequence),
-                await QuerySnapshotRowsAsync<BattlefieldRoad>(orderBy: row => row.Sequence),
-                await Revisions.Read(nameof(GameProgressModel)), await _lazy.GoldService.Value.GetBalance());
+                await deploymentService.QueryOwnedRowsAsync(orderBy: row => row.Sequence),
+                await roadService.QueryOwnedRowsAsync(orderBy: row => row.Sequence),
+                await Revisions.Read(nameof(GameProgressModel)), await _lazy.GoldCommand.Value.GetBalance());
         }
 
         public Task<GameProgressModel?> GetCommand() => ReadSnapshotCommandAsync(GetRead);
@@ -83,7 +84,7 @@ namespace ReconstructNodesServer.Services
             if (gold.Count > 1) { throw new InvalidOperationException("玩家金幣參數重複"); }
             return BuildSnapshot(rows, deployments, roads,
                 revision == null ? 0 : long.Parse(revision, CultureInfo.InvariantCulture),
-                gold.Count == 0 ? GoldService.StartingGold : GoldService.ReadBalance(gold[0]));
+                gold.Count == 0 ? GoldCommand.StartingGold : GoldCommand.ReadBalance(gold[0]));
         });
 
         internal static GameProgressModel? BuildSnapshot(List<PlayerParams> progressRows,
@@ -134,25 +135,23 @@ namespace ReconstructNodesServer.Services
         /// <summary>
         /// 以整份快照覆寫遊戲進度：先刪除此玩家既有的進度列再重新寫入。需在交易內呼叫。
         /// </summary>
-        public override async Task Save(GameProgressModel model)
+        public async Task Save(GameProgressModel model)
         {
-            ValidateSnapshot(model);
+            ValidateProgress(model);
             await SaveSnapshot(model);
         }
 
-        protected override void ValidateSnapshot(GameProgressModel model) => ValidateProgress(model);
-
-        protected override async Task SaveSnapshot(GameProgressModel model)
+        private async Task SaveSnapshot(GameProgressModel model)
         {
             // 與武器刪除共用玩家鎖，避免刪武器與寫入裝備參照交錯
             if (model.RequestId.HasValue)
             {
                 // The existing debit receipt must replay before CAS and ownership checks.
-                ProgressSaveResult result = await _lazy.GoldService.Value.Execute(model.RequestId.Value, "progress_save", model, async account =>
+                ProgressSaveResult result = await _lazy.GoldCommand.Value.Execute(model.RequestId.Value, "progress_save", model, async account =>
                 {
                     await Revisions.Check(nameof(GameProgressModel), model.ExpectedRevision);
                     int newDeployments = await NewDeploymentCount(model);
-                    if (newDeployments > 0) { GoldService.Spend(account, checked(newDeployments * DeploymentCost)); }
+                    if (newDeployments > 0) { GoldCommand.Spend(account, checked(newDeployments * DeploymentCost)); }
                     await ReplaceProgressAsync(model);
                     if (model.ExpectedRevision.HasValue) { model.Revision = await Revisions.Advance(nameof(GameProgressModel)); }
                     return new ProgressSaveResult { Gold = account.Balance, Revision = model.Revision };
@@ -169,7 +168,7 @@ namespace ReconstructNodesServer.Services
         private async Task<int> NewDeploymentCount(GameProgressModel model)
         {
             await ValidateCharactersAsync(model.DeploymentLog ?? new());
-            var previous = await QuerySnapshotRowsAsync<Deployment>(orderBy: row => row.Sequence);
+            var previous = await deploymentService.QueryOwnedRowsAsync(orderBy: row => row.Sequence);
             var previousKeys = previous.Select(row => (row.SpotIndex, row.CharacterId, row.CellX, row.CellY)).ToHashSet();
             return (model.DeploymentLog ?? new()).Count(row =>
                 !previousKeys.Contains((row.SpotIndex, row.CharacterId, row.Cell?[0], row.Cell?[1])));

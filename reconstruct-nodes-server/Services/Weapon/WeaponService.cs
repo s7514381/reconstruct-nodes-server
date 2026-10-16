@@ -5,27 +5,29 @@ using ReconstructNodesServer.Library.Models;
 
 namespace ReconstructNodesServer.Services
 {
-    public partial class WeaponService(BaseServiceArgument argument) : _SnapshotService<Weapon, WeaponInstanceModel>(argument)
+    public partial class WeaponService(BaseServiceArgument argument, WeaponAffixService affixService,
+        WeaponAffixValueService affixValueService, WeaponUniqueValueService uniqueValueService)
+        : _SnapshotService<Weapon, WeaponInstanceModel>(argument)
     {
         protected override string? NaturalKeyField => "EntryKey";
 
         public virtual async Task<IEnumerable<WeaponInstanceModel>> GetInstanceList()
         {
-            List<Weapon> weapons = await QuerySnapshotRowsAsync<Weapon>(orderBy: row => row.CreateDate);
+            List<Weapon> weapons = await QueryOwnedRowsAsync(orderBy: row => row.CreateDate);
             if (weapons.Count == 0) { return []; }
 
             List<Guid> weaponIds = weapons.Select(w => w.Id).ToList();
 
-            List<WeaponAffix> affixes = await QuerySnapshotChildrenAsync<WeaponAffix, Weapon>(weaponIds);
+            List<WeaponAffix> affixes = await affixService.QueryChildrenAsync<Weapon>(weaponIds);
 
             List<WeaponAffixValue> affixValues = [];
             List<Guid> affixIds = affixes.Select(a => a.Id).ToList();
             if (affixIds.Count > 0)
             {
-                affixValues = await QuerySnapshotChildrenAsync<WeaponAffixValue, WeaponAffix>(affixIds, activeParentsOnly: false);
+                affixValues = await affixValueService.QueryChildrenAsync<WeaponAffix>(affixIds, activeParentsOnly: false);
             }
 
-            List<WeaponUniqueValue> uniqueValues = await QuerySnapshotChildrenAsync<WeaponUniqueValue, Weapon>(weaponIds);
+            List<WeaponUniqueValue> uniqueValues = await uniqueValueService.QueryChildrenAsync<Weapon>(weaponIds);
 
             return BuildSnapshots(weapons, affixes, affixValues, uniqueValues, await Revisions.Read(nameof(WeaponInstanceModel)));
         }
@@ -183,21 +185,21 @@ namespace ReconstructNodesServer.Services
 
         private async Task DeleteChildrenAsync(Guid weaponId)
         {
-            await DeleteSnapshotDescendantsAsync<WeaponAffixValue, WeaponAffix, Weapon>(weaponId);
-            await DeleteSnapshotChildrenAsync<WeaponAffix, Weapon>(weaponId);
-            await DeleteSnapshotChildrenAsync<WeaponUniqueValue, Weapon>(weaponId);
+            await affixValueService.DeleteDescendantsAsync<WeaponAffix, Weapon>(weaponId);
+            await affixService.DeleteChildrenAsync<Weapon>(weaponId);
+            await uniqueValueService.DeleteChildrenAsync<Weapon>(weaponId);
         }
 
         private async Task InsertChildrenAsync(Guid weaponId, IReadOnlyList<WeaponAffixSnapshot> affixes, WeaponUniqueSnapshot? unique)
         {
-            await InsertSnapshotRowsAsync(affixes, (snapshot, _) => new WeaponAffix
+            await affixService.InsertOwnedRowsAsync(affixes, (snapshot, _) => new WeaponAffix
                 {
                     WeaponId = weaponId,
                     AffixKey = snapshot.AffixKey,
                     Rolled = snapshot.Rolled,
                 }, async (snapshot, affix) =>
                 {
-                    await InsertSnapshotRowsAsync(snapshot.Values, (value, j) => new WeaponAffixValue
+                    await affixValueService.InsertOwnedRowsAsync(snapshot.Values, (value, j) => new WeaponAffixValue
                     {
                         WeaponAffixId = affix.Id,
                         ValueKey = j.ToString(CultureInfo.InvariantCulture),
@@ -207,7 +209,7 @@ namespace ReconstructNodesServer.Services
 
             if (unique == null) { return; }
 
-            await InsertSnapshotRowsAsync(unique.Values, (value, j) => new WeaponUniqueValue
+            await uniqueValueService.InsertOwnedRowsAsync(unique.Values, (value, j) => new WeaponUniqueValue
                 {
                     WeaponId = weaponId,
                     ValueKey = j.ToString(CultureInfo.InvariantCulture),

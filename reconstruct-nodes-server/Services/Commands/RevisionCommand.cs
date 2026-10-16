@@ -10,7 +10,7 @@ namespace ReconstructNodesServer.Services;
 /// Snapshot transactions detect resource write conflicts; unique receipt and
 /// parameter keys protect first writes without serializing the player's other resources.
 /// </summary>
-public class RevisionService(BaseServiceArgument argument) : _ModelService<PlayerParams, PlayerParams>(argument)
+public class RevisionCommand(BaseServiceArgument argument) : BaseService(argument)
 {
     public const string RevisionGroup = "server.revisions";
     public async Task<RevisionVector> GetVector()

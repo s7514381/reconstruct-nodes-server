@@ -36,7 +36,7 @@ namespace ReconstructNodesServer.Services
         private async Task RejectGoldMutation(IEnumerable<PlayerParams> rows)
         {
             if (rows.Any(row => (row.Group == "game_progress" && row.Name == "gold") ||
-                row.Group is "economy" or RevisionService.RevisionGroup or "game_progress.unlocked_bullet_kinds" or "game_progress.unlocked_auxiliary_kinds"))
+                row.Group is "economy" or RevisionCommand.RevisionGroup or "game_progress.unlocked_bullet_kinds" or "game_progress.unlocked_auxiliary_kinds"))
             {
                 throw new BusinessArgumentException(ApiMessageKeys.EconomyGoldManaged);
             }

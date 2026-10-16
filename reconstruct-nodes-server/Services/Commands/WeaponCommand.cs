@@ -3,7 +3,7 @@ using ReconstructNodesServer.Library.Models;
 
 namespace ReconstructNodesServer.Services;
 
-public class WeaponCommandService(BaseServiceArgument argument, RevisionService revisions,
+public class WeaponCommand(BaseServiceArgument argument, RevisionCommand revisions,
     WeaponService weapons, CharacterService characters) : BaseService(argument)
 {
     public Task<CommandReceipt<WeaponInstanceModel>> Acquire(WeaponAcquireRequest request) =>

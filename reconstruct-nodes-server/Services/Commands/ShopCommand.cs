@@ -6,11 +6,11 @@ using ReconstructNodesServer.Library.Models;
 
 namespace ReconstructNodesServer.Services
 {
-    public class ShopService : _ModelService<Character, Character>
+    public class ShopCommand : BaseService
     {
-        private readonly GoldService gold;
+        private readonly GoldCommand gold;
 
-        public ShopService(BaseServiceArgument argument, GoldService gold, ItemService items) : base(argument)
+        public ShopCommand(BaseServiceArgument argument, GoldCommand gold, ItemService items) : base(argument)
         {
             // Preserve the existing construction contract; adjustments now embed ItemService's shared SQL.
             this.gold = gold;

@@ -6,8 +6,8 @@ using ReconstructNodesServer.Models;
 
 namespace ReconstructNodesServer.Controllers
 {
-    public class GameProgressController(BaseApiArgument argument, GameProgressService service,
-        BackgroundSyncService background, PlayerLifecycleService lifecycle) : AuthorizeApiController(argument)
+    public class GameProgressController(BaseApiArgument argument, GameProgressCommand service,
+        BackgroundSyncCommand background, PlayerLifecycleService lifecycle) : AuthorizeApiController(argument)
     {
         /// <summary>
         /// 讀取目前玩家的遊戲進度；尚未儲存過時回傳 404 封包（前端據此判定為 MISSING）
