@@ -49,10 +49,11 @@ Services
 
 `GameProgressController.BackgroundSync(BackgroundSyncRequest)` 為指定的單一背景入口，
 回覆型別為 `BackendApiResult<BackgroundSyncResponse>`。
-請求統整 kills、wave_starts、talent、achievement、items 與 weapon_acquisitions；
-沿用現有強型別領域 DTO，不包含前景購買／領獎／精煉等操作。
-回覆以 request_id 對應整批確認，並保留 gold、sessions、acquisitions 及受影響的權威資料；
-可選欄位 null 不代表清空狀態。
+請求統整 wave_start（單一物件或 null）、kills（依 session 分組的 enemy_indices，去重由 kill ledger 負責）、
+items 與 weapon_acquisitions；沿用現有強型別領域 DTO，不包含前景購買／領獎／精煉／天賦等操作，也不接收 progress、talent、achievement 快照。
+欄位一律 snake_case（`ItemDeltaRequest` 以 `JsonPropertyName` 使用 item_key／delta／category）。
+回覆以 request_id 對應整批確認，並保留 gold、session、acquisitions，以及 progress（有擊殺或開波）與 talent（僅擊殺升級賺得天賦點）；
+不回傳 items／weapons 快照；可選欄位 null 不代表清空狀態。
 
 `GameProgressController.Initialize()` 為聚合初始化入口，在交易內建立缺少的進度與天賦，不重設既有資料。
 回覆 `BackendApiResult<PlayerInitializationResponse>`，包含角色、金幣、既有商店目錄、
@@ -92,7 +93,7 @@ Godot 有異動每秒最多派一批、最多一批在途；派送前保存帳�
 `GameProgress/WaveComplete` 為自動完成命令，只接受 request_id 與 session_id。
 確認本人 active session 全部敵人已回報擊殺後，保存通關紀錄、最大波數及完成狀態，
 回傳進度與下一波目標；重送使用同一永久回執。前端確認後才進入波間等待，
-下一波仍經 wave_starts 建立 session。Initialize 與 WaveComplete 均由 Controller 包交易。
+下一波仍經 wave_start 建立 session。Initialize 與 WaveComplete 均由 Controller 包交易。
 progress 專用 flush 已移除；skill_suffixes、refine_item_counts 不再輸出／讀寫，歷史 DB 列保留。
 
 #### 既有領域執行路徑
@@ -540,7 +541,7 @@ Step 4：依需要覆寫 `SetModel`、`ModelSave`、`ModelDelete`，或在 Contr
 - 併發：武器儲存與成就領取以 `WITH (UPDLOCK, HOLDLOCK)` 鎖定既有列與鍵區間，避免並行重複插入或重複領取。
 - 角色儲存、進度儲存與武器刪除共用 `Player` 列的 `UPDLOCK, HOLDLOCK`。角色裝備須引用本人有效武器，同一武器不可同時被不同角色裝備；進度部署須引用本人有效角色。角色讀取若發現懸空武器引用會明確拋錯，不偽裝成空裝備。
 - 領域 Service 沒有自訂 1 MB payload 限制或版本上限；仍受 ASP.NET Core／部署平台的請求限制，以及 DTO 與 Service 的輸入檢查約束。例如 GameProgress 檢查座標與角色引用，Character 檢查節點型別與装備引用，Talent 檢查非負版本／點數，Achievement 檢查名稱與目標。
-- JSON 欄位名稱：`Program.cs` 設定 `PropertyNamingPolicy = null`，以 C# 屬性名稱為準。`ItemDeltaRequest`、`ItemKeyRequest`、`EntryKeyRequest` 為 PascalCase；`AchievementClaimRequest` 以 `JsonPropertyName` 使用 `achievement_item_id`。其餘 DTO 以各自的屬性或 `JsonPropertyName` 為準。
+- JSON 欄位名稱：`Program.cs` 設定 `PropertyNamingPolicy = null`，以 C# 屬性名稱為準。`ItemKeyRequest`、`EntryKeyRequest` 為 PascalCase（`ItemDeltaRequest` 已以 `JsonPropertyName` 改為 snake_case）；`AchievementClaimRequest` 以 `JsonPropertyName` 使用 `achievement_item_id`。其餘 DTO 以各自的屬性或 `JsonPropertyName` 為準。
 
 ### 10.4 資料表
 

@@ -28,7 +28,7 @@ public partial class BackgroundSyncCommand
 
     private async Task<string> ExecuteBatch(BackgroundSyncRequest request)
     {
-        try { return await ExecuteBatch(request, loadTalent: request.Talent != null); }
+        try { return await ExecuteBatch(request, loadTalent: false); }
         catch (TalentReadRequired) { return await ExecuteBatch(request, loadTalent: true); }
     }
 
@@ -51,14 +51,11 @@ public partial class BackgroundSyncCommand
         var ring = SyncReceiptRing.Parse(ringRow?.Value);
         if (ring.Replay(request.RequestId, payload) is { } ringed)
         {
-            // 回執不含庫存快照，重放時在同一段 SQL 補上目前在庫物品。
-            return [new SqlBatchCommand(StockSql + "SELECT @Result;",
-                new { CreateUserId = _playerId, Receipt = ringed.Result, Items = ringed.Stock })];
+            return [new SqlBatchCommand("SELECT @Receipt;", new { Receipt = ringed.Result })];
         }
         // 舊版每批一列 background.sync 收據（不再新增）仍可重播。
         if (Replay<CommandReceipt<BackgroundSyncResponse>>(receipts, request.RequestId, "background.sync", payload) is { } prior)
         { return [new SqlBatchCommand("SELECT @Receipt;", new { Receipt = JsonSerializer.Serialize(prior) })]; }
-        if (request.Progress != null) { throw new BusinessArgumentException(ApiMessageKeys.RequestInvalid); }
 
         var writes = new SqlWriteBatch(_playerId);
         var addedReceipts = new List<EconomyRequest>();
@@ -67,15 +64,6 @@ public partial class BackgroundSyncCommand
         long Revision(string domain) => state.Parameters
             .Where(p => p.Group == RevisionCommand.RevisionGroup && p.Name == domain)
             .Select(p => long.Parse(p.Value, CultureInfo.InvariantCulture)).SingleOrDefault();
-        void CheckMissingSnapshot(bool exists, string domain)
-        {
-            if (!exists && Revision(domain) != 0)
-            {
-                throw new BusinessOperationException(new ApiMessage("concurrency.revision_conflict",
-                    new Dictionary<string, string> { ["domain"] = domain,
-                        ["revision"] = Revision(domain).ToString(CultureInfo.InvariantCulture) }));
-            }
-        }
         void Parameter(string group, string name, string value)
         {
             PlayerParams? row = state.Parameters.SingleOrDefault(p => p.Group == group && p.Name == name);
@@ -110,7 +98,7 @@ public partial class BackgroundSyncCommand
         int talentPointsEarned = 0;
         bool progressChanged = false;
         var response = new BackgroundSyncResponse { RequestId = request.RequestId };
-        var serverProgress = request.Kills.Count > 0 || request.WaveStarts.Count > 0
+        var serverProgress = request.Kills.Count > 0 || request.WaveStart != null
             ? GameProgressCommand.BuildSnapshot(state.Parameters.Where(p => p.Group == "game_progress" ||
                 p.Group.StartsWith("game_progress.", StringComparison.Ordinal)).ToList(), [], [],
                 Revision(nameof(GameProgressModel)), balance)
@@ -121,7 +109,7 @@ public partial class BackgroundSyncCommand
         KillLedger Ledger() => killLedger ??= KillLedger.Parse(state.Parameters
             .SingleOrDefault(p => p.Group == KillLedger.Group && p.Name == KillLedger.Name)?.Value);
         bool killLedgerChanged = false;
-        foreach (WaveStartRequest wave in request.WaveStarts)
+        if (request.WaveStart is { } wave)
         {
             int enemyCount = EconomyCommand.WaveEnemyCount(wave);
             string intent = JsonSerializer.Serialize(new { wave.Wave, wave.Difficulty });
@@ -152,28 +140,29 @@ public partial class BackgroundSyncCommand
                 Receipt(wave.RequestId, "wave_start", intent, session);
                 goldChanged = true;
             }
-            response.Sessions.Add(session);
+            response.Session = session;
         }
-        foreach (EnemyKillRequest kill in request.Kills)
+        foreach (var (sessionId, enemyIndex) in request.Kills
+            .SelectMany(k => k.EnemyIndices.Select(index => (k.SessionId, index))))
         {
-            if (kill.SessionId == Guid.Empty || kill.EnemyIndex < 0)
+            if (sessionId == Guid.Empty || enemyIndex < 0)
             { throw new BusinessArgumentException(ApiMessageKeys.EconomyKillInvalid); }
             // 已領取的擊殺記在最近幾個波次的位元圖；重送（同批次或新信封）視為已套用，不再發獎或計數。
             // 只接受進行中或位元圖內（最近幾個）的波次。
             var ledger = Ledger();
-            if (!(Guid.TryParse(ActiveWave(), out Guid activeWave) && activeWave == kill.SessionId) && !ledger.Contains(kill.SessionId))
+            if (!(Guid.TryParse(ActiveWave(), out Guid activeWave) && activeWave == sessionId) && !ledger.Contains(sessionId))
             { throw new BusinessArgumentException(ApiMessageKeys.EconomySessionNotOwned); }
-            if (ledger.Has(kill.SessionId, kill.EnemyIndex)) { continue; }
-            receipts.TryGetValue(kill.SessionId, out EconomyRequest? session);
+            if (ledger.Has(sessionId, enemyIndex)) { continue; }
+            receipts.TryGetValue(sessionId, out EconomyRequest? session);
             balance = checked(balance + KillRewardRules.CalculateClaim(
                 session?.Operation == "wave_start" ? session.Result : null,
-                false, kill.EnemyIndex, state.GoldTalents));
+                false, enemyIndex, state.GoldTalents));
             var waveSession = ProgressionRules.ReadSession(session!, serverProgress!.InfiniteLevel);
             talentPointsEarned = checked(talentPointsEarned +
-                ProgressionRules.ApplyKill(serverProgress!.Progression, waveSession, kill.EnemyIndex));
+                ProgressionRules.ApplyKill(serverProgress!.Progression, waveSession, enemyIndex));
             serverProgress.LifetimeEnemiesDefeated = checked(serverProgress.LifetimeEnemiesDefeated + 1);
             progressChanged = true;
-            ledger.Add(kill.SessionId, kill.EnemyIndex);
+            ledger.Add(sessionId, enemyIndex);
             killLedgerChanged = true;
             goldChanged = true;
         }
@@ -193,28 +182,6 @@ public partial class BackgroundSyncCommand
             if (state.Talent == null && !state.TalentLoaded) { throw new TalentReadRequired(); }
             if (state.Talent == null) { throw new BusinessOperationException(ApiMessageKeys.ProgressMissing); }
             state.Talent.TalentPoints = checked(state.Talent.TalentPoints + talentPointsEarned);
-        }
-        if (request.Talent != null)
-        {
-            CheckMissingSnapshot(state.Talent != null, nameof(TalentModel));
-            var incoming = Clone(request.Talent);
-            var current = state.Talent == null ? new TalentModel() : TalentService.BuildSnapshot(
-                state.Talent, state.Acquired, state.Legacy, Revision(nameof(TalentModel)));
-            MergeTalent(incoming, current);
-            TalentService.ValidateTalent(incoming);
-            Talent row = state.Talent ?? new Talent();
-            row.Version = incoming.Version;
-            row.TalentPoints = incoming.TalentPoints;
-            row.TotalSpentPoints = incoming.TotalSpentPoints;
-            row.PointsRecalculationVersion = incoming.PointsRecalculationVersion;
-            // Background merge preserves both child collections; do not delete/reinsert unchanged nodes.
-            if (state.Talent == null) { writes.Insert([row]); }
-            else { writes.Update([row]); }
-            incoming.Revision = Advance(nameof(TalentModel));
-            response.Talent = TalentService.BuildSnapshot(row, state.Acquired, state.Legacy, incoming.Revision);
-        }
-        else if (talentPointsEarned > 0)
-        {
             writes.Update([state.Talent!]);
             response.Talent = TalentService.BuildSnapshot(state.Talent!, state.Acquired, state.Legacy,
                 Advance(nameof(TalentModel)));
@@ -249,37 +216,22 @@ public partial class BackgroundSyncCommand
         writes.Insert(addedReceipts);
         var batchReceipt = new CommandReceipt<BackgroundSyncResponse> { RequestId = request.RequestId,
             Revision = Revision(nameof(BackgroundSyncResponse)), Snapshot = response };
-        writes.Add(StockSql + """
-            DECLARE @Stocked bit = @Items;
-            DECLARE @Stored nvarchar(max) = JSON_MODIFY(@Receipt, '$.snapshot.items', NULL);
+        writes.Add("""
             DECLARE @Ring nvarchar(max) = JSON_MODIFY(@Retained, 'append $',
-                JSON_QUERY((SELECT @RequestId AS i, @PayloadHash AS h, @Stored AS r, @Stocked AS s FOR JSON PATH, WITHOUT_ARRAY_WRAPPER)));
+                JSON_QUERY((SELECT @RequestId AS i, @PayloadHash AS h, @Receipt AS r FOR JSON PATH, WITHOUT_ARRAY_WRAPPER)));
             IF @RingId IS NULL
                 INSERT INTO PlayerParams (Id, CreateDate, CreateUserId, Status, [Group], Name, Value)
                 VALUES (NEWID(), @Now, @CreateUserId, @Enabled, @RingGroup, @RingName, @Ring);
             ELSE
                 UPDATE PlayerParams SET Value = @Ring WHERE Id = @RingId AND CreateUserId = @CreateUserId;
-            SELECT @Result;
-            """, new { Receipt = JsonSerializer.Serialize(batchReceipt), Items = request.Items.Count > 0,
+            SELECT @Receipt;
+            """, new { Receipt = JsonSerializer.Serialize(batchReceipt),
                 RequestId = request.RequestId, PayloadHash = SyncReceiptRing.Hash(payload), Now = DateTime.Now,
                 Retained = ring.Retained(request.RequestId), RingId = ringRow?.Id,
                 RingGroup = SyncReceiptRing.Group, RingName = SyncReceiptRing.Name,
                 Enabled = (int)ReconstructNodesServer.Library.Models.Enum.EStatus.啟用 });
         return writes.Commands;
     }
-
-    // 回應用的目前在庫物品（@Items = 1 時才附上）；結果放在 @Result。
-    private const string StockSql = """
-        DECLARE @Result nvarchar(max) = @Receipt;
-        IF @Items = 1
-        BEGIN
-            DECLARE @Stock nvarchar(max) = (SELECT Id, Sequence, CreateDate, CreateUserId, Status, ItemKey, Amount, Category
-                FROM Item WHERE CreateUserId = @CreateUserId AND Status != -1 AND Amount > 0
-                FOR JSON PATH, INCLUDE_NULL_VALUES);
-            SET @Result = JSON_MODIFY(@Result, '$.snapshot.items', JSON_QUERY(@Stock));
-        END;
-
-        """;
 
     private static T? Replay<T>(Dictionary<Guid, EconomyRequest> receipts, Guid id, string operation, string payload)
         where T : class

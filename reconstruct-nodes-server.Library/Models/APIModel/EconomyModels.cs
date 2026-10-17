@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
 namespace ReconstructNodesServer.Library.Models
@@ -15,14 +16,13 @@ namespace ReconstructNodesServer.Library.Models
         public int InfiniteLevel { get; set; } = 1;
     }
 
-    public class EnemyKillRequest
+    /// <summary>Kills of one wave session; replays are deduplicated by the kill ledger per (session, index).</summary>
+    public class SessionKillsRequest
     {
-        [JsonPropertyName("request_id")]
-        public Guid RequestId { get; set; }
         [JsonPropertyName("session_id")]
         public Guid SessionId { get; set; }
-        [JsonPropertyName("enemy_index")]
-        public int EnemyIndex { get; set; }
+        [JsonPropertyName("enemy_indices")]
+        public List<int> EnemyIndices { get; set; } = [];
     }
 
     public class SkillPurchaseRequest

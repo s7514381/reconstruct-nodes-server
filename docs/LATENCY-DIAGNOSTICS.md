@@ -406,7 +406,7 @@ include the section, such as `GameProgress/BackgroundSync (kills)`, not a separa
 Earlier measurements below referring to the removed Save/StartWave/ReportKill/AdjustAmount
 routes are historical evidence, not current endpoints or equivalent batch performance claims.
 
-`--economy-only` times separate wave_starts and kills BackgroundSync workloads (first + 100 each).
+`--economy-only` times separate wave_start and kills BackgroundSync workloads (first + 100 each).
 Outside measurement it verifies:
 
 - StartWave and ReportKill exact receipt replay, one ledger row and no extra gold.

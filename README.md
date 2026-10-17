@@ -317,7 +317,7 @@ Azurite 關閉即丟棄記憶體日誌。若測試程序被強制終止，finall
 - 前端先讀 `Character/GetList` 取得核心真實 `id`；技能配置與穿卸裝使用各自前景 action。核心免費可用火球及既有通用基本技能，其他主動／輔助技能仍需解鎖；武器仍驗證本人擁有及跨角色唯一裝備。核心不進商店抽取池，也不能成為前景部署引用，沒有角色刪除／撤回 API。一般部署費不適用核心，核心常駐位置由前端接線；後端只保存核心配置。
 - 本次核心擴充不需 migration；不會主動批次改寫帳號或共享資料庫，未讀角色清單的帳號於下一次讀取時補齊。服務層直接呼叫 `GetList`／`Get` 也必須沿用既有 repository transaction，不能脫離交易使用玩家鎖。
 - 金幣仍由 `PlayerParams` 保存（`Group = game_progress`、`Name = gold`）。`GoldCommand` 負責後端金幣交易，不使用獨立金幣表；客戶端進度不覆寫餘額。`Shop/GetGold` 讀取餘額。`AddAuthoritativeGoldAndShopRequests` migration 建立冪等交易紀錄並檢查既有金幣資料；套用前須核對及備份。
-- `GameProgress/BackgroundSync` 批次提交天賦／成就快照、物品增量、武器取得、自動開波及擊殺，不再接收新的 progress 存檔。相同批次 ID／payload 回原回執，同 ID 異意圖回 409，任一失敗全部回滾。前景 `Economy/PurchaseSkill`、部署／戰場／手動切波維持原路由；部署每筆 60、技能購買每次 100。
+- `GameProgress/BackgroundSync` 批次提交物品增量、武器取得、自動開波（`wave_start`）及擊殺（`kills: [{session_id, enemy_indices[]}]`，欄位 snake_case），不接收 progress／天賦／成就快照；回應為 `gold`、`session`、`progress`、`talent`（僅擊殺升級時）、`acquisitions`，不含 `items`／`weapons`。相同批次 ID／payload 回原回執，同 ID 異意圖回 409，任一失敗全部回滾。前景 `Economy/PurchaseSkill`、部署／戰場／手動切波維持原路由；部署每筆 60、技能購買每次 100。
 
 ### 玩家進度生命週期
 

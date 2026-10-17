@@ -28,34 +28,15 @@ public partial class BackgroundSyncCommand(BaseServiceArgument argument) : BaseS
 
     private static void Validate(BackgroundSyncRequest request)
     {
-        if (request.Talent != null) { TalentService.ValidateTalent(request.Talent); }
-        if (request.Kills == null || request.WaveStarts == null || request.Items == null ||
-            request.WeaponAcquisitions == null ||
-            request.Kills.Any(k => k == null || k.RequestId == Guid.Empty) ||
-            request.WaveStarts.Any(w => w == null || w.RequestId == Guid.Empty) ||
+        if (request.Kills == null || request.Items == null || request.WeaponAcquisitions == null ||
+            (request.WaveStart != null && request.WaveStart.RequestId == Guid.Empty) ||
+            request.Kills.Any(k => k == null || k.EnemyIndices == null || k.EnemyIndices.Count == 0) ||
             request.Items.Any(i => i == null || string.IsNullOrWhiteSpace(i.ItemKey) || i.Delta == 0) ||
             request.WeaponAcquisitions.Any(w => w == null || w.RequestId == Guid.Empty))
         { throw new BusinessArgumentException(ApiMessageKeys.RequestInvalid); }
-        Guid[] children = request.Kills.Select(k => k.RequestId)
-            .Concat(request.WaveStarts.Select(w => w.RequestId))
-            .Concat(request.WeaponAcquisitions.Select(w => w.RequestId)).ToArray();
+        Guid[] children = request.WeaponAcquisitions.Select(w => w.RequestId)
+            .Concat(request.WaveStart == null ? Array.Empty<Guid>() : new[] { request.WaveStart.RequestId }).ToArray();
         if (children.Contains(request.RequestId) || children.Distinct().Count() != children.Length)
         { throw new BusinessArgumentException(ApiMessageKeys.EconomyRequestConflict); }
-    }
-
-    private static T Clone<T>(T value) =>
-        JsonSerializer.Deserialize<T>(JsonSerializer.Serialize(value))
-        ?? throw new InvalidOperationException("Invalid background snapshot.");
-
-    public static void MergeTalent(TalentModel incoming, TalentModel current)
-    {
-        long earned = Math.Max(checked(incoming.TalentPoints + incoming.TotalSpentPoints),
-            checked(current.TalentPoints + current.TotalSpentPoints));
-        incoming.TalentPoints = checked(earned - current.TotalSpentPoints);
-        incoming.TotalSpentPoints = current.TotalSpentPoints;
-        incoming.AcquiredTalents = current.AcquiredTalents;
-        incoming.LegacyCategoryTalents = current.LegacyCategoryTalents;
-        incoming.PointsRecalculationVersion = Math.Max(incoming.PointsRecalculationVersion,
-            current.PointsRecalculationVersion);
     }
 }

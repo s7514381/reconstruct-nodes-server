@@ -20,9 +20,7 @@ internal sealed class SyncReceiptRing
     public sealed record Entry(
         [property: JsonPropertyName("i")] string RequestId,
         [property: JsonPropertyName("h")] string PayloadHash,
-        [property: JsonPropertyName("r")] string Result,
-        // 回執不存庫存快照（會隨庫存變大）；true 表示重放時要補上目前在庫物品。
-        [property: JsonPropertyName("s")] bool Stock = false);
+        [property: JsonPropertyName("r")] string Result);
 
     private readonly List<Entry> _entries;
 

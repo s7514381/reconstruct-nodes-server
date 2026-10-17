@@ -9,7 +9,7 @@ public partial class BackgroundSyncCommand
     // 每個領域各自一段讀取，只有請求用得到的領域才會加入批次；所有片段共用 @CreateUserId。
     private SnapshotReadBatch BuildReads(BackgroundSyncRequest request, BatchState state, out object parameters)
     {
-        bool kills = request.Kills.Count > 0, waves = request.WaveStarts.Count > 0;
+        bool kills = request.Kills.Count > 0, waves = request.WaveStart != null;
         var batch = new SnapshotReadBatch();
         batch.Add(OwnerRead);
         batch.Add(ReceiptsRead(state));
@@ -17,7 +17,7 @@ public partial class BackgroundSyncCommand
         if (state.TalentLoaded) { AddTalentReads(batch, state); }
         if (kills) { batch.Add(GoldTalentsRead(state)); }
 
-        Guid[] ids = request.WaveStarts.Select(w => w.RequestId)
+        Guid[] ids = (request.WaveStart == null ? Array.Empty<Guid>() : new[] { request.WaveStart.RequestId })
             .Concat(request.Kills.Select(k => k.SessionId))
             .Concat(request.WeaponAcquisitions.Select(w => w.RequestId))
             .Append(request.RequestId).Distinct().ToArray();

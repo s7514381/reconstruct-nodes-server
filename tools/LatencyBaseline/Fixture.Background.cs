@@ -3,8 +3,19 @@ using System.Text.Json;
 using ReconstructNodesServer.Library.Models;
 using ReconstructNodesServer.Repositories;
 
+/// <summary>Single-kill work item the fixtures wrap into a one-kill batch; RequestId only seeds the batch ID.</summary>
+internal sealed class EnemyKillRequest
+{
+    public Guid RequestId { get; set; }
+    public Guid SessionId { get; set; }
+    public int EnemyIndex { get; set; }
+}
+
 internal static partial class Fixture
 {
+    private static SessionKillsRequest Kills(Guid session, params int[] indices) =>
+        new() { SessionId = session, EnemyIndices = [.. indices] };
+
     public static bool BackgroundBudgetMet { get; private set; }
     private static async Task MeasureBackground(HttpClient http, DapperRepository repository, Guid player,
         Func<string, Func<int, Task<Sample>>, Task> measure)
@@ -13,7 +24,6 @@ internal static partial class Fixture
         long gold = await Gold(http);
         int initialWeapons = (await Post(http, "Weapon/GetInstanceList", new { })).Data!.AsArray().Count;
         long progressBase = (await Post(http, "GameProgress/Get", new { })).Data!.Deserialize<GameProgressModel>(Json)!.Revision;
-        long talentBase = (await Post(http, "Talent/GetSnapshot", new { })).Data!.Deserialize<TalentModel>(Json)!.Revision;
         BackgroundSyncRequest? lastBatch = null;
         JsonNode? lastResult = null;
         await measure("GameProgress/BackgroundSync (all)", async i =>
@@ -22,9 +32,8 @@ internal static partial class Fixture
             var batch = new BackgroundSyncRequest
             {
                 RequestId = Guid.NewGuid(),
-                WaveStarts = [new() { RequestId = wave, Wave = 1, Difficulty = 0 }],
-                Kills = [new() { RequestId = Guid.NewGuid(), SessionId = wave, EnemyIndex = 0 }],
-                Talent = new() { Version = 3, TalentPoints = 5 },
+                WaveStart = new() { RequestId = wave, Wave = 1, Difficulty = 0 },
+                Kills = [Kills(wave, 0)],
                 Items = [new() { ItemKey = "background-fixture", Delta = 3, Category = "material" }],
                 WeaponAcquisitions = [new() { RequestId = Guid.NewGuid(), Weapon = new()
                     { Id = $"background-weapon-{i}", WeaponId = "sword", Rarity = "common" } }],
@@ -35,12 +44,10 @@ internal static partial class Fixture
             lastResult = result.Data!.DeepClone();
             gold += 9;
             Require(data.RequestId == batch.RequestId && data.Gold == gold, "background identity and earned gold");
-            Require(data.Sessions.Single().SessionId == wave && data.Items!.Single().Amount == (i + 1) * 3,
-                "background session and item delta");
-            Require(data.Weapons == null && data.Acquisitions.Single().Snapshot.Id == $"background-weapon-{i}",
-                "background acquisition receipt replaces the full weapon list");
-            Require(data.Progress!.Revision == progressBase + i + 1 && data.Talent!.Revision == talentBase + i + 1,
-                "background two revision advances");
+            Require(data.Session!.SessionId == wave && data.Acquisitions.Single().Snapshot.Id == $"background-weapon-{i}",
+                "background session and acquisition receipt");
+            Require(data.Progress!.Revision == progressBase + i + 1 && data.Talent == null,
+                "background advances progress only; talent changes only when kills earn points");
             return result.Sample;
         });
         Require(await Gold(http) == gold, "background final gold readback");
@@ -76,16 +83,16 @@ internal static partial class Fixture
         long gold = await Gold(http);
         // A new envelope must still replay its children, without another kill or acquisition.
         var children = new BackgroundSyncRequest { RequestId = Guid.NewGuid(),
-            WaveStarts = lastBatch.WaveStarts, Kills = lastBatch.Kills,
+            WaveStart = lastBatch.WaveStart, Kills = lastBatch.Kills,
             WeaponAcquisitions = lastBatch.WeaponAcquisitions };
         var replay = (await Post(http, route, children)).Data!.Deserialize<BackgroundSyncResponse>(Json)!;
         Require(replay.Gold == gold && replay.Acquisitions.Single().Revision ==
             lastResult["acquisitions"]![0]!["revision"]!.GetValue<long>(), "child receipts replay across envelopes");
         // Kills are deduplicated by the active wave's bitmap, so a new request id for the same enemy awards nothing.
         var duplicateKill = new BackgroundSyncRequest { RequestId = Guid.NewGuid(), Kills =
-            [new() { RequestId = Guid.NewGuid(), SessionId = lastBatch.Kills[0].SessionId, EnemyIndex = lastBatch.Kills[0].EnemyIndex }] };
+            [Kills(lastBatch.Kills[0].SessionId, lastBatch.Kills[0].EnemyIndices[0])] };
         var duplicate = (await Post(http, route, duplicateKill)).Data!.Deserialize<BackgroundSyncResponse>(Json)!;
-        Require(duplicate.Gold == gold && duplicate.Progress == null, "duplicate kill with a new request id awards nothing");
+        Require(duplicate.Gold == gold && duplicate.Progress == null, "duplicate kill in a new batch awards nothing");
 
         string[] reads = ["GameProgress/Get", "Talent/GetSnapshot", "AchievementProgress/Get",
             "Item/GetInStockList", "Weapon/GetInstanceList"];
@@ -101,8 +108,7 @@ internal static partial class Fixture
         var rejected = Clone(lastBatch);
         Guid wave = Guid.NewGuid();
         rejected.RequestId = Guid.NewGuid();
-        rejected.WaveStarts[0].RequestId = wave;
-        rejected.Kills[0].RequestId = Guid.NewGuid();
+        rejected.WaveStart!.RequestId = wave;
         rejected.Kills[0].SessionId = wave;
         rejected.WeaponAcquisitions[0].RequestId = Guid.NewGuid();
         rejected.WeaponAcquisitions[0].Weapon.Id = "rollback-weapon";
@@ -115,8 +121,9 @@ internal static partial class Fixture
             "mid-write rejection rolls back every domain, gold, revision and receipt");
         rejected.Items.RemoveAt(1);
         var retried = (await Post(http, route, rejected)).Data!.Deserialize<BackgroundSyncResponse>(Json)!;
-        Require(retried.Gold == gold + 9 && retried.Items!.Single(i => i.ItemKey == "background-fixture").Amount == 306,
-            "same rejected request succeeds after fixing invalid item");
+        Require(retried.Gold == gold + 9 && await repository.QueryFirstAsync<int>(
+            "SELECT Amount FROM Item WHERE CreateUserId=@Player AND ItemKey='background-fixture' AND Status != -1",
+            new { Player = player }) == 306, "same rejected request succeeds after fixing invalid item");
         var progressRead = (await Post(http, "GameProgress/Get", new { })).Data;
         var progressSent = JsonSerializer.SerializeToNode(retried.Progress);
         // BackgroundSync builds progress without battlefield roads (BuildSnapshot is given empty road/deployment
@@ -124,8 +131,7 @@ internal static partial class Fixture
         progressSent!.AsObject().Remove("battlefield");
         progressRead!.AsObject().Remove("battlefield");
         AssertSnapshotEqual(progressSent, progressRead, "retried progress");
-        AssertSnapshotEqual(JsonSerializer.SerializeToNode(retried.Talent),
-            (await Post(http, "Talent/GetSnapshot", new { })).Data, "retried talent");
+        Require(retried.Talent == null, "a single kill earns no talent points");
         var persistedWeapons = (await Post(http, "Weapon/GetInstanceList", new { })).Data!
             .Deserialize<List<WeaponInstanceModel>>(Json)!;
         var acquired = retried.Acquisitions.Single().Snapshot;
@@ -159,7 +165,7 @@ internal static partial class Fixture
             "SELECT Amount FROM Item WHERE CreateUserId=@Player AND ItemKey='background-fixture' AND Status != -1",
             new { Player = player }) == 308, "same-player concurrent batches retain both deltas");
         await Task.WhenAll(Post(http, route, new BackgroundSyncRequest { RequestId = Guid.NewGuid(),
-            Talent = new() { Version = 3, TalentPoints = 6 } }),
+            Items = [new() { ItemKey = "background-concurrent", Delta = 1 }] }),
             Post(http, "Weapon/Disassemble", new WeaponDisassembleRequest { RequestId = Guid.NewGuid(),
                 WeaponEntryIds = ["rich-background-weapon"] }));
         Require(!(await Post(http, "Weapon/GetInstanceList", new { })).Data!.Deserialize<List<WeaponInstanceModel>>(Json)!
@@ -182,8 +188,8 @@ internal static partial class Fixture
         Require(retained.IsReward && retained.RewardDate == claim.RewardDate, "background preserves claimed reward and date");
         var empty = (await Post(http, route, new BackgroundSyncRequest { RequestId = Guid.NewGuid() })).Data!
             .Deserialize<BackgroundSyncResponse>(Json)!;
-        Require(empty.Progress == null && empty.Talent == null &&
-            empty.Items == null && empty.Weapons == null && empty.Gold == await Gold(http),
+        Require(empty.Progress == null && empty.Talent == null && empty.Session == null &&
+            empty.Acquisitions.Count == 0 && empty.Gold == await Gold(http),
             "empty batch preserves absent sections");
         Stage = "background 17-material set-based items";
         var materials = new BackgroundSyncRequest { RequestId = Guid.NewGuid(),
@@ -206,20 +212,24 @@ internal static partial class Fixture
         await Task.Delay(500);
         Console.WriteLine($"17-item timing: {(Breakdown.TryGetValue(lastTiming, out var itemTiming) ? itemTiming.ToJsonString() : "none")}");
         Console.WriteLine($"17-item warm updates: {string.Join(", ", warm)} ms");
-        materialsResult = (await Post(http, route, new BackgroundSyncRequest { RequestId = Guid.NewGuid(),
-            Items = materials.Items.Select(i => new ItemDeltaRequest { ItemKey = i.ItemKey, Delta = -600, Category = "refine" }).ToList() }))
-            .Data!.Deserialize<BackgroundSyncResponse>(Json)!;
+        await Post(http, route, new BackgroundSyncRequest { RequestId = Guid.NewGuid(),
+            Items = materials.Items.Select(i => new ItemDeltaRequest { ItemKey = i.ItemKey, Delta = -600, Category = "refine" }).ToList() });
         materials.RequestId = Guid.NewGuid();
-        materialsResult = (await Post(http, route, materials)).Data!.Deserialize<BackgroundSyncResponse>(Json)!;
-        Require(materialsResult.Items!.Count(i => i.ItemKey.StartsWith("material-background-", StringComparison.Ordinal)
-                && i.Amount == 300 && i.Category == "refine") == 17, "17 materials adjusted up, down and up");
-        // Receipts keep no inventory snapshot: a replay returns the current stock, with no repeated delta.
+        await Post(http, route, materials);
+        async Task<Dictionary<string, (int Amount, string? Category)>> Stock(string prefix) =>
+            (await repository.QueryAsync<(string ItemKey, int Amount, string? Category)>(
+                "SELECT ItemKey, Amount, Category FROM Item WHERE CreateUserId=@Player AND Status != -1 AND ItemKey LIKE @Prefix",
+                new { Player = player, Prefix = prefix + "%" })).ToDictionary(r => r.ItemKey, r => (r.Amount, r.Category));
+        var materialStock = await Stock("material-background-");
+        Require(materialStock.Count(i => i.Value.Amount == 300 && i.Value.Category == "refine") == 17,
+            "17 materials adjusted up, down and up");
+        // A replay of the receipt applies no repeated delta.
         await Post(http, route, new BackgroundSyncRequest { RequestId = Guid.NewGuid(),
             Items = [new() { ItemKey = "material-background-0", Delta = 5, Category = "refine" }] });
-        var stockReplay = (await Post(http, route, materials)).Data!.Deserialize<BackgroundSyncResponse>(Json)!;
-        Require(stockReplay.Items!.Single(i => i.ItemKey == "material-background-0").Amount == 305 &&
-            stockReplay.Items!.Single(i => i.ItemKey == "material-background-1").Amount == 300,
-            "replay returns current stock without reapplying deltas");
+        await Post(http, route, materials);
+        materialStock = await Stock("material-background-");
+        Require(materialStock["material-background-0"].Amount == 305 && materialStock["material-background-1"].Amount == 300,
+            "replay does not reapply deltas");
         var large = new BackgroundSyncRequest { RequestId = Guid.NewGuid(),
             Items = Enumerable.Range(0, 230).Select(i => new ItemDeltaRequest
                 { ItemKey = $"large-background-{i}", Delta = 1, Category = "material" }).ToList() };
@@ -229,25 +239,25 @@ internal static partial class Fixture
             new() { ItemKey = "ordered-background", Delta = 2, Category = "second" },
         ]);
         Stage = "background large batch regression";
-        var largeResult = (await Post(http, route, large)).Data!.Deserialize<BackgroundSyncResponse>(Json)!;
-        var largeItems = largeResult.Items ?? throw new FixtureAssertion("large batch items present");
-        Require(largeItems.Count(i => i.ItemKey.StartsWith("large-background-", StringComparison.Ordinal)) == 230 &&
-            largeItems.Single(i => i.ItemKey == "ordered-background").Amount == 2 &&
-            largeItems.Single(i => i.ItemKey == "ordered-background").Category == "second",
+        await Post(http, route, large);
+        var largeItems = await Stock("large-background-");
+        var orderedItems = await Stock("ordered-background");
+        Require(largeItems.Count == 230 &&
+            orderedItems["ordered-background"].Amount == 2 &&
+            orderedItems["ordered-background"].Category == "second",
             "split SQL batches keep one transaction and preserve ordered item tombstone/recreate behavior");
         // WaveComplete counts distinct enemies from the claimed-kill bitmap.
         Guid completeWave = Guid.NewGuid();
         Stage = "background wave complete from kill bitmap";
         var partial = new BackgroundSyncRequest { RequestId = Guid.NewGuid(),
-            WaveStarts = [new() { RequestId = completeWave, Wave = 1, Difficulty = 0 }],
-            Kills = Enumerable.Range(0, 8).Select(i => new EnemyKillRequest
-                { RequestId = Guid.NewGuid(), SessionId = completeWave, EnemyIndex = i }).ToList() };
+            WaveStart = new() { RequestId = completeWave, Wave = 1, Difficulty = 0 },
+            Kills = [Kills(completeWave, [.. Enumerable.Range(0, 8)])] };
         var partialResult = (await Post(http, route, partial)).Data!.Deserialize<BackgroundSyncResponse>(Json)!;
-        int enemyCount = partialResult.Sessions.Single().EnemyCount;
+        int enemyCount = partialResult.Session!.EnemyCount;
         await Rejected(http, "GameProgress/WaveComplete", new WaveCompleteRequest
             { RequestId = Guid.NewGuid(), SessionId = completeWave }, messageKey: ApiMessageKeys.EconomyEnemyInvalid);
-        var rest = new BackgroundSyncRequest { RequestId = Guid.NewGuid(), Kills = Enumerable.Range(0, enemyCount).Select(i =>
-            new EnemyKillRequest { RequestId = Guid.NewGuid(), SessionId = completeWave, EnemyIndex = i }).ToList() };
+        var rest = new BackgroundSyncRequest { RequestId = Guid.NewGuid(), Kills =
+            [Kills(completeWave, [.. Enumerable.Range(0, enemyCount)])] };
         long beforeRest = await Gold(http);
         var restResult = (await Post(http, route, rest)).Data!.Deserialize<BackgroundSyncResponse>(Json)!;
         Require(restResult.Gold == beforeRest + 9, "only the unclaimed enemy is rewarded after a partial wave");
@@ -260,12 +270,10 @@ internal static partial class Fixture
     private static BackgroundSyncRequest BackgroundBatch(object work) => work switch
     {
         BackgroundSyncRequest batch => batch,
-        WaveStartRequest wave => new() { RequestId = BackgroundRequestId(wave.RequestId), WaveStarts = [wave] },
-        EnemyKillRequest kill => new() { RequestId = BackgroundRequestId(kill.RequestId), Kills = [kill] },
+        WaveStartRequest wave => new() { RequestId = BackgroundRequestId(wave.RequestId), WaveStart = wave },
+        EnemyKillRequest kill => new() { RequestId = BackgroundRequestId(kill.RequestId), Kills = [Kills(kill.SessionId, kill.EnemyIndex)] },
         WeaponAcquireRequest weapon => new() { RequestId = BackgroundRequestId(weapon.RequestId), WeaponAcquisitions = [weapon] },
         ItemDeltaRequest item => new() { RequestId = Guid.NewGuid(), Items = [item] },
-        GameProgressModel progress => new() { RequestId = progress.RequestId ?? Guid.NewGuid(), Progress = progress },
-        TalentModel talent => new() { RequestId = Guid.NewGuid(), Talent = talent },
         _ => throw new ArgumentException("Unsupported background work.", nameof(work)),
     };
 
@@ -278,12 +286,11 @@ internal static partial class Fixture
         Result result = await Post(http, "GameProgress/BackgroundSync", BackgroundBatch(work));
         JsonNode? projected = work switch
         {
-            WaveStartRequest => result.Data!["sessions"]!.AsArray().Single(),
+            WaveStartRequest => result.Data!["session"],
             WeaponAcquireRequest => result.Data!["acquisitions"]!.AsArray().Single(),
-            ItemDeltaRequest item => JsonValue.Create(result.Data!["items"]!.AsArray()
+            // The sync response carries no stock; read the resulting amount back from the item list.
+            ItemDeltaRequest item => JsonValue.Create((await Post(http, "Item/GetInStockList", new { })).Data!.AsArray()
                 .SingleOrDefault(row => row!["ItemKey"]!.GetValue<string>() == item.ItemKey)?["Amount"]!.GetValue<int>() ?? 0),
-            GameProgressModel => result.Data!["progress"],
-            TalentModel => result.Data!["talent"],
             _ => result.Data,
         };
         long? revision = work is IRevisionedSnapshot ? projected!["revision"]!.GetValue<long>() : null;

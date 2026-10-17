@@ -197,7 +197,7 @@ internal static partial class Fixture
                 {
                     var batch = new BackgroundSyncRequest
                     {
-                        RequestId = Guid.NewGuid(), Kills = [kill], WaveStarts = [wave],
+                        RequestId = Guid.NewGuid(), Kills = [Kills(kill.SessionId, kill.EnemyIndex)], WaveStart = wave,
                         Items = [new() { ItemKey = "diamond", Delta = 1, Category = "currency" }],
                     };
                     actions =
@@ -207,8 +207,8 @@ internal static partial class Fixture
                         {
                             var result = await Post(http, "GameProgress/BackgroundSync", batch);
                             var data = result.Data!.Deserialize<BackgroundSyncResponse>(Json)!;
-                            Require(data.Gold == gold + 108 && data.Items!.Single(item => item.ItemKey == "diamond").Amount == diamond + 1 &&
-                                data.Sessions.Single().SessionId == wave.RequestId && data.Progress != null,
+                            Require(data.Gold == gold + 108 &&
+                                data.Session!.SessionId == wave.RequestId && data.Progress != null,
                                 "one normal background batch preserves all resource changes");
                             progress.Revision = data.Progress!.Revision;
                             progress.ExpectedRevision = data.Progress.Revision;

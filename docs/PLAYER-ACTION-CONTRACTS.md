@@ -19,7 +19,7 @@
 伺服器確認 session 屬於玩家、仍為 active_wave 且每個敵人索引皆有擊殺回執，才保存
 cleared_waves／max_wave_reached／wave_completed。回傳
 `{request_id, revision, snapshot: {progress, next_wave, next_difficulty, next_infinite_level}}`；
-相同意圖重送重播回執，不重複保存。下一波由 wave_starts 正式建立 session。
+相同意圖重送重播回執，不重複保存。下一波由 wave_start 正式建立 session。
 
 累積擊殺、經驗及升級天賦點由 BackgroundSync 的 kills 更新，不再接收客戶端整份 progress。
 skill_suffixes／refine_item_counts 不再保存或回傳，資料庫歷史群組保留；progress 專用 flush 已移除。

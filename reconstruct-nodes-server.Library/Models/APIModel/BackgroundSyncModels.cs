@@ -4,17 +4,17 @@ using System.Text.Json.Serialization;
 
 namespace ReconstructNodesServer.Library.Models;
 
-/// <summary>A frozen batch of background work, not a replacement for foreground commands.</summary>
+/// <summary>
+/// A frozen batch of background work, not a replacement for foreground commands.
+/// Absent work is an empty list, or null for the single wave start.
+/// </summary>
 public sealed class BackgroundSyncRequest : CommandRequest
 {
+    /// <summary>The wave start doubles as the session ID of the wave it opens.</summary>
+    [JsonPropertyName("wave_start")]
+    public WaveStartRequest? WaveStart { get; set; }
     [JsonPropertyName("kills")]
-    public List<EnemyKillRequest> Kills { get; set; } = [];
-    [JsonPropertyName("wave_starts")]
-    public List<WaveStartRequest> WaveStarts { get; set; } = [];
-    [JsonPropertyName("progress")]
-    public GameProgressModel? Progress { get; set; }
-    [JsonPropertyName("talent")]
-    public TalentModel? Talent { get; set; }
+    public List<SessionKillsRequest> Kills { get; set; } = [];
     [JsonPropertyName("items")]
     public List<ItemDeltaRequest> Items { get; set; } = [];
     [JsonPropertyName("weapon_acquisitions")]
@@ -26,16 +26,14 @@ public sealed class BackgroundSyncResponse : CommandRequest
 {
     [JsonPropertyName("gold")]
     public long? Gold { get; set; }
-    [JsonPropertyName("sessions")]
-    public List<WaveStartResult> Sessions { get; set; } = [];
+    /// <summary>The session opened by the request's wave start; null when the batch had none.</summary>
+    [JsonPropertyName("session")]
+    public WaveStartResult? Session { get; set; }
     [JsonPropertyName("progress")]
     public GameProgressModel? Progress { get; set; }
+    /// <summary>Only present when kills in this batch earned talent points.</summary>
     [JsonPropertyName("talent")]
     public TalentModel? Talent { get; set; }
-    [JsonPropertyName("items")]
-    public List<ReconstructNodesServer.Library.DBModel.Item>? Items { get; set; }
-    [JsonPropertyName("weapons")]
-    public List<WeaponInstanceModel>? Weapons { get; set; }
     [JsonPropertyName("acquisitions")]
     public List<CommandReceipt<WeaponInstanceModel>> Acquisitions { get; set; } = [];
 }
