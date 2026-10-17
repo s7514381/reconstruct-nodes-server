@@ -39,6 +39,11 @@ namespace ReconstructNodesServer.Library.Models
         public const string EconomyRequestRequired = "backend.economy.request_required";
         public const string EconomyRequestConflict = "backend.economy.request_conflict";
         public const string ConcurrencyRetry = "backend.concurrency.retry";
+        public const string BroadcastUnauthorized = "backend.broadcast.unauthorized";
+        public const string BroadcastInvalid = "backend.broadcast.invalid";
+        public const string BroadcastNotFound = "backend.broadcast.not_found";
+        public const string BroadcastLimitReached = "backend.broadcast.limit_reached";
+        public const string BroadcastUnavailable = "backend.broadcast.unavailable";
         public const string EconomyInsufficientGold = "backend.economy.insufficient_gold";
         public const string EconomyWaveInvalid = "backend.economy.wave_invalid";
         public const string EconomyKillInvalid = "backend.economy.kill_invalid";

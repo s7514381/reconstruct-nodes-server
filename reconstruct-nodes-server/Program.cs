@@ -12,6 +12,7 @@ using ReconstructNodesServer.Services;
 using ReconstructNodesServer.Utility;
 using Microsoft.AspNetCore.Mvc;
 using ReconstructNodesServer.Library.Models;
+using ReconstructNodesServer.Broadcast;
 
 var builder = ApplicationBuilderFactory.CreateBuilder(args);
 
@@ -86,6 +87,15 @@ services.AddSingleton<IGoogleCodeExchanger>(sp => new GoogleCodeExchanger(
 services.AddSingleton<IGoogleIdTokenValidator, GoogleIdTokenValidator>();
 services.AddScoped<IGoogleSessionStore, GoogleSessionStore>();
 services.AddScoped<GoogleLoginService>();
+
+// 廣播：Firebase RTDB（服務帳戶金鑰在 Secret，缺檔只讓廣播端點回 503，不阻擋啟動）
+FirebaseBroadcastOptions broadcastOptions = new();
+builder.Configuration.GetSection(FirebaseBroadcastOptions.SectionName).Bind(broadcastOptions);
+broadcastOptions.AdminKey = builder.Configuration["Broadcast:AdminKey"] ?? string.Empty;
+services.AddSingleton(broadcastOptions);
+services.AddHttpClient<IBroadcastStore, FirebaseBroadcastStore>(client => client.Timeout = TimeSpan.FromSeconds(15));
+services.AddSingleton(TimeProvider.System);
+services.AddScoped<BroadcastService>();
 
 
 var app = builder.Build();

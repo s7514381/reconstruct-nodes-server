@@ -28,7 +28,7 @@ public static class ApplicationBuilderFactory
             .OfType<JsonConfigurationSource>()
             .Single(source => source.Path == $"appsettings.{builder.Environment.EnvironmentName}.json");
         int insertionIndex = builder.Configuration.Sources.IndexOf(environmentSettings) + 1;
-        foreach (string fileName in new[] { "azure-storage.json", "smtp.json" })
+        foreach (string fileName in new[] { "azure-storage.json", "smtp.json", "broadcast-admin.json" })
         {
             builder.Configuration.Sources.Insert(insertionIndex++, new JsonConfigurationSource
             {
