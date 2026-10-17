@@ -59,6 +59,7 @@ skill_suffixes／refine_item_counts 不再保存或回傳，資料庫歷史群�
 | 路由 | Request 欄位 | snapshot 型別 |
 |---|---|---|
 | `Character/ConfigureSkills` | `character_id: UUID, skill_trees: GameProgressSkillLoadoutModel[]` | CharacterModel |
+| `Character/ConfigureAttributes` | `request_id, character_id: UUID, strength: int, intelligence: int, dexterity: int`（`CharacterAttributesRequest`，整體覆寫，不帶 expected_revision） | `CommandReceipt<CharacterModel>`（含 `strength` / `intelligence` / `dexterity`） |
 | `Talent/LearnTalent` | `tree_id: string, node_id: string` | TalentModel |
 | `Talent/RefundTalent` | `tree_id: string, node_id: string`，退整個節點所有級數 | TalentModel |
 | `Talent/ResetTalents` | `tree_id: string|null`，null 退全部樹 | TalentModel |
@@ -94,7 +95,7 @@ kill，保留 enemy index 邊界與每 session/index 一次獎勵限制。
 以下 action 皆為「單次批次讀取 + 單次批次寫入並 COMMIT」（Controller 指定 `commandOwnsTransaction: true`），
 交易內不逐筆呼叫 Query／Execute／Advance／Check，固定 2 次 SQL 往返（讀取一次、寫入並 COMMIT 一次）：
 `Economy/PurchaseSkill`（`GoldCommand.ExecuteBatch`：解鎖旗標、扣 100、回執同一批；已解鎖與金幣不足由 THROW 51007／51005 對應回原業務錯誤）、
-`Weapon/Disassemble`、`Character/EquipWeapon`（`EquipWeaponCommand`）、
+`Weapon/Disassemble`、`Character/EquipWeapon`（`EquipWeaponCommand`）、`Character/ConfigureAttributes`（`CharacterAttributesCommand`）、
 `GameProgress/SetDeployment`／`SetBattlefield`／`TransitionWave`（`BattlefieldCommand`：進度覆寫、部署費、
 revision、`active_wave` 與 `wave_start` 子回執、最終回執同一批）。
 重播回原回執、同 ID 異意圖回 409、revision 與回執 revision 語意不變；共用的回執／revision 讀寫在 `RevisionCommand`

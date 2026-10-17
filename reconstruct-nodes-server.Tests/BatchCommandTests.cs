@@ -156,6 +156,68 @@ public class BatchCommandTests
         AssertKey(ApiMessageKeys.EconomyRequestConflict, () => EquipWeaponCommand.Prepare(Player, request, payload + " ", state));
     }
 
+    // ---- Character/ConfigureAttributes ----
+
+    private static (CharacterAttributesRequest Request, string Payload, CharacterAttributesCommand.State State) Attributes(
+        int level, int strength, int intelligence, int dexterity, int otherAllocated = 0)
+    {
+        var character = new Character { Kind = 0 };
+        var other = new Character { Kind = 1, Strength = otherAllocated };
+        var request = new CharacterAttributesRequest
+        {
+            RequestId = Guid.NewGuid(), CharacterId = character.Id,
+            Strength = strength, Intelligence = intelligence, Dexterity = dexterity,
+        };
+        var state = new CharacterAttributesCommand.State
+        {
+            Characters = [character, other],
+            Revisions = [Revision(nameof(CharacterModel), 7)],
+            Progression = [new PlayerParams { Group = "game_progress.progression", Name = "level", Value = level.ToString() }],
+        };
+        return (request, RevisionCommand.CanonicalPayload(request), state);
+    }
+
+    [TestMethod]
+    public void Attributes_overwrite_one_character_and_return_snapshot_with_new_revision()
+    {
+        var (request, payload, state) = Attributes(level: 11, strength: 20, intelligence: 10, dexterity: 30);
+        var commands = CharacterAttributesCommand.Prepare(Player, request, payload, state);
+        var receipt = Receipt<CharacterModel>(commands);
+        Assert.AreEqual(8, receipt.Revision);
+        Assert.AreEqual((20, 10, 30), (receipt.Snapshot.Strength, receipt.Snapshot.Intelligence, receipt.Snapshot.Dexterity));
+        StringAssert.Contains(AllSql(commands), "UPDATE Character SET Strength");
+    }
+
+    [TestMethod]
+    public void Attributes_rejects_negative_and_over_pool_including_other_characters()
+    {
+        // 等級 11 = 60 點；其他角色已用 10 點，本角色最多 50。
+        var (request, payload, state) = Attributes(11, 50, 0, 0, otherAllocated: 10);
+        Assert.AreEqual(8, Receipt<CharacterModel>(CharacterAttributesCommand.Prepare(Player, request, payload, state)).Revision);
+
+        (request, payload, state) = Attributes(11, 51, 0, 0, otherAllocated: 10);
+        AssertKey(ApiMessageKeys.CharacterAttributesExceeded, () => CharacterAttributesCommand.Prepare(Player, request, payload, state));
+
+        (request, payload, state) = Attributes(11, -1, 5, 5);
+        AssertKey(ApiMessageKeys.CharacterAttributesInvalid, () => CharacterAttributesCommand.Prepare(Player, request, payload, state));
+
+        (request, payload, state) = Attributes(1, 1, 0, 0);
+        AssertKey(ApiMessageKeys.CharacterAttributesExceeded, () => CharacterAttributesCommand.Prepare(Player, request, payload, state));
+    }
+
+    [TestMethod]
+    public void Attributes_rejects_unowned_character_and_replays_receipt()
+    {
+        var (request, payload, state) = Attributes(11, 1, 1, 1);
+        state.Characters.Clear();
+        AssertKey(ApiMessageKeys.CharacterNotOwned, () => CharacterAttributesCommand.Prepare(Player, request, payload, state));
+
+        (request, payload, state) = Attributes(11, 1, 1, 1);
+        state.Receipts = [new EconomyRequest { RequestId = request.RequestId, Operation = "character.configure_attributes", Payload = payload, Result = "{}" }];
+        Assert.AreEqual("SELECT @Receipt;", CharacterAttributesCommand.Prepare(Player, request, payload, state).Single().Sql);
+        AssertKey(ApiMessageKeys.EconomyRequestConflict, () => CharacterAttributesCommand.Prepare(Player, request, payload + " ", state));
+    }
+
     // ---- GameProgress/SetDeployment、SetBattlefield、TransitionWave ----
 
     private static GameProgressCommand.ProgressRows Progress(long gold = 1000, long revision = 3, int cleared = 5)

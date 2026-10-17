@@ -15,6 +15,15 @@ namespace ReconstructNodesServer.Library.Models
         [JsonPropertyName("skill_trees")]
         public List<GameProgressSkillLoadoutModel> SkillTrees { get; set; } = new();
 
+        [JsonPropertyName("strength")]
+        public int Strength { get; set; }
+
+        [JsonPropertyName("intelligence")]
+        public int Intelligence { get; set; }
+
+        [JsonPropertyName("dexterity")]
+        public int Dexterity { get; set; }
+
         [JsonPropertyName("weapon_quality_version")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public int? WeaponQualityVersion { get; set; }

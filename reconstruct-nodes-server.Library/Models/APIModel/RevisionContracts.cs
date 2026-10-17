@@ -50,6 +50,22 @@ public sealed class WeaponEquipRequest : CommandRequest
     public string? WeaponEntryId { get; set; }
 }
 
+/// <summary>角色能力值整體覆寫：三項合計不得超過玩家等級換得的點數，各項不得為負。</summary>
+public sealed class CharacterAttributesRequest : CommandRequest
+{
+    [JsonPropertyName("character_id")]
+    public Guid CharacterId { get; set; }
+    [JsonPropertyName("strength")]
+    [JsonRequired]
+    public int Strength { get; set; }
+    [JsonPropertyName("intelligence")]
+    [JsonRequired]
+    public int Intelligence { get; set; }
+    [JsonPropertyName("dexterity")]
+    [JsonRequired]
+    public int Dexterity { get; set; }
+}
+
 public sealed class SkillLoadoutRequest : ExpectedRevisionRequest
 {
     [JsonPropertyName("character_id")]

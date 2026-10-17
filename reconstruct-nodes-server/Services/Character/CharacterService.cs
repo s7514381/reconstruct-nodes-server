@@ -98,6 +98,9 @@ namespace ReconstructNodesServer.Services
                     Id = row.Id,
                     Kind = row.Kind,
                     WeaponQualityVersion = row.WeaponQualityVersion,
+                    Strength = row.Strength,
+                    Intelligence = row.Intelligence,
+                    Dexterity = row.Dexterity,
                     SkillTrees = treesByCharacter[row.Id].Select(tree => new GameProgressSkillLoadoutModel
                     {
                         Kind = tree.Kind,

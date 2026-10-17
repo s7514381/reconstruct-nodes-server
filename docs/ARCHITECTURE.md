@@ -495,6 +495,7 @@ Step 4：依需要覆寫 `SetModel`、`ModelSave`、`ModelDelete`，或在 Contr
 | `POST Weapon/Acquire` | `AuthorizeApiController` | 是 | `{request_id, weapon}`，只取得新 EntryKey，回 `CommandReceipt<WeaponInstanceModel>`。 |
 | `POST Weapon/Refine` | `AuthorizeApiController` | 是 | `{request_id, weapon_entry_id, crystal_id}`，原子扣材料及伺服器精煉，回 `CommandReceipt<WeaponRefineSnapshot>`。 |
 | `POST Weapon/Disassemble` | `AuthorizeApiController` | 是 | `{request_id, weapon_entry_ids}`，去重批次分解、略過裝備中／不存在實例，回 `CommandReceipt<WeaponDisassembleSnapshot>`，無獎勵。 |
+| `POST Character/ConfigureAttributes` | `AuthorizeApiController` | 是 | `{request_id, character_id, strength, intelligence, dexterity}`，整體覆寫單一角色能力值；各項不得為負（`backend.character.attributes_invalid`），三項合計加其他角色已配置點數不得超過 `CharacterAttributeRules.TotalPoints(玩家等級)` ＝ (等級−1)×6（`backend.character.attributes_exceeded`）。同一 snapshot 讀取全部角色與 `game_progress.progression.level`，推進 `CharacterModel` 領域與該角色範圍 revision（並行配置另一角色會對同列寫入衝突），回 `CommandReceipt<CharacterModel>`；DB 欄位 `Character.Strength/Intelligence/Dexterity`（遷移 `AddCharacterAttributes`）。 |
 | `POST Character/EquipWeapon` | `AuthorizeApiController` | 是 | `{request_id, character_id, weapon_entry_id}`，null 卸下；只改武器引用，不寫技能，回 `CommandReceipt<CharacterModel>`。 |
 | `POST AchievementProgress/Get` | `AuthorizeApiController` | 是 | 讀取成就進度；無群組資料回 404 envelope。 |
 | `POST AchievementProgress/Save` | `AuthorizeApiController` | 是 | Body `AchievementProgressModel`，以整份快照覆寫。已領取的項目保留領取狀態，請求中的 `is_reward` 會被忽略。 |

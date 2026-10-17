@@ -205,6 +205,12 @@ namespace ReconstructNodesServer.Migrations
                     b.Property<Guid?>("CreateUserId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<int>("Dexterity")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Intelligence")
+                        .HasColumnType("int");
+
                     b.Property<int>("Kind")
                         .HasColumnType("int");
 
@@ -215,6 +221,9 @@ namespace ReconstructNodesServer.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("smallint")
                         .HasDefaultValueSql("1");
+
+                    b.Property<int>("Strength")
+                        .HasColumnType("int");
 
                     b.Property<string>("WeaponEntryKey")
                         .HasMaxLength(450)
