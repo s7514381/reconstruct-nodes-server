@@ -10,7 +10,7 @@ namespace ReconstructNodesServer.Library.Models
         public Guid? Id { get; set; }
 
         [JsonPropertyName("kind")]
-        public int Kind { get; set; }
+        public CharacterKind Kind { get; set; }
 
         [JsonPropertyName("skill_trees")]
         public List<GameProgressSkillLoadoutModel> SkillTrees { get; set; } = new();

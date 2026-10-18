@@ -161,7 +161,7 @@ namespace ReconstructNodesServer.Services
                 !previousKeys.Contains((row.SpotIndex, row.CharacterId, row.Cell?[0], row.Cell?[1])));
         }
 
-        /// <summary>批次版的部署角色檢查：ownedIds 為本人 Kind 0..2 的有效角色。</summary>
+        /// <summary>批次版的部署角色檢查：ownedIds 為本人可部署職業（不含核心）的有效角色。</summary>
         internal static void ValidateCharacters(IEnumerable<GameProgressDeploymentModel> deployments, IReadOnlySet<Guid> ownedIds)
         {
             if (deployments.Any(row => !ownedIds.Contains(row.CharacterId)))
@@ -196,9 +196,9 @@ namespace ReconstructNodesServer.Services
             Roads = (await reader.ReadAsync<BattlefieldRoad>()).ToList(),
         });
 
-        /// <summary>讀回本人 Kind 0..2 的有效角色 Id，供部署驗證。</summary>
+        /// <summary>讀回本人可部署職業（不含核心）的有效角色 Id，供部署驗證。</summary>
         internal static SnapshotRead<List<Guid>> DeployableCharactersRead => new(
-            OwnedSql.Select<Character>("Kind IN (0, 1, 2)", columns: "Id"),
+            OwnedSql.Select<Character>($"Kind IN ({CharacterKinds.DeployableSqlList})", columns: "Id"),
             async reader => (await reader.ReadAsync<Guid>()).ToList());
 
         private static bool IsProgressRow(PlayerParams row) =>
@@ -315,7 +315,7 @@ namespace ReconstructNodesServer.Services
             Guid[] ids = deployments.Select(row => row.CharacterId).Distinct().ToArray();
             if (ids.Length == 0) { return; }
             var ownedIds = (await QueryAsync<Guid>(
-                "SELECT Id FROM Character WHERE CreateUserId = @CreateUserId AND Status != -1 AND Kind IN (0, 1, 2) AND Id IN @Ids",
+                $"SELECT Id FROM Character WHERE CreateUserId = @CreateUserId AND Status != -1 AND Kind IN ({CharacterKinds.DeployableSqlList}) AND Id IN @Ids",
                 new { CreateUserId = _playerId, Ids = ids })).ToHashSet();
             if (ids.Any(id => !ownedIds.Contains(id))) { throw new BusinessArgumentException(ApiMessageKeys.ProgressCharacterNotOwned); }
         }

@@ -13,6 +13,8 @@ namespace ReconstructNodesServer.Services
             "auxiliary_gem", "explosion_gem", "multi_projectile_gem", "increased_area_gem",
             "increased_angle_gem", "fast_projectile_gem", "multi_strike_gem",
             "critical_trigger_gem", "hit_trigger_gem", "tracking_gem", "aura_support",
+            "pierce_gem", "refract_gem", "brute_force_gem", "heavy_strike_gem", "stun_trigger_gem",
+            "echo_gem", "focus_energy_gem", "core_repair_gem", "mana_surge_gem", "elemental_infusion_gem",
         ];
 
         /// <summary>
@@ -55,7 +57,7 @@ namespace ReconstructNodesServer.Services
         {
             string group;
             string name;
-            if (request.Type == "active" && request.Kind is >= 0 and <= 6)
+            if (request.Type == "active" && request.Kind is >= 0 and <= SkillLoadoutRules.MaxActiveSkillKind)
             {
                 group = "game_progress.unlocked_bullet_kinds";
                 name = request.Kind.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);

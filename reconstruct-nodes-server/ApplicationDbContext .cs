@@ -34,6 +34,8 @@ namespace ReconstructNodesServer
         public virtual DbSet<CharacterSkillTree> CharacterSkillTree { get; set; }
         public virtual DbSet<CharacterSkillNode> CharacterSkillNode { get; set; }
         public virtual DbSet<EconomyRequest> EconomyRequest { get; set; }
+        public virtual DbSet<IapPurchase> IapPurchase { get; set; }
+        public virtual DbSet<DailyCheckIn> DailyCheckIn { get; set; }
         public virtual DbSet<BattlefieldRoad> BattlefieldRoad { get; set; }
         public virtual DbSet<Talent> Talent { get; set; }
         public virtual DbSet<TalentAcquired> TalentAcquired { get; set; }
@@ -131,6 +133,18 @@ namespace ReconstructNodesServer
 
             modelBuilder.Entity<EconomyRequest>()
                 .HasIndex(row => new { row.CreateUserId, row.RequestId }).IsUnique();
+
+            // 同一筆 Google Play 購買（token）全域只能發放一次，與帳號無關。
+            modelBuilder.Entity<IapPurchase>().Property(row => row.PurchaseToken).HasMaxLength(450);
+            modelBuilder.Entity<IapPurchase>()
+                .HasIndex(row => row.PurchaseToken).IsUnique()
+                .HasFilter("[Status] <> -1");
+
+            // 同一玩家同一天只能簽到一次，並行請求由唯一索引擋下。
+            modelBuilder.Entity<DailyCheckIn>().Property(row => row.DateKey).HasMaxLength(10);
+            modelBuilder.Entity<DailyCheckIn>()
+                .HasIndex(row => new { row.CreateUserId, row.DateKey }).IsUnique()
+                .HasFilter("[Status] <> -1");
 
             // 天賦每位玩家只有一列父資料，以唯一索引保證併發寫入時不會產生重複列。
             modelBuilder.Entity<Talent>()

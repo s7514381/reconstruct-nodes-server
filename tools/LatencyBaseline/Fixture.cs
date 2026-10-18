@@ -126,7 +126,7 @@ internal static partial class Fixture
             if (skillsOnly)
             {
                 var skillCore = await SkillCore(http);
-                Require(skillCore.Kind == 3 && skillCore.Id.HasValue, "valid core3");
+                Require(skillCore.Kind == CharacterKind.Core && skillCore.Id.HasValue, "valid core3");
                 Stage = "skill loadout regressions";
                 TrackRegressionRequests = true;
                 try { await SkillRegressions(http, repository, playerId.Value, skillCore, selectedChecks); }
@@ -178,7 +178,7 @@ internal static partial class Fixture
             }
             var characters = await Post(http, "Character/GetList", new { });
             CharacterModel core = characters.Data!.Deserialize<List<CharacterModel>>(Json)!.Single();
-            Require(core.Kind == 3 && core.Id.HasValue, "valid core3");
+            Require(core.Kind == CharacterKind.Core && core.Id.HasValue, "valid core3");
             GameProgressModel progress = new()
             {
                 Version = 1, Wave = 1, MaxWaveReached = 1,

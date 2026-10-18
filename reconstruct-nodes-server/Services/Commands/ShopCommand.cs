@@ -16,19 +16,20 @@ namespace ReconstructNodesServer.Services
             this.gold = gold;
         }
 
-        public record CharacterOffer(int Kind, string LootId, string ShardId, string WeaponId);
+        public record CharacterOffer(CharacterKind Kind, string LootId, string ShardId, string WeaponId);
         public record ShopCatalog(int SingleCost, int TenCost, IReadOnlyList<CharacterOffer> Characters);
 
         public static ShopCatalog Catalog { get; } = new(100, 900,
         [
-            new(0, "warrior", "warrior_shard", "sword"),
-            new(1, "archer", "archer_shard", "bow"),
-            new(2, "mage", "mage_shard", "staff"),
+            new(CharacterKind.Warrior, "warrior", "warrior_shard", "sword"),
+            new(CharacterKind.Archer, "archer", "archer_shard", "bow"),
+            new(CharacterKind.Mage, "mage", "mage_shard", "staff"),
+            new(CharacterKind.Crusader, "crusader", "crusader_shard", "sword"),
         ]);
 
         protected virtual int DrawIndex() => RandomNumberGenerator.GetInt32(Catalog.Characters.Count);
 
-        private sealed record DrawCandidate(int Kind, string ShardId, CharacterModel Character, WeaponInstanceModel Weapon);
+        private sealed record DrawCandidate(CharacterKind Kind, string ShardId, CharacterModel Character, WeaponInstanceModel Weapon);
 
         public virtual async Task<ShopDrawResult> Draw(ShopDrawRequest request)
         {
@@ -39,7 +40,8 @@ namespace ReconstructNodesServer.Services
             {
                 CharacterOffer offer = Catalog.Characters[DrawIndex()];
                 string weaponKey = $"shop_{Guid.NewGuid():N}";
-                int skillKind = offer.Kind switch { 0 => 5, 1 => 0, 2 => 3,
+                int skillKind = offer.Kind switch { CharacterKind.Warrior => 5, CharacterKind.Archer => 0, CharacterKind.Mage => 3,
+                    CharacterKind.Crusader => 5,
                     _ => throw new InvalidOperationException("Unsupported shop character kind") };
                 candidates.Add(new(offer.Kind, offer.ShardId,
                     new CharacterModel

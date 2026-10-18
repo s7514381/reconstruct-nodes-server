@@ -94,7 +94,7 @@ public class BatchCommandTests
 
     private static (WeaponEquipRequest Request, string Payload, EquipWeaponCommand.State State) Equip(string? weapon, Guid? other = null)
     {
-        var character = new Character { Kind = 0 };
+        var character = new Character { Kind = CharacterKind.Warrior };
         var request = new WeaponEquipRequest { RequestId = Guid.NewGuid(), CharacterId = character.Id, WeaponEntryId = weapon };
         var state = new EquipWeaponCommand.State
         {
@@ -102,7 +102,7 @@ public class BatchCommandTests
             Revisions = [Revision(nameof(CharacterModel), 7)],
             Weapons = weapon == null ? [] : [new Weapon { EntryKey = weapon, WeaponKey = "sword", Rarity = "common" }],
         };
-        if (other != null) { state.Characters.Add(new Character { Kind = 1, WeaponEntryKey = weapon! }); }
+        if (other != null) { state.Characters.Add(new Character { Kind = CharacterKind.Archer, WeaponEntryKey = weapon! }); }
         return (request, RevisionCommand.CanonicalPayload(request), state);
     }
 
@@ -161,8 +161,8 @@ public class BatchCommandTests
     private static (CharacterAttributesRequest Request, string Payload, CharacterAttributesCommand.State State) Attributes(
         int level, int strength, int intelligence, int dexterity, int otherAllocated = 0)
     {
-        var character = new Character { Kind = 0 };
-        var other = new Character { Kind = 1, Strength = otherAllocated };
+        var character = new Character { Kind = CharacterKind.Warrior };
+        var other = new Character { Kind = CharacterKind.Archer, Strength = otherAllocated };
         var request = new CharacterAttributesRequest
         {
             RequestId = Guid.NewGuid(), CharacterId = character.Id,

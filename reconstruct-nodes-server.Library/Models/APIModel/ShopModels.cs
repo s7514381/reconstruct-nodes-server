@@ -43,7 +43,7 @@ namespace ReconstructNodesServer.Library.Models
         [JsonPropertyName("character_id")]
         public Guid CharacterId { get; set; }
         [JsonPropertyName("character_kind")]
-        public int CharacterKind { get; set; }
+        public CharacterKind CharacterKind { get; set; }
         [JsonPropertyName("is_duplicate")]
         public bool IsDuplicate { get; set; }
         [JsonPropertyName("shard_id")]

@@ -212,7 +212,8 @@ namespace ReconstructNodesServer.Migrations
                         .HasColumnType("int");
 
                     b.Property<int>("Kind")
-                        .HasColumnType("int");
+                        .HasColumnType("int")
+                        .HasComment("(0) (1) (2) (3) (4)");
 
                     b.Property<int?>("Sequence")
                         .HasColumnType("int");
@@ -326,6 +327,54 @@ namespace ReconstructNodesServer.Migrations
                     b.HasIndex("CreateUserId");
 
                     b.ToTable("CharacterSkillTree");
+                });
+
+            modelBuilder.Entity("ReconstructNodesServer.Library.DBModel.DailyCheckIn", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasDefaultValueSql("NEWID()");
+
+                    b.Property<int>("Amount")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("CreateDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("CreateUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("DateKey")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<string>("ItemKey")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("Ordinal")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("RequestId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int?>("Sequence")
+                        .HasColumnType("int");
+
+                    b.Property<short?>("Status")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("smallint")
+                        .HasDefaultValueSql("1");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreateUserId");
+
+                    b.HasIndex("CreateUserId", "DateKey")
+                        .IsUnique()
+                        .HasFilter("[Status] <> -1");
+
+                    b.ToTable("DailyCheckIn");
                 });
 
             modelBuilder.Entity("ReconstructNodesServer.Library.DBModel.Deployment", b =>
@@ -455,6 +504,57 @@ namespace ReconstructNodesServer.Migrations
                     b.HasIndex("CreateUserId");
 
                     b.ToTable("EmailVerify");
+                });
+
+            modelBuilder.Entity("ReconstructNodesServer.Library.DBModel.IapPurchase", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasDefaultValueSql("NEWID()");
+
+                    b.Property<bool>("Consumed")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("CreateDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("CreateUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Diamonds")
+                        .HasColumnType("int");
+
+                    b.Property<string>("OrderId")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ProductId")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("PurchaseToken")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<Guid>("RequestId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int?>("Sequence")
+                        .HasColumnType("int");
+
+                    b.Property<short?>("Status")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("smallint")
+                        .HasDefaultValueSql("1");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreateUserId");
+
+                    b.HasIndex("PurchaseToken")
+                        .IsUnique()
+                        .HasFilter("[Status] <> -1");
+
+                    b.ToTable("IapPurchase");
                 });
 
             modelBuilder.Entity("ReconstructNodesServer.Library.DBModel.Item", b =>

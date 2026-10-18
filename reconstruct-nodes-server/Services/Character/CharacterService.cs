@@ -10,7 +10,8 @@ namespace ReconstructNodesServer.Services
     public class CharacterService(BaseServiceArgument argument, CharacterSkillTreeService treeService,
         CharacterSkillNodeService nodeService) : _SnapshotService<Character, CharacterModel>(argument)
     {
-        public const int CoreKind = 3;
+        public const CharacterKind CoreKind = CharacterKind.Core;
+        /// <summary>目前最大的角色 kind（十字軍=4，接在核心之後以保留既有整數）。</summary>
         // BulletData.FIREBALL -> ActiveSkill.FIREBALL（遊戲端穩定種類值）。
         public const int CoreDefaultSkillKind = 1;
 
@@ -44,11 +45,11 @@ namespace ReconstructNodesServer.Services
         public Task<List<CharacterModel>> GetListCommand() => ReadSnapshotCommandAsync(GetListRead);
 
         public SnapshotRead<List<CharacterModel>> GetListRead => new($"""
-            IF NOT EXISTS (SELECT 1 FROM Character WITH (UPDLOCK, HOLDLOCK) WHERE CreateUserId = @CreateUserId AND Status != -1 AND Kind = {CoreKind})
+            IF NOT EXISTS (SELECT 1 FROM Character WITH (UPDLOCK, HOLDLOCK) WHERE CreateUserId = @CreateUserId AND Status != -1 AND Kind = {(int)CoreKind})
             BEGIN
                 DECLARE @Core uniqueidentifier = NEWID();
                 INSERT INTO Character (Id, CreateDate, CreateUserId, Status, Kind)
-                VALUES (@Core, GETDATE(), @CreateUserId, {(int)EStatus.啟用}, {CoreKind});
+                VALUES (@Core, GETDATE(), @CreateUserId, {(int)EStatus.啟用}, {(int)CoreKind});
                 INSERT INTO CharacterSkillTree (Id, CreateDate, CreateUserId, Status, CharacterId, Kind, Sequence)
                 VALUES (NEWID(), GETDATE(), @CreateUserId, {(int)EStatus.啟用}, @Core, {CoreDefaultSkillKind}, 0);
             END
@@ -138,7 +139,7 @@ namespace ReconstructNodesServer.Services
             { throw new BusinessArgumentException(ApiMessageKeys.WeaponIdInvalid); }
         }
 
-        private async Task ValidateWeaponAsync(string? weaponKey, int kind)
+        private async Task ValidateWeaponAsync(string? weaponKey, CharacterKind kind)
         {
             if (weaponKey == null) { return; }
             var weapons = await QueryAsync<Guid>(
@@ -153,7 +154,7 @@ namespace ReconstructNodesServer.Services
 
         protected override void ValidateSnapshot(CharacterModel model)
         {
-            if (model.Kind is < 0 or > CoreKind) { throw new BusinessArgumentException(ApiMessageKeys.CharacterKindInvalid); }
+            if (!CharacterKinds.IsDefined(model.Kind)) { throw new BusinessArgumentException(ApiMessageKeys.CharacterKindInvalid); }
             if (!model.Id.HasValue || model.Id == Guid.Empty) { throw new BusinessArgumentException(ApiMessageKeys.CharacterNotOwned); }
             ValidateWeaponKey(model.WeaponEntryId);
             foreach (GameProgressSkillLoadoutModel? tree in model.SkillTrees ?? new())
@@ -198,7 +199,7 @@ namespace ReconstructNodesServer.Services
                 character.Kind = model.Kind;
                 character.WeaponEntryKey = weaponKey;
                 character.WeaponQualityVersion = weaponKey == null ? null : model.WeaponQualityVersion;
-            }, model.Kind.ToString(CultureInfo.InvariantCulture));
+            }, CharacterKinds.Wire(model.Kind));
             List<CharacterSkillTree> trees = [];
             List<CharacterSkillNode> nodes = [];
             foreach (GameProgressSkillLoadoutModel input in model.SkillTrees ?? [])
@@ -260,17 +261,18 @@ namespace ReconstructNodesServer.Services
         }
 
         /// <summary>純函式版的解鎖檢查；rows 為 SkillAccessCondition 查出的 PlayerParams。</summary>
-        internal static void ValidateSkillAccess(int characterKind, List<GameProgressSkillLoadoutModel>? trees,
+        internal static void ValidateSkillAccess(CharacterKind characterKind, List<GameProgressSkillLoadoutModel>? trees,
             IEnumerable<PlayerParams> rows)
         {
             if (trees == null || trees.Count == 0) { return; }
             int defaultSkill = characterKind switch
             {
-                0 => 5, 1 => 0, 2 => 3, CoreKind => CoreDefaultSkillKind,
+                CharacterKind.Warrior => 5, CharacterKind.Archer => 0, CharacterKind.Mage => 3,
+                CharacterKind.Crusader => 5, CharacterKind.Core => CoreDefaultSkillKind,
                 _ => throw new BusinessArgumentException(ApiMessageKeys.CharacterKindInvalid),
             };
             var unlocked = rows.ToDictionary(row => (row.Group, row.Name), row => JsonSerializer.Deserialize<bool>(row.Value));
-            bool ActiveAllowed(int kind) => kind is >= 0 and <= 6 &&
+            bool ActiveAllowed(int kind) => kind is >= 0 and <= SkillLoadoutRules.MaxActiveSkillKind &&
                 (kind == 0 || kind == defaultSkill ||
                  unlocked.GetValueOrDefault(("game_progress.unlocked_bullet_kinds", kind.ToString(CultureInfo.InvariantCulture))));
             foreach (var tree in trees)

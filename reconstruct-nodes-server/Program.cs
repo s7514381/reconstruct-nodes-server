@@ -13,6 +13,7 @@ using ReconstructNodesServer.Utility;
 using Microsoft.AspNetCore.Mvc;
 using ReconstructNodesServer.Library.Models;
 using ReconstructNodesServer.Broadcast;
+using ReconstructNodesServer.Billing;
 
 var builder = ApplicationBuilderFactory.CreateBuilder(args);
 
@@ -96,6 +97,11 @@ services.AddSingleton(broadcastOptions);
 services.AddHttpClient<IBroadcastStore, FirebaseBroadcastStore>(client => client.Timeout = TimeSpan.FromSeconds(15));
 services.AddSingleton(TimeProvider.System);
 services.AddScoped<BroadcastService>();
+
+// Google Play 內購驗證：服務帳戶金鑰在 Secret，缺檔只讓購買端點回 503 類錯誤，不阻擋啟動。
+var googlePlayOptions = builder.Configuration.GetSection(GooglePlayBillingOptions.SectionName).Get<GooglePlayBillingOptions>() ?? new GooglePlayBillingOptions();
+services.AddSingleton(googlePlayOptions);
+services.AddHttpClient<IGooglePlayBilling, GooglePlayBilling>(client => client.Timeout = TimeSpan.FromSeconds(15));
 
 
 var app = builder.Build();

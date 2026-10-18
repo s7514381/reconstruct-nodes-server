@@ -34,7 +34,7 @@
   <ItemGroup>
     <Content Update="Secret\**\*" CopyToOutputDirectory="Never" CopyToPublishDirectory="Never" />
     <None Update="Secret\**\*" CopyToOutputDirectory="Never" CopyToPublishDirectory="Never" />
-    <Content Update="Secret\google-desktop.json;Secret\google-web.json;Secret\azure-storage.json;Secret\smtp.json;Secret\broadcast-admin.json;Secret\firebase-adminsdk.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Update="Secret\google-desktop.json;Secret\google-web.json;Secret\azure-storage.json;Secret\smtp.json;Secret\broadcast-admin.json;Secret\firebase-adminsdk.json;Secret\google-play.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

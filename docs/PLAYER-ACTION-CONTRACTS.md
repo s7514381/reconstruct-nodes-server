@@ -108,10 +108,40 @@ revision、`active_wave` 與 `wave_start` 子回執、最終回執同一批）�
 （`ReceiptsRead`、`RevisionsRead`、`Replay`、`AdvanceRows`、`CompleteReceipt`）。
 舊的內層 `progress_save` 子回執已不再寫入（外層回執已涵蓋重播）。
 
+## Google Play 內購
+
+`POST /Purchase/VerifyGooglePlay`：`{request_id, product_id, purchase_token}` →
+`{request_id, product_id, diamonds, items, consumed}`（`GooglePlayPurchaseReceipt`，不帶 revision）。
+商品目錄唯一來源是 `PurchaseCatalog`（目前 `diamond_100` → 100 鑽石）。
+
+`PurchaseCommand`：先讀回條與 `IapPurchase`（token 全域唯一），向 Google `purchases.products.get`
+確認已購買且未 consume，再以單一原子批次寫入 `IapPurchase`、鑽石（既有列相對加）與回條，
+提交後 consume（同時 acknowledge）。consume 失敗不回滾，回執 `consumed=false`，原請求重送會重試。
+同 request_id 重播原回條；同帳號以新 request_id 重送同 token 也重播原回條；他帳號用過的 token 回
+`backend.purchase.token_conflict`；Google 暫時不可用回 `backend.purchase.unavailable`（用戶端視為暫時，保留重試）。
+
+設定：`Secret/google-play.json`（服務帳戶金鑰，不進版控）、`GooglePlay:PackageName`（預設
+`org.reconstructnodes.game`）。部署前先套用 migration `AddIapPurchase`。完整設定步驟與用戶端流程見前端倉庫
+`docs/google-play-billing.md`。未涵蓋：Google 退款後的鑽石回收。
+
+## 每日簽到
+
+`POST /DailyCheckIn/Status`（無 body）→ `{month,today,required_days,can_claim,claimed:[{date,ordinal}],rewards:[{ordinal,item_id,amount}]}`；
+`POST /DailyCheckIn/Claim`：`{request_id}` → `{request_id,date,ordinal,item_id,amount,items}`（`DailyCheckInReceipt`，不帶 revision）。
+日期一律取伺服器本地日期（`TimeProvider`），用戶端不傳日期。每月累計簽到 `DailyCheckInCatalog.RequiredDays`（20）天即達成，
+第 n 次簽到領第 n 格獎勵；獎勵表唯一來源是 `DailyCheckInCatalog`，`Status` 回傳整張表供用戶端顯示。
+
+`DailyCheckInCommand`：批次讀取回條、本月紀錄與物品，再以單一原子批次寫入 `DailyCheckIn`、獎勵物品（既有列相對加）與回條。
+`DailyCheckIn(CreateUserId, DateKey)` 唯一索引保證並行請求同一天只成功一次；同 request_id 重播原回執；
+今天已簽到回 `backend.checkin.already_claimed`，本月已滿回 `backend.checkin.month_complete`，並行衝突回 `backend.economy.request_conflict`。
+部署前先套用 migration `AddDailyCheckIn`。未涵蓋：真實資料庫併發與時區邊界（離線測試只驗證批次內容與狀態推導）。
+
 ## 聚焦驗證
 
 ```powershell
 dotnet test reconstruct-nodes-server.Tests --filter FullyQualifiedName~BatchCommandTests   # 離線：批次命令 Prepare 邏輯，不連資料庫
+dotnet test reconstruct-nodes-server.Tests --filter FullyQualifiedName~PurchaseCommandTests   # 離線：內購發放批次內容，不連 Google／資料庫
+dotnet test reconstruct-nodes-server.Tests --filter FullyQualifiedName~DailyCheckInCommandTests   # 離線：簽到獎勵目錄、狀態推導與發放批次內容，不連資料庫
 dotnet test reconstruct-nodes-server.Tests --filter FullyQualifiedName~ForegroundRulesTests
 $env:FOREGROUND_SQL_TESTS='1'
 dotnet test reconstruct-nodes-server.Tests --filter TestCategory=ForegroundSql

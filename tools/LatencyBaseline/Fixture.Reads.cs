@@ -69,7 +69,7 @@ internal static partial class Fixture
             Require(await repository.QueryFirstAsync<int>(
                 "SELECT COUNT(*) FROM Player WITH (UPDLOCK,HOLDLOCK) WHERE Id=@Player AND ClientId=@ClientId AND IsClientLogin=1",
                 new { Player = player, ClientId = clientId }) == 1, "exact rich fixture identity");
-            var unarmed = new Character { CreateUserId = player, Kind = 0 };
+            var unarmed = new Character { CreateUserId = player, Kind = CharacterKind.Warrior };
             // Kind 0's default active skill is 5; active 0 is always available.
             // Do not seed locked skill 2 or an unknown/locked auxiliary loot ID.
             var tree = new CharacterSkillTree { CreateUserId = player, CharacterId = unarmed.Id, Kind = 5, Sequence = 0 };
@@ -122,7 +122,7 @@ internal static partial class Fixture
         }
         Require(characters.Count == 2, "rich character count");
         var equipped = characters.Single(c => c.Kind == CharacterService.CoreKind);
-        var unarmed = characters.Single(c => c.Kind == 0);
+        var unarmed = characters.Single(c => c.Kind == CharacterKind.Warrior);
         var equippedWeapon = weapons.Single(w => w.Id == "latency-rich-equipped");
         AssertUnarmed(unarmed);
         Require(equipped.WeaponEntryId == equippedWeapon.Id, "rich equipped weapon entry");
@@ -179,7 +179,7 @@ internal static partial class Fixture
 
     public static void ReadsSelfTest()
     {
-        AssertUnarmed(new CharacterModel { Kind = 0 });
+        AssertUnarmed(new CharacterModel { Kind = CharacterKind.Warrior });
         foreach (var invalid in new[]
         {
             new CharacterModel { WeaponEntryId = "unexpected-equipped" },

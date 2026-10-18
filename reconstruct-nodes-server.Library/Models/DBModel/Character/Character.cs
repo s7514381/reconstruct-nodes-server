@@ -6,7 +6,7 @@ namespace ReconstructNodesServer.Library.DBModel
     [Table(nameof(Character))]
     public class Character : ModelBase
     {
-        public int Kind { get => Get<int>(); set => Set(value); }
+        public CharacterKind Kind { get => Get<CharacterKind>(); set => Set(value); }
         public string WeaponEntryKey { get => Get<string>(); set => Set(value); }
         public int? WeaponQualityVersion { get => Get<int?>(); set => Set(value); }
         public int Strength { get => Get<int>(); set => Set(value); }

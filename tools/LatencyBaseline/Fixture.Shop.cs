@@ -7,7 +7,7 @@ using ReconstructNodesServer.Services;
 
 internal static partial class Fixture
 {
-    private sealed record ShopInventory(long Gold, Dictionary<int, CharacterModel> Characters,
+    private sealed record ShopInventory(long Gold, Dictionary<CharacterKind, CharacterModel> Characters,
         Dictionary<string, WeaponInstanceModel> Weapons, Dictionary<string, (int Amount, string Category)> Items);
     private sealed record DrawValidation(ShopInventory Expected, int NewCharacters, int SameBatchDuplicates);
 
@@ -79,10 +79,10 @@ internal static partial class Fixture
         Require(receipt.RequestId == request && receipt.Gold == before.Gold - DrawCost(count) &&
             receipt.Results.Count == count && receipt.State?.Version == 1, "draw exact receipt and debit");
         var state = receipt.State!;
-        var characters = new Dictionary<int, CharacterModel>(before.Characters);
+        var characters = new Dictionary<CharacterKind, CharacterModel>(before.Characters);
         var weapons = new Dictionary<string, WeaponInstanceModel>(before.Weapons);
         var items = new Dictionary<string, (int Amount, string Category)>(before.Items);
-        var newKinds = new HashSet<int>();
+        var newKinds = new HashSet<CharacterKind>();
         var touchedShards = new HashSet<string>();
         int sameBatchDuplicates = 0;
         foreach (var reward in receipt.Results)
@@ -103,7 +103,7 @@ internal static partial class Fixture
                 "first acquisition receipt");
             var character = state.Characters.Single(c => c.Id == reward.CharacterId);
             var weapon = state.Weapons.Single(w => w.Id == reward.WeaponEntryId);
-            int skill = reward.CharacterKind switch { 0 => 5, 1 => 0, 2 => 3, _ => -1 };
+            int skill = reward.CharacterKind switch { CharacterKind.Warrior => 5, CharacterKind.Archer => 0, CharacterKind.Mage => 3, CharacterKind.Crusader => 5, _ => -1 };
             Require(character.Kind == reward.CharacterKind && character.WeaponEntryId == weapon.Id &&
                 character.WeaponId == offer.WeaponId && character.WeaponRarity == "common" &&
                 character.WeaponQualityVersion == 2 && character.WeaponAffixes.Count == 0 &&

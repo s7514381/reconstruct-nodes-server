@@ -3,6 +3,15 @@ namespace ReconstructNodesServer.Library.Models
     public static class ApiMessageKeys
     {
         public const string ApiNotImplemented = "backend.api.not_implemented";
+        public const string PurchaseFailed = "backend.purchase.failed";
+        public const string PurchaseProductUnknown = "backend.purchase.product_unknown";
+        public const string PurchaseTokenInvalid = "backend.purchase.token_invalid";
+        public const string PurchaseNotCompleted = "backend.purchase.not_completed";
+        public const string PurchaseTokenConflict = "backend.purchase.token_conflict";
+        public const string PurchaseUnavailable = "backend.purchase.unavailable";
+        public const string CheckInFailed = "backend.checkin.failed";
+        public const string CheckInAlreadyClaimed = "backend.checkin.already_claimed";
+        public const string CheckInMonthComplete = "backend.checkin.month_complete";
         public const string AchievementMissing = "backend.achievement.missing";
         public const string AchievementSaveFailed = "backend.achievement.save_failed";
         public const string AchievementClaimFailed = "backend.achievement.claim_failed";
