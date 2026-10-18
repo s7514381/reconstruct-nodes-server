@@ -218,6 +218,91 @@ public class BatchCommandTests
         AssertKey(ApiMessageKeys.EconomyRequestConflict, () => CharacterAttributesCommand.Prepare(Player, request, payload + " ", state));
     }
 
+    // ---- Character/UpgradeSkillLinks ----
+
+    private static string Named(DynamicParameters parameters, string prefix) =>
+        parameters.ParameterNames.Single(name => name.StartsWith(prefix));
+
+    private static (SkillLinkUpgradeRequest Request, string Payload, SkillLinkUpgradeCommand.State State) LinkUpgrade(int linkCount)
+    {
+        var character = new Character { Kind = 0, SkillLinkCount = linkCount };
+        var request = new SkillLinkUpgradeRequest { RequestId = Guid.NewGuid(), CharacterId = character.Id };
+        var state = new SkillLinkUpgradeCommand.State
+        {
+            Characters = [character],
+            Revisions = [Revision(nameof(CharacterModel), 7)],
+        };
+        return (request, RevisionCommand.CanonicalPayload(request), state);
+    }
+
+    [TestMethod]
+    [DataRow(2, 3, 1)]
+    [DataRow(3, 4, 5)]
+    [DataRow(4, 5, 25)]
+    [DataRow(5, 6, 100)]
+    public void SkillLinks_upgrade_one_level_and_spend_the_listed_extractor_cost(int from, int to, int cost)
+    {
+        var (request, payload, state) = LinkUpgrade(from);
+        var commands = SkillLinkUpgradeCommand.Prepare(Player, request, payload, state);
+        // 回執由資料庫回填 material_count，離線只驗證傳入 SQL 的回執草稿。
+        var parameters = (DynamicParameters)commands[^1].Parameters!;
+        var receipt = System.Text.Json.JsonSerializer.Deserialize<CommandReceipt<SkillLinkUpgradeSnapshot>>(
+            parameters.Get<string>(Named(parameters, "Receipt")))!;
+        Assert.AreEqual(8, receipt.Revision);
+        Assert.AreEqual(to, receipt.Snapshot.Character.SkillLinkCount);
+        Assert.AreEqual(SkillLinkRules.UpgradeItemKey, parameters.Get<string>(Named(parameters, "ItemKey")));
+        Assert.AreEqual(-cost, parameters.Get<int>(Named(parameters, "Delta")));
+        StringAssert.Contains(AllSql(commands), "SET SkillLinkCount");
+    }
+
+    [TestMethod]
+    public void SkillLinks_reject_upgrade_at_max_unowned_character_and_replay_receipt()
+    {
+        var (request, payload, state) = LinkUpgrade(SkillLinkRules.MaxCount);
+        AssertKey(ApiMessageKeys.CharacterSkillLinkMax, () => SkillLinkUpgradeCommand.Prepare(Player, request, payload, state));
+
+        (request, payload, state) = LinkUpgrade(2);
+        state.Characters.Clear();
+        AssertKey(ApiMessageKeys.CharacterNotOwned, () => SkillLinkUpgradeCommand.Prepare(Player, request, payload, state));
+
+        (request, payload, state) = LinkUpgrade(2);
+        state.Receipts = [new EconomyRequest { RequestId = request.RequestId, Operation = "character.upgrade_skill_links", Payload = payload, Result = "{}" }];
+        Assert.AreEqual("SELECT @Receipt;", SkillLinkUpgradeCommand.Prepare(Player, request, payload, state).Single().Sql);
+        AssertKey(ApiMessageKeys.EconomyRequestConflict, () => SkillLinkUpgradeCommand.Prepare(Player, request, payload + " ", state));
+    }
+
+    [TestMethod]
+    public void SkillLoadoutRules_limit_chain_nodes_by_character_link_count()
+    {
+        static List<GameProgressSkillLoadoutModel> Chain(int nodes) =>
+        [
+            new() { Kind = 0, AuxiliaryNodes = Enumerable.Range(0, nodes - 1).Select(i => new GameProgressSkillNodeModel
+                { Type = GameProgressSkillNodeModel.AuxiliaryType, LootId = $"support_{i}" }).ToList() },
+        ];
+        SkillLoadoutRules.Validate(Chain(2), 2);
+        Assert.AreEqual("skill.loadout.chain_limit",
+            Assert.ThrowsExactly<BusinessArgumentException>(() => SkillLoadoutRules.Validate(Chain(3), 2)).ApiMessage.Key);
+        SkillLoadoutRules.Validate(Chain(3), 3);
+    }
+
+    [TestMethod]
+    public void SkillLoadoutRules_keep_cleared_slots_and_orphaned_triggered_skills()
+    {
+        static GameProgressSkillNodeModel Node(string type, string? lootId = null, int? kind = null) =>
+            new() { Type = type, LootId = lootId!, Kind = kind };
+        // 空格保留位置、不佔技能點；失去觸發來源的火球不阻擋儲存。
+        SkillLoadoutRules.Validate([new() { Kind = 0, AuxiliaryNodes = [
+            Node(GameProgressSkillNodeModel.EmptyType),
+            Node(GameProgressSkillNodeModel.ActiveType, kind: 1),
+        ] }], 3);
+        // 空格仍佔連線位置。
+        Assert.AreEqual("skill.loadout.chain_limit",
+            Assert.ThrowsExactly<BusinessArgumentException>(() => SkillLoadoutRules.Validate([new() { Kind = 0, AuxiliaryNodes = [
+                Node(GameProgressSkillNodeModel.EmptyType),
+                Node(GameProgressSkillNodeModel.AuxiliaryType, "multi_strike_gem"),
+            ] }], 2)).ApiMessage.Key);
+    }
+
     // ---- GameProgress/SetDeployment、SetBattlefield、TransitionWave ----
 
     private static GameProgressCommand.ProgressRows Progress(long gold = 1000, long revision = 3, int cleared = 5)
@@ -250,7 +335,7 @@ public class BatchCommandTests
     private static string Payload(object request) => System.Text.Json.JsonSerializer.Serialize(request, request.GetType());
 
     [TestMethod]
-    public void SetDeployment_charges_new_deployments_and_advances_revision_once()
+    public void SetDeployment_keeps_gold_and_advances_revision_once()
     {
         Guid character = Guid.NewGuid();
         var request = Deploy(character);
@@ -259,7 +344,7 @@ public class BatchCommandTests
         var receipt = Receipt<GameProgressModel>(commands);
         Assert.AreEqual(4, receipt.Revision);
         Assert.AreEqual(4, receipt.Snapshot.Revision);
-        Assert.AreEqual(940, receipt.Snapshot.Gold);
+        Assert.AreEqual(1000, receipt.Snapshot.Gold);
         Assert.AreEqual(1, receipt.Snapshot.DeploymentLog.Count);
         Assert.AreEqual(2, receipt.Snapshot.Wave);
         Assert.IsTrue(receipt.Snapshot.UnlockedBulletKinds.ContainsKey("2"));
@@ -268,7 +353,7 @@ public class BatchCommandTests
     }
 
     [TestMethod]
-    public void SetDeployment_checks_revision_gold_and_character_ownership()
+    public void SetDeployment_checks_revision_and_character_ownership_without_charging_gold()
     {
         Guid character = Guid.NewGuid();
         var request = Deploy(character, expected: 2);
@@ -277,10 +362,9 @@ public class BatchCommandTests
         Assert.AreEqual("concurrency.revision_conflict", conflict.ApiMessage.Key);
 
         request = Deploy(character);
-        var poor = Assert.ThrowsExactly<BusinessOperationException>(() => BattlefieldCommand.Prepare(
-            Player, request, Payload(request), BattleState(character, gold: 59), BattlefieldCommand.DeploymentPlan(request)));
-        Assert.AreEqual(ApiMessageKeys.EconomyInsufficientGold, poor.ApiMessage.Key);
-        Assert.AreEqual("60", poor.ApiMessage.Arguments["cost"]);
+        var free = BattlefieldCommand.Prepare(
+            Player, request, Payload(request), BattleState(character, gold: 0), BattlefieldCommand.DeploymentPlan(request));
+        Assert.IsFalse(AllSql(free).Contains("EconomyInsufficientGold"));
 
         AssertKey(ApiMessageKeys.ProgressCharacterNotOwned, () => BattlefieldCommand.Prepare(
             Player, request, Payload(request), BattleState(Guid.NewGuid()), BattlefieldCommand.DeploymentPlan(request)));

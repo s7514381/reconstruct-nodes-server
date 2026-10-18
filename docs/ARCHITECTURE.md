@@ -560,7 +560,7 @@ Step 4：依需要覆寫 `SetModel`、`ModelSave`、`ModelDelete`，或在 Contr
 
 角色與部署的新契約：
 - 角色 `id` 為穩定 GUID，`kind` 為種類，`name` 為名稱，`weapon_entry_id` 空字串表示卸下，`skill_trees` 為完整技能樹清單。只有 Shop/Draw 能建立擁有角色；Character/Save 拒絕未指定 Id 或尚未擁有的角色。裝備的其他輸出欄位由 Weapon 目前資料組出，不採信請求中的武器屬性。
-- 每棵技能樹含 `kind`、`auxiliary_nodes`；節點 `type = auxiliary` 必須有 `loot_id`，`type = active` 必須有 `kind`。`auxiliary_gem_ids` 僅為推導輸出。
+- 每棵技能樹含 `kind`、`auxiliary_nodes`；節點 `type = auxiliary` 必須有 `loot_id`，`type = active` 必須有 `kind`；`type = empty` 是被清空但保留位置的空格（佔連線位置、不佔技能點、戰鬥忽略）。失去觸發來源的 `active` 節點保留不拒絕，戰鬥時忽略。`auxiliary_gem_ids` 僅為推導輸出。
 - 角色 `weapon_quality_version` 由 EquipWeapon 設為現行 2，卸下時清除；不採信 legacy Save 的武器引用或此中繼資料。
 - GameProgress 移除 `character_weapons`；部署只含 `character_id`、`spot_index`、`wave` 與可選 `cell`，不再含角色名稱／種類／武器／技能快照。
 - 前端需先載入角色清單，再依部署的 `character_id` 使用角色目前武器／技能。角色改裝會影響後續讀取的所有部署，不保存部署歷史配置。舊前端契約不相容。

@@ -5,7 +5,7 @@ namespace ReconstructNodesServer.Services;
 /// <summary>Formal editing rules from CharacterSkillLoadout, SkillValidationService and SkillChainRules.</summary>
 public static class SkillLoadoutRules
 {
-    public static void Validate(List<GameProgressSkillLoadoutModel>? trees)
+    public static void Validate(List<GameProgressSkillLoadoutModel>? trees, int linkCount)
     {
         if (trees == null) { throw new BusinessArgumentException(ApiMessageKeys.SkillTreeRequired); }
         HashSet<int> roots = [];
@@ -16,14 +16,15 @@ public static class SkillLoadoutRules
             if (tree == null || tree.AuxiliaryNodes == null) { throw new BusinessArgumentException(ApiMessageKeys.SkillTreeRequired); }
             if (tree.Kind is < 0 or > 6 || !roots.Add(tree.Kind))
             { throw new BusinessArgumentException("skill.loadout.duplicate_or_invalid_root"); }
-            if (tree.AuxiliaryNodes.Count + 1 > 6) { throw new BusinessArgumentException("skill.loadout.chain_limit"); }
-            points = checked(points + tree.AuxiliaryNodes.Count + 1);
+            if (tree.AuxiliaryNodes.Count + 1 > Math.Clamp(linkCount, SkillLinkRules.InitialCount, SkillLinkRules.MaxCount)) { throw new BusinessArgumentException("skill.loadout.chain_limit"); }
+            points = checked(points + tree.AuxiliaryNodes.Count(n => n?.Type != GameProgressSkillNodeModel.EmptyType) + 1);
             bool attackSource = tree.Kind is 0 or 2 or 3 or 4 or 5;
             bool trigger = false, aura = false;
             HashSet<int> triggeredSkills = [];
             foreach (var node in tree.AuxiliaryNodes)
             {
                 if (node == null) { throw new BusinessArgumentException(ApiMessageKeys.SkillNodeRequired); }
+                if (node.Type == GameProgressSkillNodeModel.EmptyType) { continue; }
                 if (node.Type == GameProgressSkillNodeModel.AuxiliaryType)
                 {
                     if (string.IsNullOrWhiteSpace(node.LootId) || !supports.Add(node.LootId))
@@ -38,7 +39,9 @@ public static class SkillLoadoutRules
                 }
                 else if (node.Type == GameProgressSkillNodeModel.ActiveType)
                 {
-                    if (!trigger || !attackSource || node.Kind != 1 || !triggeredSkills.Add(node.Kind.Value))
+                    // 失去觸發來源的被觸發技能（例如來源被清空）保留在原位，戰鬥時忽略，不阻擋儲存。
+                    if (!trigger) { continue; }
+                    if (!attackSource || node.Kind != 1 || !triggeredSkills.Add(node.Kind.Value))
                     { throw new BusinessOperationException("skill.chain.trigger_target_spell"); }
                     trigger = false;
                 }

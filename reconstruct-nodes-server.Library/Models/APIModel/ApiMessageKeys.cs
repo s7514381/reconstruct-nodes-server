@@ -57,6 +57,7 @@ namespace ReconstructNodesServer.Library.Models
         public const string CharacterNotOwned = "backend.character.not_owned";
         public const string CharacterAttributesInvalid = "backend.character.attributes_invalid";
         public const string CharacterAttributesExceeded = "backend.character.attributes_exceeded";
+        public const string CharacterSkillLinkMax = "backend.character.skill_link_max";
         public const string WeaponIdInvalid = "backend.weapon.id_invalid";
         public const string SkillTreeRequired = "backend.skill.tree_required";
         public const string SkillNodeRequired = "backend.skill.node_required";

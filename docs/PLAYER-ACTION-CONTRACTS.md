@@ -60,6 +60,7 @@ skill_suffixes／refine_item_counts 不再保存或回傳，資料庫歷史群�
 |---|---|---|
 | `Character/ConfigureSkills` | `character_id: UUID, skill_trees: GameProgressSkillLoadoutModel[]` | CharacterModel |
 | `Character/ConfigureAttributes` | `request_id, character_id: UUID, strength: int, intelligence: int, dexterity: int`（`CharacterAttributesRequest`，整體覆寫，不帶 expected_revision） | `CommandReceipt<CharacterModel>`（含 `strength` / `intelligence` / `dexterity`） |
+| `Character/UpgradeSkillLinks` | `request_id, character_id: UUID`（`SkillLinkUpgradeRequest`，不帶 expected_revision；每次升一級） | `CommandReceipt<SkillLinkUpgradeSnapshot>`（`character`（含 `skill_link_count`）＋`material_count` 剩餘能量萃取器） |
 | `Talent/LearnTalent` | `tree_id: string, node_id: string` | TalentModel |
 | `Talent/RefundTalent` | `tree_id: string, node_id: string`，退整個節點所有級數 | TalentModel |
 | `Talent/ResetTalents` | `tree_id: string|null`，null 退全部樹 | TalentModel |
@@ -67,6 +68,11 @@ skill_suffixes／refine_item_counts 不再保存或回傳，資料庫歷史群�
 | `GameProgress/SetBattlefield` | `battlefield: GameProgressBattlefieldModel, deployment_log: GameProgressDeploymentModel[] 或 null` | `{progress: GameProgressModel, session: WaveStartResult}` |
 | `GameProgress/TransitionWave` | `wave: int, difficulty: int, challenge: bool` | `{progress: GameProgressModel, session: WaveStartResult}` |
 | `AchievementProgress/ClaimReward` | `achievement_item_id: string` | `{progress: AchievementProgressModel, items: Item[]}` |
+
+技能連線數（`Character.SkillLinkCount`，一條技能鏈含主動技能的節點上限）初始 2、上限 6；`Character/UpgradeSkillLinks`
+同交易扣除物品 `energy_extractor`（2→3 需 1、3→4 需 5、4→5 需 25、5→6 需 100，數量不足回 `backend.item.insufficient`，
+已達上限回 `backend.character.skill_link_max`）。`ConfigureSkills` 以角色目前連線數驗證鏈長。費用與常數唯一來源為 `SkillLinkRules`，
+客戶端 `SkillLinkRules` 必須同步。遷移會把既有角色連線數設為其最長既有鏈長（至少 2）。
 
 天賦命令從伺服器現有點數／進度執行，正式 180 節點的費用、級數、前置滿級及「前一段自身
 投入至少 6 點」依客戶端 `TalentPointRegistry`／`ManaTalentPoint` 驗證；單點退款會檢查其餘

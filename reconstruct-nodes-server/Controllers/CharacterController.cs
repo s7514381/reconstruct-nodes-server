@@ -6,8 +6,14 @@ using ReconstructNodesServer.Services;
 namespace ReconstructNodesServer.Controllers
 {
     public class CharacterController(BaseApiArgument argument, CharacterService service, SkillLoadoutCommand skills,
-        EquipWeaponCommand equip, CharacterAttributesCommand attributes) : AuthorizeApiController(argument)
+        EquipWeaponCommand equip, CharacterAttributesCommand attributes, SkillLinkUpgradeCommand skillLinks)
+        : AuthorizeApiController(argument)
     {
+        [HttpPost]
+        public Task<IActionResult> UpgradeSkillLinks(SkillLinkUpgradeRequest request) =>
+            TransactionResultAsync(() => skillLinks.Execute(request), ApiMessageKeys.CharacterSaveFailed,
+                commandOwnsTransaction: true);
+
         [HttpPost]
         public Task<IActionResult> ConfigureAttributes(CharacterAttributesRequest request) =>
             TransactionResultAsync(() => attributes.Execute(request), ApiMessageKeys.CharacterSaveFailed,

@@ -93,9 +93,9 @@ public class SkillLoadoutCommand(BaseServiceArgument argument) : BaseService(arg
         long fence = current > 0 && scopeRow != null ? long.Parse(scopeRow.Value, CultureInfo.InvariantCulture) : current > 0 ? 0 : current;
         RevisionCommand.CheckValues(Domain, request.ExpectedRevision, current, fence);
 
-        SkillLoadoutRules.Validate(request.SkillTrees);
         Character character = state.Characters.SingleOrDefault(c => c.Status != Library.Models.Enum.EStatus.刪除)
             ?? throw new BusinessArgumentException(ApiMessageKeys.CharacterNotOwned);
+        SkillLoadoutRules.Validate(request.SkillTrees, character.SkillLinkCount);
         CharacterService.ValidateSkillAccess(character.Kind, request.SkillTrees, state.Unlocks);
 
         List<CharacterSkillTree> trees = [];

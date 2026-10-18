@@ -66,6 +66,22 @@ public sealed class CharacterAttributesRequest : CommandRequest
     public int Dexterity { get; set; }
 }
 
+/// <summary>消耗能量萃取器把角色技能連線數升一級；每次只升一級，費用由 SkillLinkRules 決定。</summary>
+public sealed class SkillLinkUpgradeRequest : CommandRequest
+{
+    [JsonPropertyName("character_id")]
+    public Guid CharacterId { get; set; }
+}
+
+public sealed class SkillLinkUpgradeSnapshot
+{
+    [JsonPropertyName("character")]
+    public CharacterModel Character { get; set; } = new();
+    /// <summary>扣除後能量萃取器的剩餘數量，由資料庫在同一交易回填。</summary>
+    [JsonPropertyName("material_count")]
+    public int MaterialCount { get; set; }
+}
+
 public sealed class SkillLoadoutRequest : ExpectedRevisionRequest
 {
     [JsonPropertyName("character_id")]

@@ -217,6 +217,9 @@ namespace ReconstructNodesServer.Migrations
                     b.Property<int?>("Sequence")
                         .HasColumnType("int");
 
+                    b.Property<int>("SkillLinkCount")
+                        .HasColumnType("int");
+
                     b.Property<short?>("Status")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("smallint")

@@ -16,7 +16,6 @@ namespace ReconstructNodesServer.Services
     {
         private const string ProgressGroup = GameProgressParamGroups.Progress;
         private const string SettingGroupPrefix = GameProgressParamGroups.SettingPrefix;
-        internal const long DeploymentCost = 60;
 
         // LIKE 中的 [_] 代表字面底線，避免底線被當成萬用字元
         private const string ProgressRowFilter = "([Group] = 'game_progress' OR [Group] LIKE 'game[_]progress.%')";

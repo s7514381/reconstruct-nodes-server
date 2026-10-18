@@ -24,6 +24,9 @@ namespace ReconstructNodesServer.Library.Models
         [JsonPropertyName("dexterity")]
         public int Dexterity { get; set; }
 
+        [JsonPropertyName("skill_link_count")]
+        public int SkillLinkCount { get; set; } = SkillLinkRules.InitialCount;
+
         [JsonPropertyName("weapon_quality_version")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public int? WeaponQualityVersion { get; set; }

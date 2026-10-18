@@ -118,10 +118,8 @@ public class BattlefieldCommand(BaseServiceArgument argument) : BaseService(argu
 
         GameProgressCommand.ValidateProgress(model);
         GameProgressCommand.ValidateCharacters(model.DeploymentLog ?? [], state.Characters.ToHashSet());
-        int added = GameProgressCommand.NewDeploymentCount(model, rows.Deployments);
         PlayerParams? goldRow = rows.Parameters.SingleOrDefault(row => row.Group == "game_progress" && row.Name == "gold");
         var account = new GoldCommand.GoldBalance(goldRow == null ? GoldCommand.StartingGold : GoldCommand.ReadBalance(goldRow));
-        if (added > 0) { GoldCommand.Spend(account, checked(added * GameProgressCommand.DeploymentCost)); }
 
         var writes = new SqlWriteBatch(playerId);
         long next = RevisionCommand.AdvanceRows(writes, rows.Parameters, Domain);

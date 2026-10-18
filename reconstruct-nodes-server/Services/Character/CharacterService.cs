@@ -101,6 +101,7 @@ namespace ReconstructNodesServer.Services
                     Strength = row.Strength,
                     Intelligence = row.Intelligence,
                     Dexterity = row.Dexterity,
+                    SkillLinkCount = row.SkillLinkCount,
                     SkillTrees = treesByCharacter[row.Id].Select(tree => new GameProgressSkillLoadoutModel
                     {
                         Kind = tree.Kind,
@@ -161,6 +162,7 @@ namespace ReconstructNodesServer.Services
                 foreach (GameProgressSkillNodeModel? node in tree.AuxiliaryNodes ?? new())
                 {
                     if (node == null) { throw new BusinessArgumentException(ApiMessageKeys.SkillNodeRequired); }
+                    if (node.Type == GameProgressSkillNodeModel.EmptyType) { continue; }
                     if (node.Type == GameProgressSkillNodeModel.AuxiliaryType)
                     {
                         if (string.IsNullOrEmpty(node.LootId)) { throw new BusinessArgumentException(ApiMessageKeys.SkillLootRequired); }
