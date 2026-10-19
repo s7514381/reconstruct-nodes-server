@@ -6,7 +6,7 @@ using ReconstructNodesServer.Services;
 namespace ReconstructNodesServer.Controllers
 {
     /// <summary>
-    /// 驗證本機已保存的 Token 是否仍對應有效 session，並回報登入種類（google / guest）。
+    /// 驗證本機已保存的 Token 是否仍對應有效 session，並回報登入種類（google / email / guest）。
     /// 不回傳 Token；客戶端據此決定可信恢復或要求重新登入。
     /// </summary>
     public class SessionController(BaseApiArgument argument, PlayerService playerService) : AuthorizeApiController(argument)
@@ -23,6 +23,7 @@ namespace ReconstructNodesServer.Controllers
             // IsClientLogin 為權威來源：舊版可能把 GoogleId 寫到訪客列，訪客列不得被回報為 google
             string loginKind = player.IsClientLogin ? "guest"
                 : !string.IsNullOrEmpty(player.GoogleId) ? "google"
+                : !string.IsNullOrEmpty(player.Email) ? "email"
                 : "other";
             return Ok(BackendApiResult<BackendSessionInfo>.Create(200, string.Empty, new BackendSessionInfo(loginKind, player.Name ?? string.Empty)));
         }

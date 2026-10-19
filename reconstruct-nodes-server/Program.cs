@@ -61,6 +61,7 @@ if (serviceList != null)
 services.AddTransient(typeof(Lazy<>), typeof(Lazier<>));
 
 services.AddSingleton<MailSender>();
+services.AddSingleton<EmailChallengeStore>();
 services.AddSingleton<AzureStoreService>();
 //
 

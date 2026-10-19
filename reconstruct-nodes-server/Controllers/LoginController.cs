@@ -29,6 +29,9 @@ namespace ReconstructNodesServer.Controllers
             // Google 必須由後端驗證 ID Token 後取得 sub；客戶端傳入的 GoogleId 不可信，改由 GoogleAuth/Login 處理
             if (model.Type == ELoginType.Google) { return BadRequest(BackendApiResult<object>.Create(400, ApiMessageKeys.AuthGoogleRequired)); }
 
+            // Email 一律走 EmailAuth（加鹽雜湊、限次嘗試、綁定裝置）；舊的 EmailVerify 流程驗證碼可被暴力猜測，不再接受 Email 登入
+            if (model.Type == ELoginType.Email) { return BadRequest(BackendApiResult<object>.Create(400, ApiMessageKeys.AuthEmailRequired)); }
+
             ResultModel<LoginResponse> result = new();
             result.Data = new();
 

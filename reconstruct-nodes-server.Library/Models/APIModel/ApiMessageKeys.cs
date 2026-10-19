@@ -117,6 +117,13 @@ namespace ReconstructNodesServer.Library.Models
         public const string AuthGoogleRejected = "backend.auth.google_rejected";
         public const string AuthGoogleRequired = "backend.auth.google_required";
         public const string AuthEncodeInvalid = "backend.auth.encode_invalid";
+        public const string AuthEmailInvalid = "backend.auth.email_invalid";
+        public const string AuthEmailCodeInvalid = "backend.auth.email_code_invalid";
+        public const string AuthEmailCodeExpired = "backend.auth.email_code_expired";
+        public const string AuthEmailTooManyAttempts = "backend.auth.email_too_many_attempts";
+        public const string AuthEmailRateLimited = "backend.auth.email_rate_limited";
+        public const string AuthEmailUnavailable = "backend.auth.email_unavailable";
+        public const string AuthEmailRequired = "backend.auth.email_required";
         public const string HomeWelcome = "backend.home.welcome";
     }
 }

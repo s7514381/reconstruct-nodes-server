@@ -28,6 +28,13 @@ namespace ReconstructNodesServer.Utility
 
         public async Task SentAsync(string toEmail, IEnumerable<string>? ccEmail, string subject, string message)
         {
+            try { await SendOrThrowAsync(toEmail, ccEmail, subject, message); }
+            catch (Exception) { }
+        }
+
+        /// <summary>寄信失敗時拋出例外；驗證信等必須知道結果的流程使用，不吞錯。</summary>
+        public async Task SendOrThrowAsync(string toEmail, IEnumerable<string>? ccEmail, string subject, string message)
+        {
             using var client = new SmtpClient();
             try
             {
@@ -61,7 +68,6 @@ namespace ReconstructNodesServer.Utility
                     _config.Password ?? throw new InvalidOperationException("SMTP 密碼未設定。"));
                 await client.SendAsync(Message);
             }
-            catch (Exception) { }
             finally 
             {
                 if (client.IsConnected)

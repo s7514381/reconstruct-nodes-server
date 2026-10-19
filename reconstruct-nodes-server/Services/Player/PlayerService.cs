@@ -88,6 +88,38 @@ namespace ReconstructNodesServer.Services
             return player;
         }
 
+        /// <summary>Email 玩家：只查非訪客列，信箱需已正規化（小寫）。與 Google／訪客列互相獨立，不遷移進度。</summary>
+        public async Task<Player?> FindEmailPlayer(string email)
+        {
+            string sql = @"select top 1 *
+                             from Player
+                            where Email = @Email
+                              and IsClientLogin = 0";
+            return await QueryFirstAsync<Player?>(sql, new { Email = email });
+        }
+
+        /// <summary>通過信箱驗證後找到或建立 Email 玩家，並把 ClientId 綁定為目前（可信）裝置。</summary>
+        public async Task<Player> FindOrCreateEmail(string email, string clientId, string displayName)
+        {
+            Player? player = await FindEmailPlayer(email);
+            if (player != null)
+            {
+                player.ClientId = clientId;
+                return player;
+            }
+
+            player = new Player()
+            {
+                Name = displayName,
+                Token = Guid.NewGuid(),
+                Email = email,
+                ClientId = clientId,
+                IsClientLogin = false,
+            };
+            await InsertAsync(player);
+            return player;
+        }
+
         public async Task<Player?> GetDataByEmail(string email)
         {
             string sql = $@"select top 1 *

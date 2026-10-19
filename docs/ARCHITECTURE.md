@@ -478,7 +478,9 @@ Step 4：依需要覆寫 `SetModel`、`ModelSave`、`ModelDelete`，或在 Contr
 | `POST DeviceAuth/Login` | `BaseApiController` | 否 | Body `{ClientId, Locale}`，找回或建立訪客帳號並重置 Token，回傳 `Data {Token, Name}`。 |
 | `POST GoogleAuth/Login` | `BaseApiController` | 否 | Body `{Code, CodeVerifier, RedirectUri, Locale}`，桌面 PKCE 授權碼流程，回傳 `Data {Token, Name}`。規格見 `docs/GOOGLE_AUTH.md`。 |
 | `POST GoogleAuth/LoginIdToken` | `BaseApiController` | 否 | Body `{IdToken, Locale}`，Android Credential Manager 的 ID Token 流程，以 `ServerClientId` 作為 audience，回傳 `Data {Token, Name}`。 |
-| `POST Session/Validate` | `AuthorizeApiController` | 是 | 回傳 `Data {LoginKind, Name}`，`LoginKind` 為 `google`／`guest`／`other`，以 `IsClientLogin` 為權威來源。 |
+| `POST EmailAuth/Login` | `BaseApiController` | 否 | Body `{Email, ClientId, Locale}`，可信裝置直接回 `Data {Token, Name}`；新信箱或換裝置寄 6 位數驗證碼並回 `VerificationRequired`。規格見 `docs/EMAIL_AUTH.md`。 |
+| `POST EmailAuth/Verify` | `BaseApiController` | 否 | Body `{Email, ClientId, Code, Locale}`，驗證成功才建立／取得 Email 玩家、綁定目前裝置並重置 Token。 |
+| `POST Session/Validate` | `AuthorizeApiController` | 是 | 回傳 `Data {LoginKind, Name}`，`LoginKind` 為 `google`／`email`／`guest`／`other`，以 `IsClientLogin` 為權威來源。 |
 | `POST GameProgress/Get` | `AuthorizeApiController` | 是 | 讀取遊戲進度；無資料回 404 envelope。 |
 | `POST GameProgress/Save` | `AuthorizeApiController` | 是 | Body `GameProgressModel`，覆寫進度、部署與道路；不更動角色及其配置。部署使用 `character_id` 引用本人角色。 |
 | `POST Character/GetList` | `AuthorizeApiController` | 是 | 讀取本人擁有角色，含目前武器與技能樹；交易內冪等補齊 kind=3 核心（空手、初始火球 kind=1），故新帳號至少回傳核心。 |
