@@ -118,7 +118,7 @@ public class WaveCompleteCommand(BaseServiceArgument argument) : BaseService(arg
         long revision = Revision();
         if (!model.WaveCompleted)
         {
-            int cleared = Math.Max(model.ClearedWaves.Count, 4);
+            int cleared = Math.Max(model.ClearedWaves.Count, StageRules.SlotCount);
             for (int i = 0; i < cleared; i++)
             {
                 string value = i < model.ClearedWaves.Count ? model.ClearedWaves[i].GetRawText() : "0";

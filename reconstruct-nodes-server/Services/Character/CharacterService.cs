@@ -15,8 +15,6 @@ namespace ReconstructNodesServer.Services
         // BulletData.FIREBALL -> ActiveSkill.FIREBALL（遊戲端穩定種類值）。
         public const int CoreDefaultSkillKind = 1;
 
-        protected override string? NaturalKeyField => nameof(Character.Kind);
-
         public virtual async Task<List<CharacterModel>> GetList()
         {
             List<Character> characters = await QueryOwnedRowsAsync(orderBy: row => row.Kind);
@@ -53,7 +51,7 @@ namespace ReconstructNodesServer.Services
                 INSERT INTO CharacterSkillTree (Id, CreateDate, CreateUserId, Status, CharacterId, Kind, Sequence)
                 VALUES (NEWID(), GETDATE(), @CreateUserId, {(int)EStatus.啟用}, @Core, {CoreDefaultSkillKind}, 0);
             END
-            {OwnedSql.Select<Character>(orderBy: "Kind")}
+            {OwnedSql.Select<Character>(orderBy: "Kind, CreateDate, Id")}
             {OwnedSql.Children<CharacterSkillTree, Character>(activeChildren: true)}
             {OwnedSql.Descendants<CharacterSkillNode, CharacterSkillTree, Character>(activeChildren: true, activeMiddle: true)}
             SELECT w.* INTO #EquippedWeapons FROM Weapon w
@@ -103,6 +101,9 @@ namespace ReconstructNodesServer.Services
                     Intelligence = row.Intelligence,
                     Dexterity = row.Dexterity,
                     SkillLinkCount = row.SkillLinkCount,
+                    Level = row.Level,
+                    Personality = row.Personality,
+                    Fate = row.Fate,
                     SkillTrees = treesByCharacter[row.Id].Select(tree => new GameProgressSkillLoadoutModel
                     {
                         Kind = tree.Kind,
@@ -139,7 +140,7 @@ namespace ReconstructNodesServer.Services
             { throw new BusinessArgumentException(ApiMessageKeys.WeaponIdInvalid); }
         }
 
-        private async Task ValidateWeaponAsync(string? weaponKey, CharacterKind kind)
+        private async Task ValidateWeaponAsync(string? weaponKey, Guid characterId)
         {
             if (weaponKey == null) { return; }
             var weapons = await QueryAsync<Guid>(
@@ -147,8 +148,8 @@ namespace ReconstructNodesServer.Services
                 new { CreateUserId = _playerId, EntryKey = weaponKey });
             if (!weapons.Any()) { throw new BusinessArgumentException(ApiMessageKeys.WeaponNotOwned); }
             var equipped = await QueryAsync<int>(
-                OwnedSql.Select<Character>("WeaponEntryKey=@EntryKey AND Kind != @Kind", "Kind"),
-                new { CreateUserId = _playerId, EntryKey = weaponKey, Kind = kind });
+                OwnedSql.Select<Character>("WeaponEntryKey=@EntryKey AND Id != @CharacterId", "Kind"),
+                new { CreateUserId = _playerId, EntryKey = weaponKey, CharacterId = characterId });
             if (equipped.Any()) { throw new BusinessArgumentException(ApiMessageKeys.WeaponAlreadyEquipped); }
         }
 
@@ -179,27 +180,21 @@ namespace ReconstructNodesServer.Services
 
         protected override async Task SaveSnapshot(CharacterModel model)
         {
-            if (model.Id.HasValue)
-            {
-                var owned = (await QueryOwnedRowsAsync(ids: [model.Id.Value])).SingleOrDefault();
-                if (owned == null) { throw new BusinessArgumentException(ApiMessageKeys.CharacterNotFound); }
-                if (owned.Kind != model.Kind) { throw new BusinessArgumentException(ApiMessageKeys.CharacterKindImmutable); }
-                // Legacy character snapshots still own skill configuration, never equipment.
-                model.WeaponEntryId = owned.WeaponEntryKey ?? "";
-                model.WeaponQualityVersion = owned.WeaponQualityVersion;
-            }
+            // 一般角色可重複取得，Kind 不再能指認實例；快照只更新已存在的本人角色（建立只發生在商店抽取與核心補建）。
+            Character row = (await QueryOwnedRowsAsync(ids: [model.Id!.Value])).SingleOrDefault()
+                ?? throw new BusinessArgumentException(ApiMessageKeys.CharacterNotFound);
+            if (row.Kind != model.Kind) { throw new BusinessArgumentException(ApiMessageKeys.CharacterKindImmutable); }
+            // Legacy character snapshots still own skill configuration, never equipment.
+            model.WeaponEntryId = row.WeaponEntryKey ?? "";
+            model.WeaponQualityVersion = row.WeaponQualityVersion;
             await ValidateSkillAccessAsync(model);
 
             string? weaponKey = string.IsNullOrEmpty(model.WeaponEntryId) ? null : model.WeaponEntryId;
-            await ValidateWeaponAsync(weaponKey, model.Kind);
+            await ValidateWeaponAsync(weaponKey, row.Id);
 
-            (Character row, bool isNew) = await UpsertSnapshotParentAsync(character =>
-            {
-                if (model.Id.HasValue && model.Id != character.Id) { throw new BusinessArgumentException(ApiMessageKeys.CharacterKindMismatch); }
-                character.Kind = model.Kind;
-                character.WeaponEntryKey = weaponKey;
-                character.WeaponQualityVersion = weaponKey == null ? null : model.WeaponQualityVersion;
-            }, CharacterKinds.Wire(model.Kind));
+            row.WeaponEntryKey = weaponKey;
+            row.WeaponQualityVersion = weaponKey == null ? null : model.WeaponQualityVersion;
+            await UpdateAsync(row);
             List<CharacterSkillTree> trees = [];
             List<CharacterSkillNode> nodes = [];
             foreach (GameProgressSkillLoadoutModel input in model.SkillTrees ?? [])
@@ -243,7 +238,7 @@ namespace ReconstructNodesServer.Services
                     CharacterSkillTreeId uniqueidentifier, NodeType nvarchar(max), LootId nvarchar(max), Kind int);
                 """, new
             {
-                CreateUserId = _playerId, CharacterId = row.Id, ReplaceChildren = !isNew,
+                CreateUserId = _playerId, CharacterId = row.Id, ReplaceChildren = true,
                 Trees = JsonSerializer.Serialize(trees), Nodes = JsonSerializer.Serialize(nodes),
             });
             model.Id = row.Id;
@@ -268,7 +263,12 @@ namespace ReconstructNodesServer.Services
             int defaultSkill = characterKind switch
             {
                 CharacterKind.Warrior => 5, CharacterKind.Archer => 0, CharacterKind.Mage => 3,
-                CharacterKind.Crusader => 5, CharacterKind.Core => CoreDefaultSkillKind,
+                CharacterKind.Crusader => 5, CharacterKind.ShadowMage => 2, CharacterKind.IceMage => 2,
+                CharacterKind.FireMage => 1, CharacterKind.ShadowAssassin => 5, CharacterKind.FlameSwordsman => 5,
+                CharacterKind.WindHunter => 0,
+                CharacterKind.Ranger => 0,
+                CharacterKind.DesertRanger => 0,
+                CharacterKind.Core => CoreDefaultSkillKind,
                 _ => throw new BusinessArgumentException(ApiMessageKeys.CharacterKindInvalid),
             };
             var unlocked = rows.ToDictionary(row => (row.Group, row.Name), row => JsonSerializer.Deserialize<bool>(row.Value));

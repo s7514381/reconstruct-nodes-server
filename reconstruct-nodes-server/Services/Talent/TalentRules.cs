@@ -4,33 +4,50 @@ using ReconstructNodesServer.Library.Models;
 namespace ReconstructNodesServer.Services;
 
 /// <summary>
-/// Transaction metadata verified against TalentPointRegistry and ManaTalentPoint.
-/// Ordering is by stage/branch, NOT numeric node id. Effects are intentionally absent.
+/// Transaction metadata verified against the client's TalentTreeLayout / TalentCatalog (8 boards x 22 nodes).
+/// Stage 1: 1-3 (3 levels). Stage 2: 4-9, stage 3: 10-15 (2 levels; first three are upgrades of the previous
+/// stage's first three). Stage 4: 16-20 (1 level; 16-18 upgrade 13-15). Stage 5: keystones 21/22 (1 level, mutually
+/// exclusive). Effects are intentionally absent.
 /// </summary>
 public static class TalentRules
 {
-    public sealed record Node(string Id, int Stage, int MaxLevel, string? Prerequisite);
+    public sealed record Node(string Id, int Stage, int MaxLevel, string? Prerequisite, string? Exclusive = null);
+
+    /// <summary>Client save version that introduced the 8-board layout.</summary>
+    public const int CurrentVersion = 4;
+
+    private static readonly int[] StageStarts = [1, 4, 10, 16, 21];
+    private static readonly int[] StageSizes = [3, 6, 6, 5, 2];
+    private static readonly int[] StageMaxLevels = [3, 2, 2, 1, 1];
+    private static readonly int[] StageRequirements = [0, 6, 6, 6, 4];
+
+    private static readonly string[] RemovedTrees =
+    [
+        "weapon_sword", "weapon_staff", "weapon_bow", "element_fire", "element_ice",
+        "element_lightning", "special_critical", "special_cooldown", "special_mana", "element_poison",
+    ];
+
     private static readonly IReadOnlyDictionary<string, IReadOnlyDictionary<string, Node>> Trees =
         new Dictionary<string, IReadOnlyDictionary<string, Node>>
         {
-            ["weapon_sword"] = Build("sword", [1,2,3,7,8,4,5,6,9,12,10,16,11,13,14,20,18,19,15,17]),
-            ["weapon_staff"] = Build("staff", [1,2,4,3,13,6,5,7,8,12,14,11,9,15,16,10,18,17,19,20]),
-            ["weapon_bow"] = Build("bow", [1,2,3,7,10,5,4,6,8,11,9,14,12,13,16,20,17,19,15,18]),
-            ["element_fire"] = Build("fire", [1,2,5,3,4,7,6,8,9,12,14,10,11,13,16,19,18,17,15,20]),
-            ["element_ice"] = Build("ice", [1,2,4,3,5,7,6,8,9,12,16,10,11,13,14,17,18,19,15,20]),
-            ["element_lightning"] = Build("lightning", [1,2,3,4,5,7,6,8,10,13,14,9,11,12,15,17,18,19,16,20]),
-            ["special_critical"] = Build("critical", [1,2,3,4,9,5,6,7,8,13,15,10,11,14,16,17,12,19,18,20]),
-            ["special_cooldown"] = Build("cooldown", [1,2,3,8,9,11,4,5,7,13,12,6,10,14,16,17,19,18,15,20]),
-            ["special_mana"] = Build("mana", Enumerable.Range(1,20).ToArray()),
+            ["t_strength"] = Build("str"),
+            ["t_dexterity"] = Build("dex"),
+            ["t_intelligence"] = Build("int"),
+            ["t_fire"] = Build("fire"),
+            ["t_ice"] = Build("ice"),
+            ["t_lightning"] = Build("ltn"),
+            ["t_critical"] = Build("crit"),
+            ["t_swift"] = Build("swift"),
         };
 
-    private static IReadOnlyDictionary<string, Node> Build(string prefix, int[] order) =>
-        order.Select((number, index) =>
+    private static IReadOnlyDictionary<string, Node> Build(string prefix) =>
+        Enumerable.Range(1, StageSizes.Sum()).Select(number =>
         {
-            int stage = index < 3 ? 1 : index < 9 ? 2 : index < 15 ? 3 : 4;
-            int start = stage switch { 1 => 0, 2 => 3, 3 => 9, _ => 15 };
-            string? prerequisite = stage > 1 && index - start < 3 ? $"{prefix}_{order[index - 3]:D2}" : null;
-            return new Node($"{prefix}_{number:D2}", stage, stage == 1 ? 3 : stage == 4 ? 1 : 2, prerequisite);
+            int stage = Array.FindLastIndex(StageStarts, start => number >= start) + 1;
+            int offset = number - StageStarts[stage - 1];
+            string? prerequisite = stage is >= 2 and <= 4 && offset < 3 ? $"{prefix}_{number - 3:D2}" : null;
+            string? exclusive = stage == 5 ? $"{prefix}_{(number == 21 ? 22 : 21):D2}" : null;
+            return new Node($"{prefix}_{number:D2}", stage, StageMaxLevels[stage - 1], prerequisite, exclusive);
         }).ToDictionary(node => node.Id);
 
     public static Node Get(string tree, string node) =>
@@ -45,7 +62,9 @@ public static class TalentRules
     {
         var nodes = Trees[tree];
         if (node.Prerequisite != null && Level(progress, node.Prerequisite) < nodes[node.Prerequisite].MaxLevel) { return false; }
-        return node.Stage == 1 || nodes.Values.Where(n => n.Stage == node.Stage - 1).Sum(n => Math.Min(n.MaxLevel, Level(progress, n.Id))) >= 6;
+        if (node.Exclusive != null && Level(progress, node.Exclusive) > 0) { return false; }
+        return node.Stage == 1 || nodes.Values.Where(n => n.Stage == node.Stage - 1).Sum(n => Math.Min(n.MaxLevel, Level(progress, n.Id)))
+            >= StageRequirements[node.Stage - 1];
     }
 
     public static void Learn(TalentModel model, string tree, string id)
@@ -83,6 +102,36 @@ public static class TalentRules
         model.AcquiredTalents[tree] = candidate;
         if (candidate.Count == 0) { model.AcquiredTalents.Remove(tree); }
         Refund(model, refund);
+    }
+
+    /// <summary>
+    /// One-time redesign migration: the retired boards (nine old boards and poison) (and their placeholder nodes) are removed and every
+    /// invested point is refunded. The three legacy trees are untouched. Returns the refunded points.
+    /// </summary>
+    public static int MigrateRemovedTrees(TalentModel model)
+    {
+        int refund = 0;
+        foreach (string tree in RemovedTrees)
+        {
+            if (model.AcquiredTalents.Remove(tree, out var progress))
+            {
+                foreach (var entry in progress)
+                {
+                    refund = checked(refund + (entry.Value.ValueKind == JsonValueKind.Number && entry.Value.TryGetInt32(out int level) && level > 0
+                        ? Math.Min(level, 3) : entry.Value.ValueKind == JsonValueKind.True ? LegacyCost(tree, entry.Key) : 0));
+                }
+            }
+            if (model.LegacyCategoryTalents.Remove(tree, out var legacy))
+            {
+                foreach (var entry in legacy)
+                {
+                    if (entry.Value.ValueKind == JsonValueKind.True) { refund = checked(refund + LegacyCost(tree, entry.Key)); }
+                }
+            }
+        }
+        if (refund > 0) { Refund(model, refund); }
+        model.Version = Math.Max(model.Version, CurrentVersion);
+        return refund;
     }
 
     public static void Reset(TalentModel model, string? tree)

@@ -11,9 +11,9 @@ public static class CharacterAttributeRules
     public const int PointsPerLevel = 6;
     public const int StartLevel = 1;
 
-    /// <summary>等級換得的能力值總點數；(等級 - 1) × 6，等級限制在 1 ～ MaxLevel。</summary>
+    /// <summary>等級換得的能力值總點數；等級 × 6（1 等即 6 點，100 等 600 點），等級限制在 1 ～ MaxLevel。</summary>
     public static int TotalPoints(int level) =>
-        (Math.Clamp(level, StartLevel, ProgressionRules.MaxLevel) - StartLevel) * PointsPerLevel;
+        Math.Clamp(level, StartLevel, ProgressionRules.MaxLevel) * PointsPerLevel;
 
     /// <summary>各項不得為負，且三項合計加上其他角色已配置點數不得超過總點數。</summary>
     public static void Validate(CharacterAttributesRequest request, int level, int allocatedByOthers)

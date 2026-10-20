@@ -15,6 +15,17 @@ namespace ReconstructNodesServer.Library.DBModel
         /// <summary>技能鏈節點上限（含主動技能）：初始 2，以能量萃取器升級，最多 6。</summary>
         public int SkillLinkCount { get => Get<int>(); set => Set(value); }
 
-        public Character() { SkillLinkCount = SkillLinkRules.InitialCount; }
+        /// <summary>角色等級（1～10），升級以其他角色為素材；抽到時為 1。</summary>
+        public int Level { get => Get<int>(); set => Set(value); }
+        /// <summary>性格：每次取得角色時隨機，之後不變。</summary>
+        public CharacterPersonality Personality { get => Get<CharacterPersonality>(); set => Set(value); }
+        /// <summary>命格：每次取得角色時隨機，之後不變。</summary>
+        public CharacterFate Fate { get => Get<CharacterFate>(); set => Set(value); }
+
+        public Character()
+        {
+            SkillLinkCount = SkillLinkRules.InitialCount;
+            Level = CharacterLevelRules.InitialLevel;
+        }
     }
 }

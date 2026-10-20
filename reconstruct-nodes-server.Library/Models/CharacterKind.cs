@@ -16,6 +16,14 @@ namespace ReconstructNodesServer.Library.Models
         Mage = 2,
         Core = 3,
         Crusader = 4,
+        ShadowMage = 5,
+        IceMage = 6,
+        FireMage = 7,
+        ShadowAssassin = 8,
+        FlameSwordsman = 9,
+        WindHunter = 10,
+        Ranger = 11,
+        DesertRanger = 12,
     }
 
     public static class CharacterKinds
@@ -25,7 +33,7 @@ namespace ReconstructNodesServer.Library.Models
         /// <summary>可部署／可由商店獲得的職業（排除核心）。</summary>
         public static readonly IReadOnlyList<CharacterKind> Deployable = All.Where(kind => kind != CharacterKind.Core).ToArray();
 
-        /// <summary>供 SQL 的 IN 清單，例如 "0, 1, 2, 4"；值皆來自列舉，不含使用者輸入。</summary>
+        /// <summary>供 SQL 的 IN 清單，例如 "0, 1, 2, 4, 5, 6"；值皆來自列舉，不含使用者輸入。</summary>
         public static readonly string DeployableSqlList = string.Join(", ", Deployable.Select(kind => (int)kind));
 
         /// <summary>System.Text.Json 對未定義數值也會成功轉成列舉，入口必須再驗證。</summary>

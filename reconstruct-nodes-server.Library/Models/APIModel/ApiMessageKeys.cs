@@ -12,7 +12,11 @@ namespace ReconstructNodesServer.Library.Models
         public const string CheckInFailed = "backend.checkin.failed";
         public const string CheckInAlreadyClaimed = "backend.checkin.already_claimed";
         public const string CheckInMonthComplete = "backend.checkin.month_complete";
-        public const string AchievementMissing = "backend.achievement.missing";
+        public const string ChallengeFailed = "backend.challenge.failed";
+        public const string ChallengeNoAttempts = "backend.challenge.no_attempts";
+        public const string ChallengeNotCleared = "backend.challenge.not_cleared";
+        public const string ChallengeAlreadyRewarded = "backend.challenge.already_rewarded";
+        public const string AchievementMissing ="backend.achievement.missing";
         public const string AchievementSaveFailed = "backend.achievement.save_failed";
         public const string AchievementClaimFailed = "backend.achievement.claim_failed";
         public const string AchievementResetFailed = "backend.achievement.reset_failed";
@@ -67,6 +71,10 @@ namespace ReconstructNodesServer.Library.Models
         public const string CharacterAttributesInvalid = "backend.character.attributes_invalid";
         public const string CharacterAttributesExceeded = "backend.character.attributes_exceeded";
         public const string CharacterSkillLinkMax = "backend.character.skill_link_max";
+        public const string CharacterDissolveCore = "backend.character.dissolve_core";
+        public const string CharacterDissolveDeployed = "backend.character.dissolve_deployed";
+        public const string CharacterUpgradeMax = "backend.character.upgrade_max";
+        public const string CharacterUpgradeMaterialInvalid = "backend.character.upgrade_material_invalid";
         public const string WeaponIdInvalid = "backend.weapon.id_invalid";
         public const string SkillTreeRequired = "backend.skill.tree_required";
         public const string SkillNodeRequired = "backend.skill.node_required";

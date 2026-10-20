@@ -34,8 +34,6 @@ namespace ReconstructNodesServer.Library.Models
         public List<CharacterModel> Characters { get; set; } = new();
         [JsonPropertyName("weapons")]
         public List<WeaponInstanceModel> Weapons { get; set; } = new();
-        [JsonPropertyName("shards")]
-        public Dictionary<string, int> Shards { get; set; } = new();
     }
 
     public class ShopDrawReward
@@ -44,10 +42,6 @@ namespace ReconstructNodesServer.Library.Models
         public Guid CharacterId { get; set; }
         [JsonPropertyName("character_kind")]
         public CharacterKind CharacterKind { get; set; }
-        [JsonPropertyName("is_duplicate")]
-        public bool IsDuplicate { get; set; }
-        [JsonPropertyName("shard_id")]
-        public string ShardId { get; set; } = string.Empty;
         [JsonPropertyName("weapon_entry_id")]
         public string WeaponEntryId { get; set; } = string.Empty;
     }

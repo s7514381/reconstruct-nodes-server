@@ -21,6 +21,12 @@ namespace ReconstructNodesServer.Library.Models
         [JsonPropertyName("deployment_log")]
         public List<GameProgressDeploymentModel> DeploymentLog { get; set; } = new();
 
+        /// <summary>
+        /// 隊長：必須是 DeploymentLog 內的角色；沒有部署角色或舊資料尚未指定時為 null（前端依規則自動選擇）。
+        /// </summary>
+        [JsonPropertyName("captain_character_id")]
+        public Guid? CaptainCharacterId { get; set; }
+
         [JsonPropertyName("wave")]
         public int Wave { get; set; }
 
@@ -63,5 +69,12 @@ namespace ReconstructNodesServer.Library.Models
 
         [JsonPropertyName("wave_completed")]
         public bool WaveCompleted { get; set; }
+
+        /// <summary>進入試煉前的一般模式難度；試煉結束回到此處。非試煉時僅保留舊值。</summary>
+        [JsonPropertyName("trial_return_difficulty")]
+        public int TrialReturnDifficulty { get; set; }
+
+        [JsonPropertyName("trial_return_wave")]
+        public int TrialReturnWave { get; set; } = 1;
     }
 }

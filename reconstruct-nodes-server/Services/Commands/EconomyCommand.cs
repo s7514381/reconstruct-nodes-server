@@ -45,8 +45,7 @@ namespace ReconstructNodesServer.Services
 
         internal static int WaveEnemyCount(WaveStartRequest request)
         {
-            if (request.Difficulty is < 0 or > 3 || request.Wave < 1 ||
-                (request.Difficulty != 3 && request.Wave > 100))
+            if (!StageRules.IsValidTarget(request.Difficulty, request.Wave))
             {
                 throw new BusinessArgumentException(ApiMessageKeys.EconomyWaveInvalid);
             }

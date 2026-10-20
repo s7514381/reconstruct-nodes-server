@@ -39,6 +39,9 @@ namespace ReconstructNodesServer.Services
             public const string LifetimeEnemiesDefeated = "lifetime_enemies_defeated";
             public const string InfiniteLevel = "infinite_level";
             public const string WaveCompleted = "wave_completed";
+            public const string TrialReturnDifficulty = "trial_return_difficulty";
+            public const string TrialReturnWave = "trial_return_wave";
+            public const string CaptainCharacterId = "captain_character_id";
             public const string BattlefieldVersion = "battlefield_version";
             public const string BattlefieldColumns = "battlefield_columns";
             public const string BattlefieldRows = "battlefield_rows";
@@ -114,6 +117,8 @@ namespace ReconstructNodesServer.Services
                 Revision = revision,
                 Version = ReadInt(progressValues, ProgressKey.Version),
                 DeploymentLog = deploymentLog,
+                CaptainCharacterId = progressValues.TryGetValue(ProgressKey.CaptainCharacterId, out string? captain)
+                    && Guid.TryParse(captain, out Guid captainId) ? captainId : null,
                 Wave = ReadInt(progressValues, ProgressKey.Wave),
                 Gold = gold,
                 MaxWaveReached = ReadInt(progressValues, ProgressKey.MaxWaveReached),
@@ -125,9 +130,19 @@ namespace ReconstructNodesServer.Services
                 Difficulty = ReadInt(progressValues, ProgressKey.Difficulty),
                 LifetimeEnemiesDefeated = ReadLong(progressValues, ProgressKey.LifetimeEnemiesDefeated),
                 InfiniteLevel = ReadInt(progressValues, ProgressKey.InfiniteLevel),
-                ClearedWaves = settingRows[ClearedWavesGroup].Select(param => JsonSerializer.Deserialize<JsonElement>(param.Value)).ToList(),
+                ClearedWaves = PadClearedWaves(settingRows[ClearedWavesGroup]
+                    .Select(param => JsonSerializer.Deserialize<JsonElement>(param.Value)).ToList()),
                 WaveCompleted = ReadBool(progressValues, ProgressKey.WaveCompleted),
+                TrialReturnDifficulty = ReadInt(progressValues, ProgressKey.TrialReturnDifficulty),
+                TrialReturnWave = Math.Max(1, ReadInt(progressValues, ProgressKey.TrialReturnWave)),
             };
+        }
+
+        /// <summary>舊帳號只有 4 個槽；補齊到目前的關卡槽數，讓試煉通關紀錄從 0 開始。</summary>
+        private static List<JsonElement> PadClearedWaves(List<JsonElement> cleared)
+        {
+            while (cleared.Count < StageRules.SlotCount) { cleared.Add(JsonSerializer.SerializeToElement(0)); }
+            return cleared;
         }
 
         /// <summary>
@@ -292,11 +307,19 @@ namespace ReconstructNodesServer.Services
         /// </summary>
         internal static void ValidateProgress(GameProgressModel model)
         {
+            if (!StageRules.IsValid(model.Difficulty) ||
+                !StageRules.IsValid(model.TrialReturnDifficulty) || StageRules.IsLimitedStage(model.TrialReturnDifficulty) ||
+                model.TrialReturnWave < 1)
+            { throw new BusinessArgumentException(ApiMessageKeys.EconomyWaveInvalid); }
             if (model.Battlefield != null)
             {
                 if (model.Battlefield.Castle is not { Count: 2 }) { throw new BusinessArgumentException(ApiMessageKeys.ProgressCastleInvalid); }
                 if ((model.Battlefield.Roads ?? new()).Any(road => road == null)) { throw new BusinessArgumentException(ApiMessageKeys.ProgressRoadsInvalid); }
             }
+
+            if (model.CaptainCharacterId is { } captain &&
+                (model.DeploymentLog ?? new()).All(row => row?.CharacterId != captain))
+            { throw new BusinessArgumentException("battlefield.captain_invalid"); }
 
             HashSet<(int?, int?, int?)> spots = new();
             foreach (GameProgressDeploymentModel? deployment in model.DeploymentLog ?? new())
@@ -329,6 +352,10 @@ namespace ReconstructNodesServer.Services
             yield return Scalar(ProgressKey.LifetimeEnemiesDefeated, model.LifetimeEnemiesDefeated);
             yield return Scalar(ProgressKey.InfiniteLevel, model.InfiniteLevel);
             yield return Scalar(ProgressKey.WaveCompleted, model.WaveCompleted);
+            yield return Scalar(ProgressKey.TrialReturnDifficulty, model.TrialReturnDifficulty);
+            yield return Scalar(ProgressKey.TrialReturnWave, model.TrialReturnWave);
+            if (model.CaptainCharacterId is { } captainId)
+            { yield return Scalar(ProgressKey.CaptainCharacterId, captainId.ToString("D")); }
 
             if (model.Battlefield != null)
             {

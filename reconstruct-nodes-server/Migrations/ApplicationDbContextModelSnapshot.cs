@@ -208,12 +208,23 @@ namespace ReconstructNodesServer.Migrations
                     b.Property<int>("Dexterity")
                         .HasColumnType("int");
 
+                    b.Property<int>("Fate")
+                        .HasColumnType("int")
+                        .HasComment("(0) (1) (2) (3) (4) (5) (6) (7) (8) (9)");
+
                     b.Property<int>("Intelligence")
                         .HasColumnType("int");
 
                     b.Property<int>("Kind")
                         .HasColumnType("int")
                         .HasComment("(0) (1) (2) (3) (4)");
+
+                    b.Property<int>("Level")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Personality")
+                        .HasColumnType("int")
+                        .HasComment("(0) (1) (2) (3) (4) (5) (6) (7) (8) (9) (10) (11) (12) (13) (14) (15) (16) (17) (18) (19) (20) (21) (22) (23) (24)");
 
                     b.Property<int?>("Sequence")
                         .HasColumnType("int");
@@ -242,7 +253,7 @@ namespace ReconstructNodesServer.Migrations
 
                     b.HasIndex("CreateUserId", "Kind")
                         .IsUnique()
-                        .HasFilter("[Status] <> -1");
+                        .HasFilter("[Status] <> -1 AND [Kind] = 3");
 
                     b.HasIndex("CreateUserId", "WeaponEntryKey")
                         .IsUnique()

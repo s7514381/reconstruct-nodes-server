@@ -70,7 +70,7 @@ public class PlayerLifecycleService(BaseServiceArgument argument, RevisionComman
         return new GameProgressModel
         {
             Version = 8, Wave = 1, InfiniteLevel = 1,
-            ClearedWaves = Enumerable.Range(0, 4).Select(_ => JsonSerializer.SerializeToElement(0)).ToList(),
+            ClearedWaves = Enumerable.Range(0, StageRules.SlotCount).Select(_ => JsonSerializer.SerializeToElement(0)).ToList(),
             Progression = new() { ["level"] = JsonSerializer.SerializeToElement(1),
                 ["experience"] = JsonSerializer.SerializeToElement(0), ["total_experience"] = JsonSerializer.SerializeToElement(0),
                 ["experience_fifths"] = JsonSerializer.SerializeToElement(0) },

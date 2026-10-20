@@ -471,15 +471,14 @@ An initial ten-draw over three possible kinds guarantees both a first acquisitio
 same-batch duplicates, without controlling randomness or retrying successful rolls.
 For both count=10 and count=1 the regressions verify:
 
-- The full replay receipt equals the original result; gold/characters/weapons/shards
+- The full replay receipt equals the original result; gold/characters/weapons
   remain unchanged and exactly one command ledger row exists.
 - Reusing the request ID with changed Count returns 409 / `backend.economy.request_conflict`,
   with the same authoritative state and single receipt.
 - First-acquired character IDs, default skills (0→5, 1→0, 2→3), equipped weapon IDs,
   common rarity/quality version, and corresponding weapon inventory entries read back correctly.
-- Duplicate results reference the existing character, do not create another weapon, and
-  increment the correct shard. Repeated kinds within one batch contribute to the final
-  absolute `state.shards` amount exactly.
+- Repeated kinds create independent new characters, each with its own starter weapon and
+  rolled level/personality/fate; no shard is granted.
 
 Every measured receipt is validated with a running expected inventory; authoritative
 character/weapon/item/gold readback follows each completed workload, outside timing.

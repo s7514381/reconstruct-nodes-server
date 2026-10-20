@@ -116,6 +116,8 @@ public partial class BackgroundSyncCommand
             var session = Replay<WaveStartResult>(receipts, wave.RequestId, "wave_start", intent);
             if (session == null)
             {
+                if (StageRules.IsStageFinished(serverProgress!.Difficulty, serverProgress.Wave, serverProgress.WaveCompleted))
+                { throw new BusinessArgumentException(ApiMessageKeys.EconomyWaveInvalid); }
                 var target = serverProgress!.WaveCompleted
                     ? ProgressionRules.NextWave(serverProgress.Wave, serverProgress.Difficulty, serverProgress.InfiniteLevel)
                     : (serverProgress.Wave, serverProgress.Difficulty, serverProgress.InfiniteLevel);

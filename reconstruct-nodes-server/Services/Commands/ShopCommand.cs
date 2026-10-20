@@ -16,20 +16,34 @@ namespace ReconstructNodesServer.Services
             this.gold = gold;
         }
 
-        public record CharacterOffer(CharacterKind Kind, string LootId, string ShardId, string WeaponId);
+        public record CharacterOffer(CharacterKind Kind, string LootId, string WeaponId);
         public record ShopCatalog(int SingleCost, int TenCost, IReadOnlyList<CharacterOffer> Characters);
 
         public static ShopCatalog Catalog { get; } = new(100, 900,
         [
-            new(CharacterKind.Warrior, "warrior", "warrior_shard", "sword"),
-            new(CharacterKind.Archer, "archer", "archer_shard", "bow"),
-            new(CharacterKind.Mage, "mage", "mage_shard", "staff"),
-            new(CharacterKind.Crusader, "crusader", "crusader_shard", "sword"),
+            new(CharacterKind.Warrior, "warrior", "sword"),
+            new(CharacterKind.Archer, "archer", "bow"),
+            new(CharacterKind.Mage, "mage", "staff"),
+            new(CharacterKind.Crusader, "crusader", "sword"),
+            new(CharacterKind.ShadowMage, "shadow_mage", "staff"),
+            new(CharacterKind.IceMage, "ice_mage", "staff"),
+            new(CharacterKind.FireMage, "fire_mage", "staff"),
+            new(CharacterKind.ShadowAssassin, "shadow_assassin", "sword"),
+            new(CharacterKind.FlameSwordsman, "flame_swordsman", "sword"),
+            new(CharacterKind.WindHunter, "wind_hunter", "bow"),
+            new(CharacterKind.Ranger, "ranger", "bow"),
+            new(CharacterKind.DesertRanger, "desert_ranger", "bow"),
         ]);
 
         protected virtual int DrawIndex() => RandomNumberGenerator.GetInt32(Catalog.Characters.Count);
+        protected virtual CharacterPersonality DrawPersonality() => RollPersonality();
+        protected virtual CharacterFate DrawFate() => RollFate();
+        public static CharacterPersonality RollPersonality() =>
+            CharacterTraits.Personalities[RandomNumberGenerator.GetInt32(CharacterTraits.Personalities.Count)];
+        public static CharacterFate RollFate() =>
+            CharacterTraits.Fates[RandomNumberGenerator.GetInt32(CharacterTraits.Fates.Count)];
 
-        private sealed record DrawCandidate(CharacterKind Kind, string ShardId, CharacterModel Character, WeaponInstanceModel Weapon);
+        private sealed record DrawCandidate(CharacterKind Kind, CharacterModel Character, WeaponInstanceModel Weapon);
 
         public virtual async Task<ShopDrawResult> Draw(ShopDrawRequest request)
         {
@@ -42,11 +56,20 @@ namespace ReconstructNodesServer.Services
                 string weaponKey = $"shop_{Guid.NewGuid():N}";
                 int skillKind = offer.Kind switch { CharacterKind.Warrior => 5, CharacterKind.Archer => 0, CharacterKind.Mage => 3,
                     CharacterKind.Crusader => 5,
+                    CharacterKind.ShadowMage => 2,
+                    CharacterKind.IceMage => 2,
+                    CharacterKind.FireMage => 1,
+                    CharacterKind.ShadowAssassin => 5,
+                    CharacterKind.FlameSwordsman => 5,
+                    CharacterKind.WindHunter => 0,
+                    CharacterKind.Ranger => 0,
+                    CharacterKind.DesertRanger => 0,
                     _ => throw new InvalidOperationException("Unsupported shop character kind") };
-                candidates.Add(new(offer.Kind, offer.ShardId,
+                candidates.Add(new(offer.Kind,
                     new CharacterModel
                     {
                         Id = Guid.NewGuid(), Kind = offer.Kind, WeaponEntryId = weaponKey,
+                        Level = CharacterLevelRules.InitialLevel, Personality = DrawPersonality(), Fate = DrawFate(),
                         WeaponId = offer.WeaponId, WeaponRarity = "common", WeaponQualityVersion = 2,
                         SkillTrees = [new GameProgressSkillLoadoutModel { Kind = skillKind }],
                     },
@@ -65,61 +88,40 @@ namespace ReconstructNodesServer.Services
                     IF @Balance < @Cost THROW 51005, 'Insufficient gold', 1;
                     SET @Balance = @Balance - @Cost;
                     SET @Result = JSON_MODIFY(@EmptyResult, '$.gold', @Balance);
-                    IF EXISTS (SELECT Kind FROM Character WHERE CreateUserId = @CreateUserId AND Status != -1
-                               GROUP BY Kind HAVING COUNT(*) > 1)
-                        THROW 51004, 'Duplicate character ownership', 1;
-                    DECLARE @Rolls TABLE (Ordinal int PRIMARY KEY, Kind int, ShardId nvarchar(100),
-                        CharacterJson nvarchar(max), WeaponJson nvarchar(max));
+                    DECLARE @Rolls TABLE (Ordinal int PRIMARY KEY, Kind int, CharacterJson nvarchar(max), WeaponJson nvarchar(max));
                     INSERT INTO @Rolls
-                    SELECT CONVERT(int, j.[key]), r.Kind, r.ShardId, r.CharacterJson, r.WeaponJson
+                    SELECT CONVERT(int, j.[key]), r.Kind, r.CharacterJson, r.WeaponJson
                     FROM OPENJSON(@Candidates) j
                     CROSS APPLY OPENJSON(j.value) WITH
-                        (Kind int, ShardId nvarchar(100), CharacterJson nvarchar(max) '$.Character' AS JSON,
+                        (Kind int, CharacterJson nvarchar(max) '$.Character' AS JSON,
                          WeaponJson nvarchar(max) '$.Weapon' AS JSON) r;
                     DECLARE @Roll int = 0, @Kind int, @CharacterId uniqueidentifier,
                         @CharacterJson nvarchar(max), @WeaponJson nvarchar(max), @WeaponKey nvarchar(100),
-                        @Duplicate bit, @Reward nvarchar(max), @ShardPath nvarchar(200),
-                        @ItemKey nvarchar(100), @Delta int = 1, @Category nvarchar(100) = N'character_shard',
-                        @NewId uniqueidentifier, @CreateDate datetime = @Now, @Status int = @Enabled;
+                        @Reward nvarchar(max);
                     WHILE @Roll < @Count
                     BEGIN
-                        SELECT @Kind = Kind, @ItemKey = ShardId, @CharacterJson = CharacterJson,
-                            @WeaponJson = WeaponJson FROM @Rolls WHERE Ordinal = @Roll;
-                        SET @CharacterId = NULL;
-                        SET @WeaponKey = N'';
-                        SELECT @CharacterId = Id FROM Character
-                        WHERE CreateUserId = @CreateUserId AND Status != -1 AND Kind = @Kind;
-                        SET @Duplicate = CASE WHEN @CharacterId IS NULL THEN 0 ELSE 1 END;
-                        IF @Duplicate = 1
-                        BEGIN
-                            SET @NewId = NEWID();
-                    """ + ItemService.AdjustmentSql + """
-                            SET @ShardPath = N'$.state.shards."' + @ItemKey + N'"';
-                            SET @Result = JSON_MODIFY(@Result, @ShardPath, @Amount);
-                            -- The embedded adjustment variables are batch-scoped, even inside this loop.
-                            SET @Id = NULL;
-                            SET @Amount = NULL;
-                            SET @ExistingCategory = NULL;
-                        END
-                        ELSE
-                        BEGIN
-                            SET @CharacterId = CONVERT(uniqueidentifier, JSON_VALUE(@CharacterJson, '$.id'));
-                            SET @WeaponKey = JSON_VALUE(@WeaponJson, '$.id');
-                            INSERT INTO Weapon (Id, CreateDate, CreateUserId, Status, EntryKey, WeaponKey, WeaponFamilyKey, Rarity)
-                            VALUES (NEWID(), @Now, @CreateUserId, @Enabled, @WeaponKey,
-                                JSON_VALUE(@WeaponJson, '$.weapon_id'), JSON_VALUE(@WeaponJson, '$.weapon_family_id'),
-                                JSON_VALUE(@WeaponJson, '$.rarity'));
-                            INSERT INTO Character (Id, CreateDate, CreateUserId, Status, Kind, WeaponEntryKey, WeaponQualityVersion)
-                            VALUES (@CharacterId, @Now, @CreateUserId, @Enabled, @Kind, @WeaponKey,
-                                CONVERT(int, JSON_VALUE(@CharacterJson, '$.weapon_quality_version')));
-                            INSERT INTO CharacterSkillTree (Id, CreateDate, CreateUserId, Status, CharacterId, Kind, Sequence)
-                            VALUES (NEWID(), @Now, @CreateUserId, @Enabled, @CharacterId,
-                                CONVERT(int, JSON_VALUE(@CharacterJson, '$.skill_trees[0].kind')), 0);
-                            SET @Result = JSON_MODIFY(@Result, 'append $.state.characters', JSON_QUERY(@CharacterJson));
-                            SET @Result = JSON_MODIFY(@Result, 'append $.state.weapons', JSON_QUERY(@WeaponJson));
-                        END;
+                        SELECT @Kind = Kind, @CharacterJson = CharacterJson, @WeaponJson = WeaponJson
+                        FROM @Rolls WHERE Ordinal = @Roll;
+                        -- Every roll is a new, independent character instance; owning the same kind twice is valid.
+                        SET @CharacterId = CONVERT(uniqueidentifier, JSON_VALUE(@CharacterJson, '$.id'));
+                        SET @WeaponKey = JSON_VALUE(@WeaponJson, '$.id');
+                        INSERT INTO Weapon (Id, CreateDate, CreateUserId, Status, EntryKey, WeaponKey, WeaponFamilyKey, Rarity)
+                        VALUES (NEWID(), @Now, @CreateUserId, @Enabled, @WeaponKey,
+                            JSON_VALUE(@WeaponJson, '$.weapon_id'), JSON_VALUE(@WeaponJson, '$.weapon_family_id'),
+                            JSON_VALUE(@WeaponJson, '$.rarity'));
+                        INSERT INTO Character (Id, CreateDate, CreateUserId, Status, Kind, WeaponEntryKey, WeaponQualityVersion,
+                            Level, Personality, Fate)
+                        VALUES (@CharacterId, @Now, @CreateUserId, @Enabled, @Kind, @WeaponKey,
+                            CONVERT(int, JSON_VALUE(@CharacterJson, '$.weapon_quality_version')),
+                            CONVERT(int, JSON_VALUE(@CharacterJson, '$.level')),
+                            CONVERT(int, JSON_VALUE(@CharacterJson, '$.personality')),
+                            CONVERT(int, JSON_VALUE(@CharacterJson, '$.fate')));
+                        INSERT INTO CharacterSkillTree (Id, CreateDate, CreateUserId, Status, CharacterId, Kind, Sequence)
+                        VALUES (NEWID(), @Now, @CreateUserId, @Enabled, @CharacterId,
+                            CONVERT(int, JSON_VALUE(@CharacterJson, '$.skill_trees[0].kind')), 0);
+                        SET @Result = JSON_MODIFY(@Result, 'append $.state.characters', JSON_QUERY(@CharacterJson));
+                        SET @Result = JSON_MODIFY(@Result, 'append $.state.weapons', JSON_QUERY(@WeaponJson));
                         SET @Reward = (SELECT @CharacterId AS character_id, @Kind AS character_kind,
-                            @Duplicate AS is_duplicate, CASE WHEN @Duplicate = 1 THEN @ItemKey ELSE N'' END AS shard_id,
                             @WeaponKey AS weapon_entry_id FOR JSON PATH, WITHOUT_ARRAY_WRAPPER);
                         SET @Result = JSON_MODIFY(@Result, 'append $.results', JSON_QUERY(@Reward));
                         SET @Roll = @Roll + 1;
@@ -129,17 +131,12 @@ namespace ReconstructNodesServer.Services
                     {
                         Cost = cost, request.Count, Candidates = JsonSerializer.Serialize(candidates),
                         EmptyResult = JsonSerializer.Serialize(new ShopDrawResult { RequestId = request.RequestId, State = new() }),
-                        Whitespace = ItemService.WhitespaceCharacters,
                     });
             }
             catch (System.Data.SqlClient.SqlException error) when (error.Number == 51005)
             {
                 throw new BusinessOperationException(new ApiMessage(ApiMessageKeys.EconomyInsufficientGold,
                     new Dictionary<string, string> { ["cost"] = cost.ToString(System.Globalization.CultureInfo.InvariantCulture) }));
-            }
-            catch (System.Data.SqlClient.SqlException error) when (error.Number == 8115)
-            {
-                throw new OverflowException("Item amount overflowed.", error);
             }
         }
     }

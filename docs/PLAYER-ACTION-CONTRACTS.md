@@ -61,18 +61,39 @@ skill_suffixes／refine_item_counts 不再保存或回傳，資料庫歷史群�
 | `Character/ConfigureSkills` | `character_id: UUID, skill_trees: GameProgressSkillLoadoutModel[]` | CharacterModel |
 | `Character/ConfigureAttributes` | `request_id, character_id: UUID, strength: int, intelligence: int, dexterity: int`（`CharacterAttributesRequest`，整體覆寫，不帶 expected_revision） | `CommandReceipt<CharacterModel>`（含 `strength` / `intelligence` / `dexterity`） |
 | `Character/UpgradeSkillLinks` | `request_id, character_id: UUID`（`SkillLinkUpgradeRequest`，不帶 expected_revision；每次升一級） | `CommandReceipt<SkillLinkUpgradeSnapshot>`（`character`（含 `skill_link_count`）＋`material_count` 剩餘能量萃取器） |
+| `Character/Dissolve` | `request_id, character_id: UUID`（`CharacterDissolveRequest`，不帶 expected_revision） | `CommandReceipt<CharacterDissolveSnapshot>`（`character_id`、`level`、`honor_gained`、`honor_count` 榮譽在庫量、`released_weapon_entry_id`） |
+| `Character/Upgrade` | `request_id, target_id: UUID, material_ids: UUID[]`（`CharacterUpgradeRequest`，不帶 expected_revision；一次升一級） | `CommandReceipt<CharacterUpgradeSnapshot>`（`target_id`、升級後 `level`、`removed_ids`、`released_weapon_entry_ids`） |
 | `Talent/LearnTalent` | `tree_id: string, node_id: string` | TalentModel |
 | `Talent/RefundTalent` | `tree_id: string, node_id: string`，退整個節點所有級數 | TalentModel |
 | `Talent/ResetTalents` | `tree_id: string|null`，null 退全部樹 | TalentModel |
 | `GameProgress/SetDeployment` | `deployment_log: GameProgressDeploymentModel[]` | GameProgressModel |
-| `GameProgress/SetBattlefield` | `battlefield: GameProgressBattlefieldModel, deployment_log: GameProgressDeploymentModel[] 或 null` | `{progress: GameProgressModel, session: WaveStartResult}` |
+| `GameProgress/SetBattlefield` | `battlefield: GameProgressBattlefieldModel, deployment_log: GameProgressDeploymentModel[] 或 null, captain_character_id: Guid 或 null`（隊長不可空缺：部署清單非空時必須是其中一位，清單為空時必須為 null，否則 `battlefield.captain_invalid`；以進度純量 `captain_character_id` 保存，快照 `GameProgressModel.captain_character_id` 回傳；`SetDeployment` 不帶隊長，隊長已不在部署中時伺服器清空） | `{progress: GameProgressModel, session: WaveStartResult}` |
 | `GameProgress/TransitionWave` | `wave: int, difficulty: int, challenge: bool` | `{progress: GameProgressModel, session: WaveStartResult}` |
+
+關卡槽（`StageRules`）：`difficulty` 0..2 一般、3 無限、4 起試煉（4 = 試煉1，最多 10 波，沿用入門的怪物等級曲線但通關紀錄 `cleared_waves[4]` 獨立）。
+TransitionWave 進入試煉時，若目前不在試煉，伺服器記下 `trial_return_difficulty`／`trial_return_wave`（目前一般位置，保存於進度快照），
+試煉之間切換沿用原返回點；從試煉選回一般難度仍走同一個 TransitionWave（挑戰僅限第 1 波，跳波限已通關）。
+無限等級（`infinite_level`）：進試煉不改動；回到無限時若進試煉前就在無限則保持原值，否則依返回點一般位置換算。
+試煉最後一波通關後 `WaveComplete` 的 `next_*` 指回同一波，背景開波（`BackgroundSync.wave_start`）會被拒絕（`backend.economy.wave_invalid`），玩家必須用 TransitionWave 離開。
+
+挑戰關卡（`StageRules.FirstChallenge = 5`，5 = 挑戰1，10 波，`SlotCount = 6`）與試煉同屬限定關卡（返回點、最後一波後只能離開），但每次進入都必須 `challenge=true` 且 `wave=1`，並在同一個 TransitionWave 交易內扣當日次數（`ChallengeRules`：每日 3 次，日期取伺服器本地日，存 `PlayerParams economy/challenge_attempts_{難度}` = `{date,used,rewarded}`；沒有次數回 `backend.challenge.no_attempts`，失敗不退還）。
+`Challenge/Status`（`stages[{difficulty,daily_limit,remaining,reward_item_id,reward_amount}]`）讀今日剩餘次數；`Challenge/Claim`（`request_id`）只在進度顯示目前挑戰最後一波已通關、且這次進入尚未領過時，以單一原子批次發放 3 個 `energy_extractor`（與每日簽到共用 `ItemRewardBatch`），回 `{request_id,difficulty,date,item_id,amount,items}`；同 request_id 重送重播原回執，已領過回 `backend.challenge.already_rewarded`，未通關回 `backend.challenge.not_cleared`。無 DB migration。
 | `AchievementProgress/ClaimReward` | `achievement_item_id: string` | `{progress: AchievementProgressModel, items: Item[]}` |
 
 技能連線數（`Character.SkillLinkCount`，一條技能鏈含主動技能的節點上限）初始 2、上限 6；`Character/UpgradeSkillLinks`
 同交易扣除物品 `energy_extractor`（2→3 需 1、3→4 需 5、4→5 需 25、5→6 需 100，數量不足回 `backend.item.insufficient`，
 已達上限回 `backend.character.skill_link_max`）。`ConfigureSkills` 以角色目前連線數驗證鏈長。費用與常數唯一來源為 `SkillLinkRules`，
 客戶端 `SkillLinkRules` 必須同步。遷移會把既有角色連線數設為其最長既有鏈長（至少 2）。
+
+角色等級（`Character.Level`，1～10，抽到為 1）只能由 `Character/Upgrade` 提升：目標升一級需要 `2^(Level-1)` 隻素材角色
+（1、2、4、8…，`CharacterLevelRules.UpgradeMaterialCount`；素材可為任何種類、不論等級，每隻算 1）。驗證：目標與素材皆本人所有、
+核心不可當目標或素材、素材不可含目標或重複、數量必須剛好、已上場（有 `Deployment`）的素材需先撤下；錯誤依序為
+`backend.character.not_owned`、`backend.character.upgrade_max`（已達 10 級）、`backend.character.upgrade_material_invalid`、
+`backend.character.dissolve_deployed`。`Character/Dissolve` 拒絕核心（`backend.character.dissolve_core`）與已上場者
+（`backend.character.dissolve_deployed`），並以 `10 × Level`（`CharacterHonorRules`）發放榮譽物品 `honor`；升級素材不發榮譽。
+兩者共用 `CharacterRemoval`：解除裝備（武器是獨立資料列，清掉 `WeaponEntryKey` 即回到背包）、軟刪除技能節點／技能樹／角色
+（能力值點數池由全部有效角色列加總，刪列即歸還），同一交易以 `EconomyRequest` 回執冪等重播。客戶端
+`CharacterLevelRules`／`CharacterHonorRules` 必須同步。
 
 天賦命令從伺服器現有點數／進度執行，正式 180 節點的費用、級數、前置滿級及「前一段自身
 投入至少 6 點」依客戶端 `TalentPointRegistry`／`ManaTalentPoint` 驗證；單點退款會檢查其餘

@@ -17,7 +17,7 @@ public class CharacterKindContractTests
     {
         var expected = new Dictionary<string, int>
         {
-            ["Warrior"] = 0, ["Archer"] = 1, ["Mage"] = 2, ["Core"] = 3, ["Crusader"] = 4,
+            ["Warrior"] = 0, ["Archer"] = 1, ["Mage"] = 2, ["Core"] = 3, ["Crusader"] = 4, ["ShadowMage"] = 5, ["IceMage"] = 6, ["FireMage"] = 7, ["ShadowAssassin"] = 8, ["FlameSwordsman"] = 9, ["WindHunter"] = 10, ["Ranger"] = 11, ["DesertRanger"] = 12,
         };
         var actual = CharacterKinds.All.ToDictionary(kind => kind.ToString(), kind => (int)kind);
         CollectionAssert.AreEquivalent(expected, actual);
@@ -47,10 +47,10 @@ public class CharacterKindContractTests
     public void DeployableKindsExcludeOnlyCoreAndDriveTheSqlFilters()
     {
         CollectionAssert.AreEqual(
-            new[] { CharacterKind.Warrior, CharacterKind.Archer, CharacterKind.Mage, CharacterKind.Crusader },
+            new[] { CharacterKind.Warrior, CharacterKind.Archer, CharacterKind.Mage, CharacterKind.Crusader, CharacterKind.ShadowMage, CharacterKind.IceMage, CharacterKind.FireMage, CharacterKind.ShadowAssassin, CharacterKind.FlameSwordsman, CharacterKind.WindHunter, CharacterKind.Ranger, CharacterKind.DesertRanger },
             CharacterKinds.Deployable.ToArray());
-        Assert.AreEqual("0, 1, 2, 4", CharacterKinds.DeployableSqlList);
-        StringAssert.Contains(GameProgressCommand.DeployableCharactersRead.Sql, "Kind IN (0, 1, 2, 4)");
+        Assert.AreEqual("0, 1, 2, 4, 5, 6, 7, 8, 9, 10, 11, 12", CharacterKinds.DeployableSqlList);
+        StringAssert.Contains(GameProgressCommand.DeployableCharactersRead.Sql, "Kind IN (0, 1, 2, 4, 5, 6, 7, 8, 9, 10, 11, 12)");
     }
 
     [TestMethod]

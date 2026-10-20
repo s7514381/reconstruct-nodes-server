@@ -111,7 +111,7 @@ progress 專用 flush 已移除；skill_suffixes、refine_item_counts 不再輸�
 保留分類補入、負數拒絕、溢位與歸零軟刪除；舊頂層 AdjustAmountCommand 已移除。
 波次／抽取透過 `GoldCommand.ExecuteBatch` 共用回執與金幣資源原子寫入，
 回執重播先於業務檢查；已有 repository transaction 時由原外層負責提交。
-抽取仍依結果順序判斷持有、新角色與碎片，碎片增量重用共用物品 SQL；
+抽取依結果順序每抽建立一隻獨立的新角色（含擲出的性格／命格）與其起始武器，不再有重複角色轉碎片的分支；
 回應保留逐抽結果與最終持有量，不把機率或獎勵判定改為背景作業。
 
 ### `_ModelService` 泛型命令試點：ReportKill
@@ -485,10 +485,12 @@ Step 4：依需要覆寫 `SetModel`、`ModelSave`、`ModelDelete`，或在 Contr
 | `POST GameProgress/Save` | `AuthorizeApiController` | 是 | Body `GameProgressModel`，覆寫進度、部署與道路；不更動角色及其配置。部署使用 `character_id` 引用本人角色。 |
 | `POST Character/GetList` | `AuthorizeApiController` | 是 | 讀取本人擁有角色，含目前武器與技能樹；交易內冪等補齊 kind=3 核心（空手、初始火球 kind=1），故新帳號至少回傳核心。 |
 | `POST Character/Get?id=<GUID>` | `AuthorizeApiController` | 是 | 讀取本人單一角色；不存在或非本人角色回 404 envelope。 |
+| `POST Character/Dissolve` | `AuthorizeApiController` | 是 | Body `{request_id, character_id}`；單交易解散非核心、未上場的角色：解除裝備、刪除其技能資料與角色列（能力值點數隨之歸還），發放 `10 × Level` 榮譽物品 `honor`，回 `CommandReceipt<CharacterDissolveSnapshot>`，冪等重播。 |
+| `POST Character/Upgrade` | `AuthorizeApiController` | 是 | Body `{request_id, target_id, material_ids}`；單交易移除 `2^(Level-1)` 隻素材角色（同解散的歸還與刪除，但不給榮譽）並讓目標 `Level` +1（上限 10），回 `CommandReceipt<CharacterUpgradeSnapshot>`，冪等重播。 |
 | `POST Character/Save` | `AuthorizeApiController` | 是 | Body `CharacterModel`，只更新已擁有角色的技能配置，保留權威武器引用；必須指定 `id` 並驗證本人及種類；成功 Data 為穩定角色 GUID。不能任意建立角色或穿卸裝。 |
-| `POST Shop/GetCatalog` | `AuthorizeApiController` | 是 | 回傳抽卡價格與角色／碎片／基礎武器對應，規則由後端持有。 |
+| `POST Shop/GetCatalog` | `AuthorizeApiController` | 是 | 回傳抽卡價格與角色／基礎武器對應，規則由後端持有。 |
 | `POST Shop/GetGold` | `AuthorizeApiController` | 是 | 回傳後端金幣餘額；新玩家初始 1200。 |
-| `POST Shop/Draw` | `AuthorizeApiController` | 是 | Body `{request_id, count}`；只支援單抽與十連，後端抽選、扣款、建立角色及普通武器或發碎片，同一交易。 |
+| `POST Shop/Draw` | `AuthorizeApiController` | 是 | Body `{request_id, count}`；只支援單抽與十連，後端抽選、扣款、每抽新建一隻角色實例（隨機等級 1、性格、命格）及普通武器，同一交易。 |
 | `POST Talent/GetSnapshot` | `AuthorizeApiController` | 是 | 讀取天賦樹；無資料回 404 envelope。 |
 | `POST Talent/Save` | `AuthorizeApiController` | 是 | Body `TalentModel`，以整份快照覆寫。 |
 | `POST Item/GetInStockList` | `AuthorizeApiController` | 是 | 回傳本人 Status != -1 且 Amount > 0 的物品列；無資料回 200 空陣列。 |
@@ -498,7 +500,7 @@ Step 4：依需要覆寫 `SetModel`、`ModelSave`、`ModelDelete`，或在 Contr
 | `POST Weapon/Acquire` | `AuthorizeApiController` | 是 | `{request_id, weapon}`，只取得新 EntryKey，回 `CommandReceipt<WeaponInstanceModel>`。 |
 | `POST Weapon/Refine` | `AuthorizeApiController` | 是 | `{request_id, weapon_entry_id, crystal_id}`，原子扣材料及伺服器精煉，回 `CommandReceipt<WeaponRefineSnapshot>`。 |
 | `POST Weapon/Disassemble` | `AuthorizeApiController` | 是 | `{request_id, weapon_entry_ids}`，去重批次分解、略過裝備中／不存在實例，回 `CommandReceipt<WeaponDisassembleSnapshot>`，無獎勵。 |
-| `POST Character/ConfigureAttributes` | `AuthorizeApiController` | 是 | `{request_id, character_id, strength, intelligence, dexterity}`，整體覆寫單一角色能力值；各項不得為負（`backend.character.attributes_invalid`），三項合計加其他角色已配置點數不得超過 `CharacterAttributeRules.TotalPoints(玩家等級)` ＝ (等級−1)×6（`backend.character.attributes_exceeded`）。同一 snapshot 讀取全部角色與 `game_progress.progression.level`，推進 `CharacterModel` 領域與該角色範圍 revision（並行配置另一角色會對同列寫入衝突），回 `CommandReceipt<CharacterModel>`；DB 欄位 `Character.Strength/Intelligence/Dexterity`（遷移 `AddCharacterAttributes`）。 |
+| `POST Character/ConfigureAttributes` | `AuthorizeApiController` | 是 | `{request_id, character_id, strength, intelligence, dexterity}`，整體覆寫單一角色能力值；各項不得為負（`backend.character.attributes_invalid`），三項合計加其他角色已配置點數不得超過 `CharacterAttributeRules.TotalPoints(玩家等級)` ＝ 等級×6（1 等 6 點、100 等 600 點）（`backend.character.attributes_exceeded`）。同一 snapshot 讀取全部角色與 `game_progress.progression.level`，推進 `CharacterModel` 領域與該角色範圍 revision（並行配置另一角色會對同列寫入衝突），回 `CommandReceipt<CharacterModel>`；DB 欄位 `Character.Strength/Intelligence/Dexterity`（遷移 `AddCharacterAttributes`）。 |
 | `POST Character/EquipWeapon` | `AuthorizeApiController` | 是 | `{request_id, character_id, weapon_entry_id}`，null 卸下；只改武器引用，不寫技能，回 `CommandReceipt<CharacterModel>`。 |
 | `POST AchievementProgress/Get` | `AuthorizeApiController` | 是 | 讀取成就進度；無群組資料回 404 envelope。 |
 | `POST AchievementProgress/Save` | `AuthorizeApiController` | 是 | Body `AchievementProgressModel`，以整份快照覆寫。已領取的項目保留領取狀態，請求中的 `is_reward` 會被忽略。 |
@@ -558,7 +560,7 @@ Step 4：依需要覆寫 `SetModel`、`ModelSave`、`ModelDelete`，或在 Contr
 | 武器 | `Weapon`、`WeaponAffix`、`WeaponAffixValue`、`WeaponUniqueValue` |
 | 成就 | `Achievement`（每群組一列，`Total` 為進度）、`AchievementDetail`（項目、`Target`、`IsReward`、`RewardDate`）、`AchievementCollected`（已收集項目的 `Name`，關聯 `AchievementId`） |
 
-唯一索引（僅限未軟刪除的列）：`Item` 以 `(CreateUserId, ItemKey)`、`Weapon` 以 `(CreateUserId, EntryKey)`、`Character` 以 `(CreateUserId, Kind)`；角色非空的 `(CreateUserId, WeaponEntryKey)` 亦唯一，保證裝備排他。`Talent` 以 `CreateUserId`，確保每位玩家只有一列父資料。`PlayerParams` 沒有唯一索引，`game_progress*` 的 `(Group, Name)` 重複不會被資料庫擋下，讀取進度時會因字典鍵重複而失敗。
+唯一索引（僅限未軟刪除的列）：`Item` 以 `(CreateUserId, ItemKey)`、`Weapon` 以 `(CreateUserId, EntryKey)`、`Character` 僅對核心（`Kind = Core`）以 `(CreateUserId, Kind)` 建立 filtered 唯一索引——一般角色同種類可擁有多隻；角色非空的 `(CreateUserId, WeaponEntryKey)` 亦唯一，保證裝備排他。`Talent` 以 `CreateUserId`，確保每位玩家只有一列父資料。`PlayerParams` 沒有唯一索引，`game_progress*` 的 `(Group, Name)` 重複不會被資料庫擋下，讀取進度時會因字典鍵重複而失敗。
 
 角色與部署的新契約：
 - 角色 `id` 為穩定 GUID，`kind` 為種類，`name` 為名稱，`weapon_entry_id` 空字串表示卸下，`skill_trees` 為完整技能樹清單。只有 Shop/Draw 能建立擁有角色；Character/Save 拒絕未指定 Id 或尚未擁有的角色。裝備的其他輸出欄位由 Weapon 目前資料組出，不採信請求中的武器屬性。
@@ -569,25 +571,25 @@ Step 4：依需要覆寫 `SetModel`、`ModelSave`、`ModelDelete`，或在 Contr
 - 解鎖群組仍是全域進度設定，不自動等同角色擁有資料；角色不必有 GameProgress 存檔才能儲存。
 
 後端抽卡與金幣：
-- 單抽 100 金幣、十連 900；戰士／弓箭手／法師等機率且每抽獨立，使用伺服器亂數，無保底。首次取得配發並裝備普通劍／弓／法杖，重複角色發對應碎片 ×1；同批十連亦會辨識剛取得的角色。
+- 單抽 100 金幣、十連 900；戰士／弓箭手／法師等機率且每抽獨立，使用伺服器亂數，無保底。每抽都取得一隻新角色並配發、裝備普通劍／弓／法杖；同種類重複取得是另一隻獨立角色（不轉碎片），同批十連每抽各自獨立。角色取得時由 C# 擲出 `Level`（1）、`Personality`（25 種性格）與 `Fate`（10 種命格），隨回執保存且之後固定（定義見 `Models/CharacterTraits.cs`，整數線上格式由 `CharacterTraitContractTests` 鎖定）。
 - 金幣仍依玩家保存於 `PlayerParams`（`Group = game_progress`、`Name = gold`、`Value` 為整數字串），沒有獨立金幣表。`GoldCommand` 負責解析／驗證餘額及後端交易，以該資源列原子更新與 Snapshot 衝突保護寫入；有效參數唯一鍵保護首次建立。GameProgress/Get 的 gold 由此列取得，Save 不寫入客戶端餘額，刪除進度列時亦排除 gold。通用 PlayerParams 的 gold 寫入／改名／刪除入口拒絕。
 - `EconomyRequest` 以 `(CreateUserId, RequestId)` 唯一；同一抽卡 request_id 與相同次數重送時回原抽卡结果，不重新抽選、扣款或發獎。相同 request_id 用於不同操作或次數會被拒絕。
 - 抽卡紀錄的 gold 是當次完成時餘額，重播後若要顯示最新餘額需再讀 Shop/GetGold，不可把歷史餘額當成目前餘額。
 - ShopController 的 Snapshot 交易包住 GoldCommand 與 ShopCommand 的全部寫入，不取得玩家鎖；餘額不足、資源衝突或任何發放失敗均回滾。真 SQL 測試驗證同 request 不重扣、發獎中途失敗回滾，HTTP 驗證另涵蓋交易端點。
-- `POST Economy/StartWave`：`{request_id,wave,difficulty}` → `{session_id,wave,enemy_count,gold}`。難度 0..3；有限模式波次 1..100，無限模式為正整數。敵人数為 `6 + wave * 3 + (wave % 5 == 0 ? 1 : 0)`。
+- `POST Economy/StartWave`：`{request_id,wave,difficulty}` → `{session_id,wave,enemy_count,gold}`。難度（關卡槽）0..4：0..2 為一般模式，3 為無限，4 起為試煉關卡（4 = 試煉1，波次 1..10）；一般有限模式波次 1..100，無限模式為正整數。規則唯一來源為 `StageRules`。敵人数為 `6 + wave * 3 + (wave % 5 == 0 ? 1 : 0)`。
 - `POST Economy/ReportKill`：`{request_id,session_id,enemy_index}` → `{gold}`。只接受目前波次 session、索引範圍內的敵人；不同 request_id 不能對同敵人再次領獎。獎勵 `8 + wave`，每五波最後一敵為 BOSS，乘 8，再加已取得的金幣天賦加成。戰鬥仍由前端模擬，這是事件驗證／防重複，不是完整防作弊戰鬥驗證。
 - `POST Economy/PurchaseSkill`：`{request_id,type,kind?,loot_id?}` → `{gold}`。`type` 為 `active` 或 `auxiliary`，每項 100，已解鎖不可再次購買；主動技能 kind 0..6、輔助技能限已知清單，Basic 0 無需購買。
 - `GameProgress/Save` 每新增部署扣 60，新增部署需 `request_id`。以 `(spot_index,character_id,cell)` 判斷是否新增；既有部署不重扣，移除不退款。同 request_id 與相同完整 payload 重播不重扣，改 payload 拒絕。
 - Character 技能配置需有解鎖權限；Basic 0 及各角色預設技能（戰士 5、弓手 0、法師 3）可直接配置，其他主動 root／節點及輔助節點必須先解鎖。進度快照不覆寫／清除技能解鎖群組；通用 PlayerParams CRUD 也禁止寫入、改名或刪除 gold、economy 與技能解鎖資料。
-- 前端已同步新契約；角色擁有權以 Character 清單為準，抽卡、部署、技能購買與擊殺獎勵走後端交易。正式 AppShell 的 HTTP 測試涵蓋單抽／十連、碎片對帳、未部署角色配置、武器排他、部署扣款、擊殺獎勵、技能購買及重新載入；共 62 個斷言通過。舊本機抽卡與自由修改金幣的流程不相容。
+- 前端已同步新契約；角色擁有權以 Character 清單為準，抽卡、部署、技能購買與擊殺獎勵走後端交易。正式 AppShell 的 HTTP 測試涵蓋單抽／十連、同種類重複取得獨立角色、未部署角色配置、武器排他、部署扣款、擊殺獎勵、技能購買及重新載入；共 62 個斷言通過。舊本機抽卡與自由修改金幣的流程不相容。
 
 本機資料庫套用與驗證：
 - 已以 COPY_ONLY／CHECKSUM 備份並執行 RESTORE VERIFYONLY，再套用本次兩個 migrations。既有 3 筆 gold 的 checksum 與武器筆數保持不變，沒有 GoldAccount 表。
 - opt-in SQL 測試：設定 `CHARACTER_SHOP_SQL_TESTS=1` 與 `CHARACTER_SHOP_SQL_CONNECTION`，執行 `dotnet test --filter TestCategory=CharacterShopSql`。只在允許測試的資料庫執行，測試以隨機玩家隔離並回滾／清理該玩家資料；不要提交連線憑證。
 
 遊戲進度存於 `PlayerParams`，沒有父列：
-- 純量：`Group = game_progress`，`Name` 為 `version`、`wave`、`gold`、`max_wave_reached`、`difficulty`、`lifetime_enemies_defeated`、`infinite_level`、`wave_completed`。戰場鍵 `battlefield_version`、`battlefield_columns`、`battlefield_rows`、`castle_x`、`castle_y` 只在有戰場時寫入。
-- 設定：`Group = game_progress.<SettingGroup>`，`Name` 為設定鍵，`Value` 為原始 JSON，`Sequence` 保留順序。已清除波次為 `game_progress.cleared_waves`，`Name` 為索引。
+- 純量：`Group = game_progress`，`Name` 為 `version`、`wave`、`gold`、`max_wave_reached`、`difficulty`、`lifetime_enemies_defeated`、`infinite_level`、`wave_completed`、`trial_return_difficulty`、`trial_return_wave`（進試煉前的一般模式位置）。戰場鍵 `battlefield_version`、`battlefield_columns`、`battlefield_rows`、`castle_x`、`castle_y` 只在有戰場時寫入。
+- 設定：`Group = game_progress.<SettingGroup>`，`Name` 為設定鍵，`Value` 為原始 JSON，`Sequence` 保留順序。已清除波次為 `game_progress.cleared_waves`，`Name` 為關卡槽索引（0..4，舊帳號只有 0..3，讀取時補 0 到 `StageRules.SlotCount`）。
 - 寫入路徑：通用 `PlayerParams` CRUD（`PlayerParamsController`）拒絕 gold、economy 及技能解鎖相關資料，其他群組仍可直接寫入或刪除。通用路徑不經過 `ValidateProgress`，不保證進度一致性（`version` 缺失視為無存檔；缺少必要鍵或設定重複會使讀取失敗）。進度的正式寫入路徑仍是 `GameProgress/Save` 整份覆寫；後端權威金幣／解鎖資料另由交易服務維護。登入時的 `PlayerParamsList`（`PlayerService` 以 `GetModelList` 載入）包含這些列。
 - 讀取時若沒有 `version`，`GameProgress/Get` 視為尚未建立（404）。
 

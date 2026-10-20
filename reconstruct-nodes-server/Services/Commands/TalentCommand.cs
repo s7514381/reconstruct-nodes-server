@@ -75,9 +75,12 @@ public class TalentCommand(BaseServiceArgument argument) : BaseService(argument)
         Talent talent = state.Parents.FirstOrDefault()
             ?? throw new BusinessOperationException(ApiMessageKeys.TalentMissing);
         TalentModel model = TalentService.BuildSnapshot(talent, state.Acquired, state.Legacy, current);
+        // Players still holding the retired 9-board layout are refunded before any talent action applies.
+        TalentRules.MigrateRemovedTrees(model);
         change(model);
         TalentService.ValidateTalent(model);
 
+        talent.Version = model.Version;
         talent.TalentPoints = model.TalentPoints;
         talent.TotalSpentPoints = model.TotalSpentPoints;
         List<TalentAcquired> acquired = ToRows(model.AcquiredTalents, (tree, node, value) =>

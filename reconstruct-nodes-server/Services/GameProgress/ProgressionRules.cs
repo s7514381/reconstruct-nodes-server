@@ -14,7 +14,7 @@ public static class ProgressionRules
             ?? throw new InvalidOperationException("Invalid wave session.");
         using var intent = JsonDocument.Parse(receipt.Payload);
         session.Difficulty = intent.RootElement.GetProperty("Difficulty").GetInt32();
-        if (session.Wave < 1 || session.EnemyCount < 1 || session.Difficulty is < 0 or > 3)
+        if (session.Wave < 1 || session.EnemyCount < 1 || !StageRules.IsValid(session.Difficulty))
         { throw new InvalidOperationException("Invalid persisted wave session."); }
         using var result = JsonDocument.Parse(receipt.Result);
         if (!result.RootElement.TryGetProperty("infinite_level", out _))
@@ -38,8 +38,7 @@ public static class ProgressionRules
         long total = progression.TryGetValue("total_experience", out var saved) ? saved.GetInt64() : 0;
         if (level is < 1 or > MaxLevel || experience < 0 || fifths is < 0 or > 4 || total < 0)
         { throw new InvalidOperationException("Invalid persisted progression."); }
-        int enemyLevel = session.Difficulty == 3 ? session.InfiniteLevel :
-            1 + (session.Wave - 1) / new[] { 2, 4, 8 }[session.Difficulty];
+        int enemyLevel = StageRules.EnemyLevel(session.Difficulty, session.Wave, session.InfiniteLevel);
         long reward = 1L + (session.Wave - 1) / 2;
         if (session.Wave % 5 == 0 && enemyIndex == session.EnemyCount - 1) { reward = checked(reward * 8); }
         long units = checked(fifths + reward * Math.Clamp(10L - Math.Abs((long)level - enemyLevel), 0, 5));
@@ -58,8 +57,10 @@ public static class ProgressionRules
 
     public static (int Wave, int Difficulty, int InfiniteLevel) NextWave(int wave, int difficulty, int infiniteLevel)
     {
-        if (difficulty != 3 && wave == 100)
-        { return (1, difficulty + 1, 1 + (wave - 1) / new[] { 2, 4, 8 }[difficulty]); }
+        if (StageRules.IsLimitedStage(difficulty) && wave >= StageRules.MaxWave(difficulty))
+        { return (wave, difficulty, infiniteLevel); }
+        if (difficulty < StageRules.Infinite && wave == StageRules.FiniteWaves)
+        { return (1, difficulty + 1, StageRules.EnemyLevel(difficulty, wave, 1)); }
         return (checked(wave + 1), difficulty, infiniteLevel);
     }
 }

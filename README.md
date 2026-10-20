@@ -311,8 +311,8 @@ Azurite 關閉即丟棄記憶體日誌。若測試程序被強制終止，finall
 - 管理端登入與 session：`POST Manager/Login`、`POST Manager/GetSession`（原 `GetManagerSession`，已改名，見 docs/ARCHITECTURE.md 10.2 的 URL 改名表）。
 - 遊戲資料：`Shop`、`Character`、`GameProgress`、`Talent`、`Item`、`Weapon`、`AchievementProgress`。
 - `Character/GetList`、`Character/Get?id=<GUID>`、`Character/Save` 提供獨立角色配置；角色未部署也能裝備武器與技能樹。部署只使用 `character_id` 引用角色目前配置，進度覆寫不刪除角色。
-- 一般角色（kind 0～2）由 `Shop/Draw` 取得：單抽 100 金幣、十連 900，新角色配發普通基礎武器，重複發碎片。`Character/Save` 不能建立角色。抽卡需穩定 `request_id`，重送不重複扣款。
-- `Shop/Draw` 新收據包含 `state: {version: 1, characters, weapons, shards}`：characters／weapons 僅含本次首次建立的完整模型（新實例 revision 0），shards 為本批次各碎片提交後的絕對數量。新角色預設技能與武器、扣款、收據同交易提交，前端不需再次保存才可顯示結果。重播保留原始收據；舊紀錄省略 state，由客戶端讀取最新權威快照。重試或相關寫入競態不得以舊收據覆蓋最新配置／數量。Godot 編輯器測試版的單抽按鈕至完整結果繪製目標為 ≤1000ms，驗證入口見客戶端執行文件。
+- 一般角色（kind 0～2）由 `Shop/Draw` 取得：單抽 100 金幣、十連 900，每抽取得一隻獨立的新角色並配發普通基礎武器（同種類可擁有多隻，不再轉碎片），隨機擲等級 1、性格（25 種）與命格（10 種）。`Character/Save` 不能建立角色。抽卡需穩定 `request_id`，重送不重複扣款。
+- `Shop/Draw` 新收據包含 `state: {version: 1, characters, weapons}`：characters／weapons 為本次新建立的完整模型（新實例 revision 0；角色含 `level`／`personality`／`fate`）。新角色預設技能與武器、扣款、收據同交易提交，前端不需再次保存才可顯示結果。重播保留原始收據；舊紀錄省略 state，由客戶端讀取最新權威快照。重試或相關寫入競態不得以舊收據覆蓋最新配置／數量。Godot 編輯器測試版的單抽按鈕至完整結果繪製目標為 ≤1000ms，驗證入口見客戶端執行文件。
 - 核心沿用 `Character` 與相同 GUID／配置 DTO，固定 **kind = 3**，不新增核心 endpoint 或資料表。新舊帳號首次 `Character/GetList`（或 `Get`）在既有交易與玩家鎖內自動補齊唯一核心；無費用、無初始武器，初始技能樹為 `[{ "kind": 1, "auxiliary_nodes": [] }]`。火球值已核對遊戲 `BulletData.FIREBALL -> ActiveSkill.FIREBALL = 1`，不是 4。已存在核心不重設技能或武器，明確保存的空技能清單會保留。
 - 前端先讀 `Character/GetList` 取得核心真實 `id`；技能配置與穿卸裝使用各自前景 action。核心免費可用火球及既有通用基本技能，其他主動／輔助技能仍需解鎖；武器仍驗證本人擁有及跨角色唯一裝備。核心不進商店抽取池，也不能成為前景部署引用，沒有角色刪除／撤回 API。一般部署費不適用核心，核心常駐位置由前端接線；後端只保存核心配置。
 - 本次核心擴充不需 migration；不會主動批次改寫帳號或共享資料庫，未讀角色清單的帳號於下一次讀取時補齊。服務層直接呼叫 `GetList`／`Get` 也必須沿用既有 repository transaction，不能脫離交易使用玩家鎖。

@@ -82,6 +82,53 @@ public sealed class SkillLinkUpgradeSnapshot
     public int MaterialCount { get; set; }
 }
 
+/// <summary>解散角色：歸還武器與能力點、刪除該角色全部相關資料，並依等級發放榮譽。核心與場上角色不可解散。</summary>
+public sealed class CharacterDissolveRequest : CommandRequest
+{
+    [JsonPropertyName("character_id")]
+    public Guid CharacterId { get; set; }
+}
+
+public sealed class CharacterDissolveSnapshot
+{
+    [JsonPropertyName("character_id")]
+    public Guid CharacterId { get; set; }
+    /// <summary>被解散角色當時的等級（榮譽依此計算）。</summary>
+    [JsonPropertyName("level")]
+    public int Level { get; set; }
+    [JsonPropertyName("honor_gained")]
+    public int HonorGained { get; set; }
+    /// <summary>榮譽在庫量，由資料庫在同一交易回填。</summary>
+    [JsonPropertyName("honor_count")]
+    public int HonorCount { get; set; }
+    /// <summary>被歸還（解除裝備）的武器 EntryKey；沒有裝備時為 null。</summary>
+    [JsonPropertyName("released_weapon_entry_id")]
+    public string? ReleasedWeaponEntryId { get; set; }
+}
+
+/// <summary>升級角色：消耗 2^(Level-1) 隻素材角色（任何種類、不論等級）使目標升一級；素材比照解散歸還武器與能力點，但不給榮譽。</summary>
+public sealed class CharacterUpgradeRequest : CommandRequest
+{
+    [JsonPropertyName("target_id")]
+    public Guid TargetId { get; set; }
+    [JsonPropertyName("material_ids")]
+    public List<Guid> MaterialIds { get; set; } = [];
+}
+
+public sealed class CharacterUpgradeSnapshot
+{
+    [JsonPropertyName("target_id")]
+    public Guid TargetId { get; set; }
+    /// <summary>升級後的等級。</summary>
+    [JsonPropertyName("level")]
+    public int Level { get; set; }
+    [JsonPropertyName("removed_ids")]
+    public List<Guid> RemovedIds { get; set; } = [];
+    /// <summary>被歸還（解除裝備）的素材武器 EntryKey。</summary>
+    [JsonPropertyName("released_weapon_entry_ids")]
+    public List<string> ReleasedWeaponEntryIds { get; set; } = [];
+}
+
 public sealed class SkillLoadoutRequest : ExpectedRevisionRequest
 {
     [JsonPropertyName("character_id")]
@@ -136,6 +183,9 @@ public sealed class BattlefieldCommandRequest : ExpectedRevisionRequest
     // Editor can atomically commit roads, withdrawals and placements together.
     [JsonPropertyName("deployment_log")]
     public List<GameProgressDeploymentModel>? DeploymentLog { get; set; }
+    // 隊長不可空缺：部署清單非空時必須指定其中一位；清單為空時必須為 null。
+    [JsonPropertyName("captain_character_id")]
+    public Guid? CaptainCharacterId { get; set; }
 }
 
 public sealed class WaveTransitionRequest : ExpectedRevisionRequest

@@ -27,6 +27,15 @@ namespace ReconstructNodesServer.Library.Models
         [JsonPropertyName("skill_link_count")]
         public int SkillLinkCount { get; set; } = SkillLinkRules.InitialCount;
 
+        [JsonPropertyName("level")]
+        public int Level { get; set; } = CharacterLevelRules.InitialLevel;
+
+        [JsonPropertyName("personality")]
+        public CharacterPersonality Personality { get; set; }
+
+        [JsonPropertyName("fate")]
+        public CharacterFate Fate { get; set; }
+
         [JsonPropertyName("weapon_quality_version")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public int? WeaponQualityVersion { get; set; }

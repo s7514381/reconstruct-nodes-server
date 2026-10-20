@@ -12,6 +12,15 @@ public static class BattlefieldRules
     }
     private static readonly Cell[] Directions = [new(1,0), new(0,1), new(-1,0), new(0,-1)];
 
+    /// <summary>隊長不可空缺：有部署角色就必須指定其中一位，沒有部署角色就不能有隊長。</summary>
+    public static void ValidateCaptain(Guid? captain, List<GameProgressDeploymentModel> deployments)
+    {
+        bool valid = deployments.Count == 0
+            ? captain == null
+            : captain is { } id && deployments.Any(row => row.CharacterId == id);
+        if (!valid) { throw new BusinessArgumentException("battlefield.captain_invalid"); }
+    }
+
     public static void Validate(GameProgressBattlefieldModel? battlefield, List<GameProgressDeploymentModel> deployments)
     {
         if (deployments.Select(d => d.CharacterId).Distinct().Count() != deployments.Count)

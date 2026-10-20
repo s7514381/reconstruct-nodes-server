@@ -118,11 +118,11 @@ namespace ReconstructNodesServer
                 .IsUnique()
                 .HasFilter("[Status] <> -1");
 
-            // 角色裝備每位玩家每個角色只有一列，以唯一索引保證併發寫入時不會產生重複列。
+            // 一般角色可重複取得（每次取得是獨立實例）；只有核心每位玩家一列，併發初始化時以唯一索引保證不會產生重複核心。
             modelBuilder.Entity<Character>()
                 .HasIndex(b => new { b.CreateUserId, b.Kind })
                 .IsUnique()
-                .HasFilter("[Status] <> -1");
+                .HasFilter($"[Status] <> -1 AND [Kind] = {(int)CharacterKind.Core}");
 
             modelBuilder.Entity<Character>()
                 .Property(b => b.WeaponEntryKey).HasMaxLength(450);
