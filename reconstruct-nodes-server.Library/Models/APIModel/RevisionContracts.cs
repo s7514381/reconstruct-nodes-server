@@ -66,6 +66,24 @@ public sealed class CharacterAttributesRequest : CommandRequest
     public int Dexterity { get; set; }
 }
 
+/// <summary>鎖定／解鎖角色：整體覆寫 locked。鎖定的角色不能解散或當升級素材；核心不可鎖定。</summary>
+public sealed class CharacterLockRequest : CommandRequest
+{
+    [JsonPropertyName("character_id")]
+    public Guid CharacterId { get; set; }
+    [JsonPropertyName("locked")]
+    [JsonRequired]
+    public bool Locked { get; set; }
+}
+
+public sealed class CharacterLockSnapshot
+{
+    [JsonPropertyName("character_id")]
+    public Guid CharacterId { get; set; }
+    [JsonPropertyName("locked")]
+    public bool Locked { get; set; }
+}
+
 /// <summary>消耗能量萃取器把角色技能連線數升一級；每次只升一級，費用由 SkillLinkRules 決定。</summary>
 public sealed class SkillLinkUpgradeRequest : CommandRequest
 {

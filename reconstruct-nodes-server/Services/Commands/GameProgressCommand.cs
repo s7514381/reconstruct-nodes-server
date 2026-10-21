@@ -211,10 +211,10 @@ namespace ReconstructNodesServer.Services
             Roads = (await reader.ReadAsync<BattlefieldRoad>()).ToList(),
         });
 
-        /// <summary>讀回本人可部署職業（不含核心）的有效角色 Id，供部署驗證。</summary>
-        internal static SnapshotRead<List<Guid>> DeployableCharactersRead => new(
-            OwnedSql.Select<Character>($"Kind IN ({CharacterKinds.DeployableSqlList})", columns: "Id"),
-            async reader => (await reader.ReadAsync<Guid>()).ToList());
+        /// <summary>讀回本人可部署職業（不含核心）的有效角色 Id 與種類，供部署與戰場空間驗證。</summary>
+        internal static SnapshotRead<List<Character>> DeployableCharactersRead => new(
+            OwnedSql.Select<Character>($"Kind IN ({CharacterKinds.DeployableSqlList})", columns: "Id, Kind"),
+            async reader => (await reader.ReadAsync<Character>()).ToList());
 
         private static bool IsProgressRow(PlayerParams row) =>
             row.Group == ProgressGroup || row.Group.StartsWith(GameProgressParamGroups.SettingPrefix, StringComparison.Ordinal);

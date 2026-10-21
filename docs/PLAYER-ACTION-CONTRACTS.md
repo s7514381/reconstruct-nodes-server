@@ -62,6 +62,7 @@ skill_suffixes／refine_item_counts 不再保存或回傳，資料庫歷史群�
 | `Character/ConfigureAttributes` | `request_id, character_id: UUID, strength: int, intelligence: int, dexterity: int`（`CharacterAttributesRequest`，整體覆寫，不帶 expected_revision） | `CommandReceipt<CharacterModel>`（含 `strength` / `intelligence` / `dexterity`） |
 | `Character/UpgradeSkillLinks` | `request_id, character_id: UUID`（`SkillLinkUpgradeRequest`，不帶 expected_revision；每次升一級） | `CommandReceipt<SkillLinkUpgradeSnapshot>`（`character`（含 `skill_link_count`）＋`material_count` 剩餘能量萃取器） |
 | `Character/Dissolve` | `request_id, character_id: UUID`（`CharacterDissolveRequest`，不帶 expected_revision） | `CommandReceipt<CharacterDissolveSnapshot>`（`character_id`、`level`、`honor_gained`、`honor_count` 榮譽在庫量、`released_weapon_entry_id`） |
+| `Character/SetLocked` | `request_id, character_id: UUID, locked: bool`（`CharacterLockRequest`，整體覆寫，不帶 expected_revision；核心不可鎖定） | `CommandReceipt<CharacterLockSnapshot>`（`character_id`、`locked`）；鎖定角色的 `Character/Dissolve`、`Character/Upgrade` 素材回 `backend.character.locked` |
 | `Character/Upgrade` | `request_id, target_id: UUID, material_ids: UUID[]`（`CharacterUpgradeRequest`，不帶 expected_revision；一次升一級） | `CommandReceipt<CharacterUpgradeSnapshot>`（`target_id`、升級後 `level`、`removed_ids`、`released_weapon_entry_ids`） |
 | `Talent/LearnTalent` | `tree_id: string, node_id: string` | TalentModel |
 | `Talent/RefundTalent` | `tree_id: string, node_id: string`，退整個節點所有級數 | TalentModel |

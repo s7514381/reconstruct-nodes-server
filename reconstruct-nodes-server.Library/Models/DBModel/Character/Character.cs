@@ -21,6 +21,8 @@ namespace ReconstructNodesServer.Library.DBModel
         public CharacterPersonality Personality { get => Get<CharacterPersonality>(); set => Set(value); }
         /// <summary>命格：每次取得角色時隨機，之後不變。</summary>
         public CharacterFate Fate { get => Get<CharacterFate>(); set => Set(value); }
+        /// <summary>玩家鎖定：鎖定的角色不能解散，也不能當升級素材。</summary>
+        public bool Locked { get => Get<bool>(); set => Set(value); }
 
         public Character()
         {

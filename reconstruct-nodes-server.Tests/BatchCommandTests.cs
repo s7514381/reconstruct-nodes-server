@@ -337,6 +337,10 @@ public class BatchCommandTests
         AssertKey(ApiMessageKeys.CharacterDissolveDeployed, () => CharacterDissolveCommand.Prepare(Player, request, payload, state));
 
         (request, payload, state) = Dissolve(1);
+        state.Characters[0].Locked = true;
+        AssertKey(ApiMessageKeys.CharacterLocked, () => CharacterDissolveCommand.Prepare(Player, request, payload, state));
+
+        (request, payload, state) = Dissolve(1);
         state.Characters.Clear();
         AssertKey(ApiMessageKeys.CharacterNotOwned, () => CharacterDissolveCommand.Prepare(Player, request, payload, state));
 
@@ -344,6 +348,52 @@ public class BatchCommandTests
         state.Receipts = [new EconomyRequest { RequestId = request.RequestId, Operation = "character.dissolve", Payload = payload, Result = "{}" }];
         Assert.AreEqual("SELECT @Receipt;", CharacterDissolveCommand.Prepare(Player, request, payload, state).Single().Sql);
         AssertKey(ApiMessageKeys.EconomyRequestConflict, () => CharacterDissolveCommand.Prepare(Player, request, payload + " ", state));
+    }
+
+    // ---- Character/SetLocked ----
+
+    private static (CharacterLockRequest Request, string Payload, CharacterLockCommand.State State) Lock(
+        bool locked, CharacterKind kind = CharacterKind.Warrior)
+    {
+        var character = new Character { Kind = kind };
+        var request = new CharacterLockRequest { RequestId = Guid.NewGuid(), CharacterId = character.Id, Locked = locked };
+        var state = new CharacterLockCommand.State
+        {
+            Characters = [character],
+            Revisions = [Revision(nameof(CharacterModel), 7)],
+        };
+        return (request, RevisionCommand.CanonicalPayload(request), state);
+    }
+
+    [TestMethod]
+    [DataRow(true)]
+    [DataRow(false)]
+    public void Lock_overwrites_the_flag_and_advances_the_revision(bool locked)
+    {
+        var (request, payload, state) = Lock(locked);
+        var commands = CharacterLockCommand.Prepare(Player, request, payload, state);
+
+        var receipt = Receipt<CharacterLockSnapshot>(commands);
+        Assert.AreEqual(8, receipt.Revision);
+        Assert.AreEqual(request.CharacterId, receipt.Snapshot.CharacterId);
+        Assert.AreEqual(locked, receipt.Snapshot.Locked);
+        StringAssert.Contains(AllSql(commands), "SET Locked = @Locked");
+    }
+
+    [TestMethod]
+    public void Lock_rejects_core_and_unowned_characters_and_replays_the_receipt()
+    {
+        var (request, payload, state) = Lock(true, CharacterKind.Core);
+        AssertKey(ApiMessageKeys.CharacterLockCore, () => CharacterLockCommand.Prepare(Player, request, payload, state));
+
+        (request, payload, state) = Lock(true);
+        state.Characters.Clear();
+        AssertKey(ApiMessageKeys.CharacterNotOwned, () => CharacterLockCommand.Prepare(Player, request, payload, state));
+
+        (request, payload, state) = Lock(true);
+        state.Receipts = [new EconomyRequest { RequestId = request.RequestId, Operation = "character.set_locked", Payload = payload, Result = "{}" }];
+        Assert.AreEqual("SELECT @Receipt;", CharacterLockCommand.Prepare(Player, request, payload, state).Single().Sql);
+        AssertKey(ApiMessageKeys.EconomyRequestConflict, () => CharacterLockCommand.Prepare(Player, request, payload + " ", state));
     }
 
     // ---- Character/Upgrade ----
@@ -428,6 +478,13 @@ public class BatchCommandTests
         (request, payload, state) = Upgrade(2, 2);
         state.Deployments = [new Deployment { CharacterId = request.MaterialIds[0] }];
         AssertKey(ApiMessageKeys.CharacterDissolveDeployed, () => CharacterUpgradeCommand.Prepare(Player, request, payload, state));
+
+        (request, payload, state) = Upgrade(2, 2, (_, materials) => materials[1].Locked = true);
+        AssertKey(ApiMessageKeys.CharacterLocked, () => CharacterUpgradeCommand.Prepare(Player, request, payload, state));
+
+        // 鎖定的角色仍可當升級目標。
+        (request, payload, state) = Upgrade(2, 2, (target, _) => target.Locked = true);
+        Assert.AreEqual(3, Receipt<CharacterUpgradeSnapshot>(CharacterUpgradeCommand.Prepare(Player, request, payload, state)).Snapshot.Level);
 
         (request, payload, state) = Upgrade(2, 2);
         state.Characters.RemoveAt(1);
@@ -515,7 +572,7 @@ public class BatchCommandTests
     };
 
     private static BattlefieldCommand.State BattleState(Guid character, long gold = 1000, long revision = 3) =>
-        new() { Progress = Progress(gold, revision), Characters = [character] };
+        new() { Progress = Progress(gold, revision), Characters = [new Character { Id = character, Kind = CharacterKind.Warrior }] };
 
     private static string Payload(object request) => System.Text.Json.JsonSerializer.Serialize(request, request.GetType());
 
@@ -553,6 +610,44 @@ public class BatchCommandTests
 
         AssertKey(ApiMessageKeys.ProgressCharacterNotOwned, () => BattlefieldCommand.Prepare(
             Player, request, Payload(request), BattleState(Guid.NewGuid()), BattlefieldCommand.DeploymentPlan(request)));
+    }
+
+    [TestMethod]
+    public void BattlefieldSpace_capacity_starts_at_20_grows_one_per_level_and_caps_at_60()
+    {
+        Assert.AreEqual(20, BattlefieldSpaceRules.Capacity(1));
+        Assert.AreEqual(21, BattlefieldSpaceRules.Capacity(2));
+        Assert.AreEqual(59, BattlefieldSpaceRules.Capacity(40));
+        Assert.AreEqual(60, BattlefieldSpaceRules.Capacity(41));
+        Assert.AreEqual(60, BattlefieldSpaceRules.Capacity(100));
+        Assert.AreEqual(10, BattlefieldSpaceRules.CostOf(CharacterKind.Warrior));
+    }
+
+    [TestMethod]
+    public void SetDeployment_rejects_characters_that_exceed_the_battlefield_space_of_the_player_level()
+    {
+        Character[] characters = Enumerable.Range(0, 3)
+            .Select(_ => new Character { Id = Guid.NewGuid(), Kind = CharacterKind.Archer }).ToArray();
+        DeploymentCommandRequest Request(int count) => new()
+        {
+            RequestId = Guid.NewGuid(), ExpectedRevision = 3,
+            DeploymentLog = characters.Take(count).Select((row, index) =>
+                new GameProgressDeploymentModel { CharacterId = row.Id, SpotIndex = index + 1, Cell = [index, 0] }).ToList(),
+        };
+        BattlefieldCommand.State StateAt(int level)
+        {
+            var state = new BattlefieldCommand.State { Progress = Progress(), Characters = [.. characters] };
+            state.Progress.Parameters.Add(new PlayerParams { Group = "game_progress.progression", Name = "level", Value = level.ToString() });
+            return state;
+        }
+
+        var two = Request(2);
+        BattlefieldCommand.Prepare(Player, two, Payload(two), StateAt(1), BattlefieldCommand.DeploymentPlan(two));
+        var three = Request(3);
+        AssertKey("battlefield.space_insufficient", () => BattlefieldCommand.Prepare(
+            Player, three, Payload(three), StateAt(1), BattlefieldCommand.DeploymentPlan(three)));
+        three = Request(3);
+        BattlefieldCommand.Prepare(Player, three, Payload(three), StateAt(11), BattlefieldCommand.DeploymentPlan(three));
     }
 
     [TestMethod]

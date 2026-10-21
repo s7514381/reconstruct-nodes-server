@@ -486,6 +486,7 @@ Step 4：依需要覆寫 `SetModel`、`ModelSave`、`ModelDelete`，或在 Contr
 | `POST Character/GetList` | `AuthorizeApiController` | 是 | 讀取本人擁有角色，含目前武器與技能樹；交易內冪等補齊 kind=3 核心（空手、初始火球 kind=1），故新帳號至少回傳核心。 |
 | `POST Character/Get?id=<GUID>` | `AuthorizeApiController` | 是 | 讀取本人單一角色；不存在或非本人角色回 404 envelope。 |
 | `POST Character/Dissolve` | `AuthorizeApiController` | 是 | Body `{request_id, character_id}`；單交易解散非核心、未上場的角色：解除裝備、刪除其技能資料與角色列（能力值點數隨之歸還），發放 `10 × Level` 榮譽物品 `honor`，回 `CommandReceipt<CharacterDissolveSnapshot>`，冪等重播。 |
+| `POST Character/SetLocked` | `AuthorizeApiController` | 是 | Body `{request_id, character_id, locked}`；單交易覆寫 `Character.Locked`（核心不可鎖定），回 `CommandReceipt<CharacterLockSnapshot>`，冪等重播。鎖定的角色不能解散、不能當升級素材。 |
 | `POST Character/Upgrade` | `AuthorizeApiController` | 是 | Body `{request_id, target_id, material_ids}`；單交易移除 `2^(Level-1)` 隻素材角色（同解散的歸還與刪除，但不給榮譽）並讓目標 `Level` +1（上限 10），回 `CommandReceipt<CharacterUpgradeSnapshot>`，冪等重播。 |
 | `POST Character/Save` | `AuthorizeApiController` | 是 | Body `CharacterModel`，只更新已擁有角色的技能配置，保留權威武器引用；必須指定 `id` 並驗證本人及種類；成功 Data 為穩定角色 GUID。不能任意建立角色或穿卸裝。 |
 | `POST Shop/GetCatalog` | `AuthorizeApiController` | 是 | 回傳抽卡價格與角色／基礎武器對應，規則由後端持有。 |

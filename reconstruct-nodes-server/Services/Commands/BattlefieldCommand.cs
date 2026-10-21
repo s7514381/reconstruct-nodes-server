@@ -18,7 +18,7 @@ public class BattlefieldCommand(BaseServiceArgument argument, TimeProvider clock
     {
         public List<EconomyRequest> Receipts { get; set; } = [];
         public GameProgressCommand.ProgressRows Progress { get; set; } = new();
-        public List<Guid> Characters { get; set; } = [];
+        public List<Character> Characters { get; set; } = [];
     }
 
     /// <summary>
@@ -150,7 +150,9 @@ public class BattlefieldCommand(BaseServiceArgument argument, TimeProvider clock
         bool startWave = plan.Change(model, rows.Parameters);
 
         GameProgressCommand.ValidateProgress(model);
-        GameProgressCommand.ValidateCharacters(model.DeploymentLog ?? [], state.Characters.ToHashSet());
+        GameProgressCommand.ValidateCharacters(model.DeploymentLog ?? [], state.Characters.Select(row => row.Id).ToHashSet());
+        int playerLevel = model.Progression?.TryGetValue("level", out var level) == true && level.TryGetInt32(out int value) ? value : 1;
+        BattlefieldSpaceRules.Validate(model.DeploymentLog ?? [], state.Characters, playerLevel);
         PlayerParams? goldRow = rows.Parameters.SingleOrDefault(row => row.Group == "game_progress" && row.Name == "gold");
         var account = new GoldCommand.GoldBalance(goldRow == null ? GoldCommand.StartingGold : GoldCommand.ReadBalance(goldRow));
 

@@ -12,6 +12,9 @@ namespace ReconstructNodesServer.Library.Models
         public const string CheckInFailed = "backend.checkin.failed";
         public const string CheckInAlreadyClaimed = "backend.checkin.already_claimed";
         public const string CheckInMonthComplete = "backend.checkin.month_complete";
+        public const string AdRewardFailed = "backend.ad_reward.failed";
+        public const string AdRewardPending = "backend.ad_reward.pending";
+        public const string AdRewardLimitReached = "backend.ad_reward.limit_reached";
         public const string ChallengeFailed = "backend.challenge.failed";
         public const string ChallengeNoAttempts = "backend.challenge.no_attempts";
         public const string ChallengeNotCleared = "backend.challenge.not_cleared";
@@ -49,6 +52,8 @@ namespace ReconstructNodesServer.Library.Models
         public const string EconomySkillFailed = "backend.economy.skill_failed";
         public const string ShopDrawFailed = "backend.shop.draw_failed";
         public const string ShopCountInvalid = "backend.shop.count_invalid";
+        public const string ShopStarterInvalid = "backend.shop.starter_invalid";
+        public const string ShopStarterUnavailable = "backend.shop.starter_unavailable";
         public const string EconomyRequestRequired = "backend.economy.request_required";
         public const string EconomyRequestConflict = "backend.economy.request_conflict";
         public const string ConcurrencyRetry = "backend.concurrency.retry";
@@ -73,6 +78,8 @@ namespace ReconstructNodesServer.Library.Models
         public const string CharacterSkillLinkMax = "backend.character.skill_link_max";
         public const string CharacterDissolveCore = "backend.character.dissolve_core";
         public const string CharacterDissolveDeployed = "backend.character.dissolve_deployed";
+        public const string CharacterLocked = "backend.character.locked";
+        public const string CharacterLockCore = "backend.character.lock_core";
         public const string CharacterUpgradeMax = "backend.character.upgrade_max";
         public const string CharacterUpgradeMaterialInvalid = "backend.character.upgrade_material_invalid";
         public const string WeaponIdInvalid = "backend.weapon.id_invalid";

@@ -56,6 +56,7 @@ public class CharacterDissolveCommand(BaseServiceArgument argument) : BaseServic
         Character character = state.Characters.FirstOrDefault(row => row.Id == request.CharacterId)
             ?? throw new BusinessArgumentException(ApiMessageKeys.CharacterNotOwned);
         if (character.Kind == CharacterKind.Core) { throw new BusinessArgumentException(ApiMessageKeys.CharacterDissolveCore); }
+        if (character.Locked) { throw new BusinessArgumentException(ApiMessageKeys.CharacterLocked); }
         if (state.Deployments.Any(row => row.CharacterId == character.Id))
         { throw new BusinessArgumentException(ApiMessageKeys.CharacterDissolveDeployed); }
 

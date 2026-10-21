@@ -152,6 +152,66 @@ namespace ReconstructNodesServer.Migrations
                     b.ToTable("AchievementDetail");
                 });
 
+            modelBuilder.Entity("ReconstructNodesServer.Library.DBModel.AdRewardGrant", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasDefaultValueSql("NEWID()");
+
+                    b.Property<int>("Amount")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("Claimed")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("CreateDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("CreateUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("DateKey")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<Guid>("RequestId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int?>("Sequence")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("Slot")
+                        .HasColumnType("int");
+
+                    b.Property<short?>("Status")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("smallint")
+                        .HasDefaultValueSql("1");
+
+                    b.Property<string>("TransactionId")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreateUserId");
+
+                    b.HasIndex("TransactionId")
+                        .IsUnique()
+                        .HasFilter("[Status] <> -1");
+
+                    b.HasIndex("CreateUserId", "RequestId")
+                        .IsUnique()
+                        .HasFilter("[Status] <> -1");
+
+                    b.HasIndex("CreateUserId", "DateKey", "Slot")
+                        .IsUnique()
+                        .HasFilter("[Status] <> -1 AND [Slot] IS NOT NULL");
+
+                    b.ToTable("AdRewardGrant");
+                });
+
             modelBuilder.Entity("ReconstructNodesServer.Library.DBModel.BattlefieldRoad", b =>
                 {
                     b.Property<Guid>("Id")
@@ -217,10 +277,13 @@ namespace ReconstructNodesServer.Migrations
 
                     b.Property<int>("Kind")
                         .HasColumnType("int")
-                        .HasComment("(0) (1) (2) (3) (4)");
+                        .HasComment("(0) (1) (2) (3) (4) (5) (6) (7) (8) (9) (10) (11) (12)");
 
                     b.Property<int>("Level")
                         .HasColumnType("int");
+
+                    b.Property<bool>("Locked")
+                        .HasColumnType("bit");
 
                     b.Property<int>("Personality")
                         .HasColumnType("int")

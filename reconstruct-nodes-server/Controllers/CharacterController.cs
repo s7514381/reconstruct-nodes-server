@@ -7,9 +7,14 @@ namespace ReconstructNodesServer.Controllers
 {
     public class CharacterController(BaseApiArgument argument, CharacterService service, SkillLoadoutCommand skills,
         EquipWeaponCommand equip, CharacterAttributesCommand attributes, SkillLinkUpgradeCommand skillLinks,
-        CharacterDissolveCommand dissolve, CharacterUpgradeCommand upgrade)
+        CharacterDissolveCommand dissolve, CharacterUpgradeCommand upgrade, CharacterLockCommand lockCommand)
         : AuthorizeApiController(argument)
     {
+        [HttpPost]
+        public Task<IActionResult> SetLocked(CharacterLockRequest request) =>
+            TransactionResultAsync(() => lockCommand.Execute(request), ApiMessageKeys.CharacterSaveFailed,
+                commandOwnsTransaction: true);
+
         [HttpPost]
         public Task<IActionResult> Upgrade(CharacterUpgradeRequest request) =>
             TransactionResultAsync(() => upgrade.Execute(request), ApiMessageKeys.CharacterSaveFailed,

@@ -35,6 +35,8 @@ namespace ReconstructNodesServer.Services
             new(CharacterKind.DesertRanger, "desert_ranger", "bow"),
         ]);
 
+        public static readonly IReadOnlyList<CharacterKind> StarterKinds = [CharacterKind.Warrior, CharacterKind.Archer, CharacterKind.Mage];
+
         protected virtual int DrawIndex() => RandomNumberGenerator.GetInt32(Catalog.Characters.Count);
         protected virtual CharacterPersonality DrawPersonality() => RollPersonality();
         protected virtual CharacterFate DrawFate() => RollFate();
@@ -49,10 +51,16 @@ namespace ReconstructNodesServer.Services
         {
             if (request.Count is not (1 or 10)) { throw new BusinessArgumentException(ApiMessageKeys.ShopCountInvalid); }
             if (request.RequestId == Guid.Empty) { throw new BusinessArgumentException(ApiMessageKeys.EconomyRequestRequired); }
+            if (request.StarterKind is { } requested && (request.Count != 1 || !StarterKinds.Contains(requested)))
+            {
+                throw new BusinessArgumentException(ApiMessageKeys.ShopStarterInvalid);
+            }
             var candidates = new List<DrawCandidate>(request.Count);
             for (int index = 0; index < request.Count; index++)
             {
-                CharacterOffer offer = Catalog.Characters[DrawIndex()];
+                CharacterOffer offer = request.StarterKind is { } starter
+                    ? Catalog.Characters.First(o => o.Kind == starter)
+                    : Catalog.Characters[DrawIndex()];
                 string weaponKey = $"shop_{Guid.NewGuid():N}";
                 int skillKind = offer.Kind switch { CharacterKind.Warrior => 5, CharacterKind.Archer => 0, CharacterKind.Mage => 3,
                     CharacterKind.Crusader => 5,
@@ -78,13 +86,19 @@ namespace ReconstructNodesServer.Services
                         Id = weaponKey, WeaponId = offer.WeaponId, WeaponFamilyId = offer.WeaponId, Rarity = "common",
                     }));
             }
-            int cost = request.Count == 1 ? Catalog.SingleCost : Catalog.TenCost;
+            bool isStarter = request.StarterKind.HasValue;
+            int cost = isStarter ? 0 : request.Count == 1 ? Catalog.SingleCost : Catalog.TenCost;
+            // 一般抽取沿用原冪等 payload；新手選角另含指定種類，避免同 request_id 換種類被當成重送。
+            object payload = isStarter ? new { request.Count, StarterKind = (int)request.StarterKind!.Value } : new { request.Count };
             try
             {
                 // Rolls are candidates, not part of the idempotency payload. ExecuteBatch skips this
                 // entire action on replay and returns the durable original result, including legacy receipts.
-                return await gold.ExecuteBatch<ShopDrawResult>(request.RequestId, "shop_draw", new { request.Count },
+                return await gold.ExecuteBatch<ShopDrawResult>(request.RequestId, "shop_draw", payload,
                     """
+                    IF @Starter = 1 AND EXISTS (SELECT 1 FROM Character
+                        WHERE CreateUserId = @CreateUserId AND Status = @Enabled AND Kind <> @CoreKind)
+                        THROW 51006, 'Starter pick unavailable', 1;
                     IF @Balance < @Cost THROW 51005, 'Insufficient gold', 1;
                     SET @Balance = @Balance - @Cost;
                     SET @Result = JSON_MODIFY(@EmptyResult, '$.gold', @Balance);
@@ -129,9 +143,13 @@ namespace ReconstructNodesServer.Services
                     """,
                     new
                     {
-                        Cost = cost, request.Count, Candidates = JsonSerializer.Serialize(candidates),
+                        Cost = cost, request.Count, Starter = isStarter ? 1 : 0, CoreKind = (int)CharacterKind.Core, Candidates = JsonSerializer.Serialize(candidates),
                         EmptyResult = JsonSerializer.Serialize(new ShopDrawResult { RequestId = request.RequestId, State = new() }),
                     });
+            }
+            catch (System.Data.SqlClient.SqlException error) when (error.Number == 51006)
+            {
+                throw new BusinessOperationException(new ApiMessage(ApiMessageKeys.ShopStarterUnavailable));
             }
             catch (System.Data.SqlClient.SqlException error) when (error.Number == 51005)
             {

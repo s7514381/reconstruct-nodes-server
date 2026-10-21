@@ -1,0 +1,3791 @@
+[
+	{
+		"family": "global_damage",
+		"id": "global_damage_t6",
+		"max": 10,
+		"min": 5,
+		"position": "prefix",
+		"required_level": 0,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 6,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "global_damage",
+		"id": "global_damage_t5",
+		"max": 15,
+		"min": 10,
+		"position": "prefix",
+		"required_level": 10,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 5,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "global_damage",
+		"id": "global_damage_t4",
+		"max": 20,
+		"min": 15,
+		"position": "prefix",
+		"required_level": 20,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 4,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "global_damage",
+		"id": "global_damage_t3",
+		"max": 25,
+		"min": 20,
+		"position": "prefix",
+		"required_level": 30,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 3,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "global_damage",
+		"id": "global_damage_t2",
+		"max": 30,
+		"min": 25,
+		"position": "prefix",
+		"required_level": 40,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 2,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "global_damage",
+		"id": "global_damage_t1",
+		"max": 35,
+		"min": 30,
+		"position": "prefix",
+		"required_level": 50,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 1,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "range",
+		"id": "range_t6",
+		"max": 8,
+		"min": 4,
+		"position": "suffix",
+		"required_level": 0,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 6,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "range",
+		"id": "range_t5",
+		"max": 11,
+		"min": 7,
+		"position": "suffix",
+		"required_level": 10,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 5,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "range",
+		"id": "range_t4",
+		"max": 14,
+		"min": 10,
+		"position": "suffix",
+		"required_level": 20,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 4,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "range",
+		"id": "range_t3",
+		"max": 17,
+		"min": 13,
+		"position": "suffix",
+		"required_level": 30,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 3,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "range",
+		"id": "range_t2",
+		"max": 20,
+		"min": 16,
+		"position": "suffix",
+		"required_level": 40,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 2,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "range",
+		"id": "range_t1",
+		"max": 23,
+		"min": 19,
+		"position": "suffix",
+		"required_level": 50,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 1,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "recovery",
+		"id": "recovery_t6",
+		"max": 8,
+		"min": 4,
+		"position": "suffix",
+		"required_level": 0,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 6,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "recovery",
+		"id": "recovery_t5",
+		"max": 11,
+		"min": 7,
+		"position": "suffix",
+		"required_level": 10,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 5,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "recovery",
+		"id": "recovery_t4",
+		"max": 14,
+		"min": 10,
+		"position": "suffix",
+		"required_level": 20,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 4,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "recovery",
+		"id": "recovery_t3",
+		"max": 17,
+		"min": 13,
+		"position": "suffix",
+		"required_level": 30,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 3,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "recovery",
+		"id": "recovery_t2",
+		"max": 20,
+		"min": 16,
+		"position": "suffix",
+		"required_level": 40,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 2,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "recovery",
+		"id": "recovery_t1",
+		"max": 23,
+		"min": 19,
+		"position": "suffix",
+		"required_level": 50,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 1,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "critical_chance",
+		"id": "critical_chance_t6",
+		"max": 2,
+		"min": 1,
+		"position": "suffix",
+		"required_level": 0,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 6,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "critical_chance",
+		"id": "critical_chance_t5",
+		"max": 3,
+		"min": 2,
+		"position": "suffix",
+		"required_level": 10,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 5,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "critical_chance",
+		"id": "critical_chance_t4",
+		"max": 4,
+		"min": 3,
+		"position": "suffix",
+		"required_level": 20,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 4,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "critical_chance",
+		"id": "critical_chance_t3",
+		"max": 5,
+		"min": 4,
+		"position": "suffix",
+		"required_level": 30,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 3,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "critical_chance",
+		"id": "critical_chance_t2",
+		"max": 6,
+		"min": 5,
+		"position": "suffix",
+		"required_level": 40,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 2,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "critical_chance",
+		"id": "critical_chance_t1",
+		"max": 7,
+		"min": 6,
+		"position": "suffix",
+		"required_level": 50,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 1,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "critical_damage",
+		"id": "critical_damage_t6",
+		"max": 12,
+		"min": 8,
+		"position": "suffix",
+		"required_level": 0,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 6,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "critical_damage",
+		"id": "critical_damage_t5",
+		"max": 17,
+		"min": 13,
+		"position": "suffix",
+		"required_level": 10,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 5,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "critical_damage",
+		"id": "critical_damage_t4",
+		"max": 22,
+		"min": 18,
+		"position": "suffix",
+		"required_level": 20,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 4,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "critical_damage",
+		"id": "critical_damage_t3",
+		"max": 27,
+		"min": 23,
+		"position": "suffix",
+		"required_level": 30,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 3,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "critical_damage",
+		"id": "critical_damage_t2",
+		"max": 32,
+		"min": 28,
+		"position": "suffix",
+		"required_level": 40,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 2,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "critical_damage",
+		"id": "critical_damage_t1",
+		"max": 37,
+		"min": 33,
+		"position": "suffix",
+		"required_level": 50,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 1,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "physical_damage",
+		"id": "physical_damage_t6",
+		"max": 10,
+		"min": 5,
+		"position": "prefix",
+		"required_level": 0,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 6,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "physical_damage",
+		"id": "physical_damage_t5",
+		"max": 15,
+		"min": 10,
+		"position": "prefix",
+		"required_level": 10,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 5,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "physical_damage",
+		"id": "physical_damage_t4",
+		"max": 20,
+		"min": 15,
+		"position": "prefix",
+		"required_level": 20,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 4,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "physical_damage",
+		"id": "physical_damage_t3",
+		"max": 25,
+		"min": 20,
+		"position": "prefix",
+		"required_level": 30,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 3,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "physical_damage",
+		"id": "physical_damage_t2",
+		"max": 30,
+		"min": 25,
+		"position": "prefix",
+		"required_level": 40,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 2,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "physical_damage",
+		"id": "physical_damage_t1",
+		"max": 35,
+		"min": 30,
+		"position": "prefix",
+		"required_level": 50,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 1,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "elemental_damage",
+		"id": "elemental_damage_t6",
+		"max": 8,
+		"min": 4,
+		"position": "prefix",
+		"required_level": 0,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 6,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "elemental_damage",
+		"id": "elemental_damage_t5",
+		"max": 12,
+		"min": 8,
+		"position": "prefix",
+		"required_level": 10,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 5,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "elemental_damage",
+		"id": "elemental_damage_t4",
+		"max": 16,
+		"min": 12,
+		"position": "prefix",
+		"required_level": 20,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 4,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "elemental_damage",
+		"id": "elemental_damage_t3",
+		"max": 20,
+		"min": 16,
+		"position": "prefix",
+		"required_level": 30,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 3,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "elemental_damage",
+		"id": "elemental_damage_t2",
+		"max": 24,
+		"min": 20,
+		"position": "prefix",
+		"required_level": 40,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 2,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "elemental_damage",
+		"id": "elemental_damage_t1",
+		"max": 28,
+		"min": 24,
+		"position": "prefix",
+		"required_level": 50,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 1,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "attack_damage",
+		"id": "attack_damage_t6",
+		"max": 10,
+		"min": 5,
+		"position": "prefix",
+		"required_level": 0,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 6,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "attack_damage",
+		"id": "attack_damage_t5",
+		"max": 15,
+		"min": 10,
+		"position": "prefix",
+		"required_level": 10,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 5,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "attack_damage",
+		"id": "attack_damage_t4",
+		"max": 20,
+		"min": 15,
+		"position": "prefix",
+		"required_level": 20,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 4,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "attack_damage",
+		"id": "attack_damage_t3",
+		"max": 25,
+		"min": 20,
+		"position": "prefix",
+		"required_level": 30,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 3,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "attack_damage",
+		"id": "attack_damage_t2",
+		"max": 30,
+		"min": 25,
+		"position": "prefix",
+		"required_level": 40,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 2,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "attack_damage",
+		"id": "attack_damage_t1",
+		"max": 35,
+		"min": 30,
+		"position": "prefix",
+		"required_level": 50,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 1,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "spell_damage",
+		"id": "spell_damage_t6",
+		"max": 10,
+		"min": 5,
+		"position": "prefix",
+		"required_level": 0,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 6,
+		"weapons": [
+			"staff"
+		]
+	},
+	{
+		"family": "spell_damage",
+		"id": "spell_damage_t5",
+		"max": 15,
+		"min": 10,
+		"position": "prefix",
+		"required_level": 10,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 5,
+		"weapons": [
+			"staff"
+		]
+	},
+	{
+		"family": "spell_damage",
+		"id": "spell_damage_t4",
+		"max": 20,
+		"min": 15,
+		"position": "prefix",
+		"required_level": 20,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 4,
+		"weapons": [
+			"staff"
+		]
+	},
+	{
+		"family": "spell_damage",
+		"id": "spell_damage_t3",
+		"max": 25,
+		"min": 20,
+		"position": "prefix",
+		"required_level": 30,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 3,
+		"weapons": [
+			"staff"
+		]
+	},
+	{
+		"family": "spell_damage",
+		"id": "spell_damage_t2",
+		"max": 30,
+		"min": 25,
+		"position": "prefix",
+		"required_level": 40,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 2,
+		"weapons": [
+			"staff"
+		]
+	},
+	{
+		"family": "spell_damage",
+		"id": "spell_damage_t1",
+		"max": 35,
+		"min": 30,
+		"position": "prefix",
+		"required_level": 50,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 1,
+		"weapons": [
+			"staff"
+		]
+	},
+	{
+		"family": "projectile_damage",
+		"id": "projectile_damage_t6",
+		"max": 10,
+		"min": 5,
+		"position": "prefix",
+		"required_level": 0,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 6,
+		"weapons": [
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "projectile_damage",
+		"id": "projectile_damage_t5",
+		"max": 15,
+		"min": 10,
+		"position": "prefix",
+		"required_level": 10,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 5,
+		"weapons": [
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "projectile_damage",
+		"id": "projectile_damage_t4",
+		"max": 20,
+		"min": 15,
+		"position": "prefix",
+		"required_level": 20,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 4,
+		"weapons": [
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "projectile_damage",
+		"id": "projectile_damage_t3",
+		"max": 25,
+		"min": 20,
+		"position": "prefix",
+		"required_level": 30,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 3,
+		"weapons": [
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "projectile_damage",
+		"id": "projectile_damage_t2",
+		"max": 30,
+		"min": 25,
+		"position": "prefix",
+		"required_level": 40,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 2,
+		"weapons": [
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "projectile_damage",
+		"id": "projectile_damage_t1",
+		"max": 35,
+		"min": 30,
+		"position": "prefix",
+		"required_level": 50,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 1,
+		"weapons": [
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "area_damage",
+		"id": "area_damage_t6",
+		"max": 10,
+		"min": 5,
+		"position": "prefix",
+		"required_level": 0,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 6,
+		"weapons": [
+			"sword",
+			"staff"
+		]
+	},
+	{
+		"family": "area_damage",
+		"id": "area_damage_t5",
+		"max": 15,
+		"min": 10,
+		"position": "prefix",
+		"required_level": 10,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 5,
+		"weapons": [
+			"sword",
+			"staff"
+		]
+	},
+	{
+		"family": "area_damage",
+		"id": "area_damage_t4",
+		"max": 20,
+		"min": 15,
+		"position": "prefix",
+		"required_level": 20,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 4,
+		"weapons": [
+			"sword",
+			"staff"
+		]
+	},
+	{
+		"family": "area_damage",
+		"id": "area_damage_t3",
+		"max": 25,
+		"min": 20,
+		"position": "prefix",
+		"required_level": 30,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 3,
+		"weapons": [
+			"sword",
+			"staff"
+		]
+	},
+	{
+		"family": "area_damage",
+		"id": "area_damage_t2",
+		"max": 30,
+		"min": 25,
+		"position": "prefix",
+		"required_level": 40,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 2,
+		"weapons": [
+			"sword",
+			"staff"
+		]
+	},
+	{
+		"family": "area_damage",
+		"id": "area_damage_t1",
+		"max": 35,
+		"min": 30,
+		"position": "prefix",
+		"required_level": 50,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 1,
+		"weapons": [
+			"sword",
+			"staff"
+		]
+	},
+	{
+		"family": "weapon_added_percent",
+		"id": "weapon_added_percent_t6",
+		"max": 5,
+		"min": 1,
+		"position": "prefix",
+		"required_level": 0,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 6,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "weapon_added_percent",
+		"id": "weapon_added_percent_t5",
+		"max": 15,
+		"min": 11,
+		"position": "prefix",
+		"required_level": 10,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 5,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "weapon_added_percent",
+		"id": "weapon_added_percent_t4",
+		"max": 25,
+		"min": 21,
+		"position": "prefix",
+		"required_level": 20,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 4,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "weapon_added_percent",
+		"id": "weapon_added_percent_t3",
+		"max": 35,
+		"min": 30,
+		"position": "prefix",
+		"required_level": 30,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 3,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "weapon_added_percent",
+		"id": "weapon_added_percent_t2",
+		"max": 45,
+		"min": 40,
+		"position": "prefix",
+		"required_level": 40,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 2,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "weapon_added_percent",
+		"id": "weapon_added_percent_t1",
+		"max": 55,
+		"min": 50,
+		"position": "prefix",
+		"required_level": 50,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 1,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "weapon_added_flat",
+		"id": "weapon_added_flat_t6",
+		"max": 5,
+		"min": 1,
+		"position": "prefix",
+		"required_level": 0,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 6,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "weapon_added_flat",
+		"id": "weapon_added_flat_t5",
+		"max": 9,
+		"min": 5,
+		"position": "prefix",
+		"required_level": 10,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 5,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "weapon_added_flat",
+		"id": "weapon_added_flat_t4",
+		"max": 13,
+		"min": 9,
+		"position": "prefix",
+		"required_level": 20,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 4,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "weapon_added_flat",
+		"id": "weapon_added_flat_t3",
+		"max": 17,
+		"min": 12,
+		"position": "prefix",
+		"required_level": 30,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 3,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "weapon_added_flat",
+		"id": "weapon_added_flat_t2",
+		"max": 21,
+		"min": 16,
+		"position": "prefix",
+		"required_level": 40,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 2,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "weapon_added_flat",
+		"id": "weapon_added_flat_t1",
+		"max": 25,
+		"min": 20,
+		"position": "prefix",
+		"required_level": 50,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 1,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "added_physical",
+		"id": "added_physical_t6",
+		"max": 2,
+		"min": 1,
+		"position": "prefix",
+		"required_level": 0,
+		"second_max": 4,
+		"second_min": 3,
+		"tier": 6,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "added_physical",
+		"id": "added_physical_t5",
+		"max": 4,
+		"min": 3,
+		"position": "prefix",
+		"required_level": 10,
+		"second_max": 7,
+		"second_min": 6,
+		"tier": 5,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "added_physical",
+		"id": "added_physical_t4",
+		"max": 6,
+		"min": 5,
+		"position": "prefix",
+		"required_level": 20,
+		"second_max": 10,
+		"second_min": 9,
+		"tier": 4,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "added_physical",
+		"id": "added_physical_t3",
+		"max": 8,
+		"min": 7,
+		"position": "prefix",
+		"required_level": 30,
+		"second_max": 13,
+		"second_min": 12,
+		"tier": 3,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "added_physical",
+		"id": "added_physical_t2",
+		"max": 10,
+		"min": 9,
+		"position": "prefix",
+		"required_level": 40,
+		"second_max": 16,
+		"second_min": 15,
+		"tier": 2,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "added_physical",
+		"id": "added_physical_t1",
+		"max": 12,
+		"min": 11,
+		"position": "prefix",
+		"required_level": 50,
+		"second_max": 19,
+		"second_min": 18,
+		"tier": 1,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "fire_damage",
+		"id": "fire_damage_t6",
+		"max": 12,
+		"min": 6,
+		"position": "prefix",
+		"required_level": 0,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 6,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "fire_damage",
+		"id": "fire_damage_t5",
+		"max": 18,
+		"min": 12,
+		"position": "prefix",
+		"required_level": 10,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 5,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "fire_damage",
+		"id": "fire_damage_t4",
+		"max": 24,
+		"min": 18,
+		"position": "prefix",
+		"required_level": 20,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 4,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "fire_damage",
+		"id": "fire_damage_t3",
+		"max": 30,
+		"min": 24,
+		"position": "prefix",
+		"required_level": 30,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 3,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "fire_damage",
+		"id": "fire_damage_t2",
+		"max": 36,
+		"min": 30,
+		"position": "prefix",
+		"required_level": 40,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 2,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "fire_damage",
+		"id": "fire_damage_t1",
+		"max": 42,
+		"min": 36,
+		"position": "prefix",
+		"required_level": 50,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 1,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "added_fire",
+		"id": "added_fire_t6",
+		"max": 2,
+		"min": 1,
+		"position": "prefix",
+		"required_level": 0,
+		"second_max": 5,
+		"second_min": 3,
+		"tier": 6,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "added_fire",
+		"id": "added_fire_t5",
+		"max": 4,
+		"min": 3,
+		"position": "prefix",
+		"required_level": 10,
+		"second_max": 8,
+		"second_min": 6,
+		"tier": 5,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "added_fire",
+		"id": "added_fire_t4",
+		"max": 6,
+		"min": 5,
+		"position": "prefix",
+		"required_level": 20,
+		"second_max": 11,
+		"second_min": 9,
+		"tier": 4,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "added_fire",
+		"id": "added_fire_t3",
+		"max": 8,
+		"min": 7,
+		"position": "prefix",
+		"required_level": 30,
+		"second_max": 14,
+		"second_min": 12,
+		"tier": 3,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "added_fire",
+		"id": "added_fire_t2",
+		"max": 10,
+		"min": 9,
+		"position": "prefix",
+		"required_level": 40,
+		"second_max": 17,
+		"second_min": 15,
+		"tier": 2,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "added_fire",
+		"id": "added_fire_t1",
+		"max": 12,
+		"min": 11,
+		"position": "prefix",
+		"required_level": 50,
+		"second_max": 20,
+		"second_min": 18,
+		"tier": 1,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "spell_added_fire",
+		"id": "spell_added_fire_t6",
+		"max": 2,
+		"min": 1,
+		"position": "prefix",
+		"required_level": 0,
+		"second_max": 5,
+		"second_min": 3,
+		"tier": 6,
+		"weapons": [
+			"staff"
+		]
+	},
+	{
+		"family": "spell_added_fire",
+		"id": "spell_added_fire_t5",
+		"max": 4,
+		"min": 3,
+		"position": "prefix",
+		"required_level": 10,
+		"second_max": 8,
+		"second_min": 6,
+		"tier": 5,
+		"weapons": [
+			"staff"
+		]
+	},
+	{
+		"family": "spell_added_fire",
+		"id": "spell_added_fire_t4",
+		"max": 6,
+		"min": 5,
+		"position": "prefix",
+		"required_level": 20,
+		"second_max": 11,
+		"second_min": 9,
+		"tier": 4,
+		"weapons": [
+			"staff"
+		]
+	},
+	{
+		"family": "spell_added_fire",
+		"id": "spell_added_fire_t3",
+		"max": 8,
+		"min": 7,
+		"position": "prefix",
+		"required_level": 30,
+		"second_max": 14,
+		"second_min": 12,
+		"tier": 3,
+		"weapons": [
+			"staff"
+		]
+	},
+	{
+		"family": "spell_added_fire",
+		"id": "spell_added_fire_t2",
+		"max": 10,
+		"min": 9,
+		"position": "prefix",
+		"required_level": 40,
+		"second_max": 17,
+		"second_min": 15,
+		"tier": 2,
+		"weapons": [
+			"staff"
+		]
+	},
+	{
+		"family": "spell_added_fire",
+		"id": "spell_added_fire_t1",
+		"max": 12,
+		"min": 11,
+		"position": "prefix",
+		"required_level": 50,
+		"second_max": 20,
+		"second_min": 18,
+		"tier": 1,
+		"weapons": [
+			"staff"
+		]
+	},
+	{
+		"family": "fire_status_chance",
+		"id": "fire_status_chance_t6",
+		"max": 5,
+		"min": 3,
+		"position": "suffix",
+		"required_level": 0,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 6,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "fire_status_chance",
+		"id": "fire_status_chance_t5",
+		"max": 7,
+		"min": 5,
+		"position": "suffix",
+		"required_level": 10,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 5,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "fire_status_chance",
+		"id": "fire_status_chance_t4",
+		"max": 9,
+		"min": 7,
+		"position": "suffix",
+		"required_level": 20,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 4,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "fire_status_chance",
+		"id": "fire_status_chance_t3",
+		"max": 11,
+		"min": 9,
+		"position": "suffix",
+		"required_level": 30,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 3,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "fire_status_chance",
+		"id": "fire_status_chance_t2",
+		"max": 13,
+		"min": 11,
+		"position": "suffix",
+		"required_level": 40,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 2,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "fire_status_chance",
+		"id": "fire_status_chance_t1",
+		"max": 15,
+		"min": 13,
+		"position": "suffix",
+		"required_level": 50,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 1,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "fire_penetration",
+		"id": "fire_penetration_t6",
+		"max": 2,
+		"min": 1,
+		"position": "suffix",
+		"required_level": 0,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 6,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "fire_penetration",
+		"id": "fire_penetration_t5",
+		"max": 3,
+		"min": 2,
+		"position": "suffix",
+		"required_level": 10,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 5,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "fire_penetration",
+		"id": "fire_penetration_t4",
+		"max": 4,
+		"min": 3,
+		"position": "suffix",
+		"required_level": 20,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 4,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "fire_penetration",
+		"id": "fire_penetration_t3",
+		"max": 5,
+		"min": 4,
+		"position": "suffix",
+		"required_level": 30,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 3,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "fire_penetration",
+		"id": "fire_penetration_t2",
+		"max": 6,
+		"min": 5,
+		"position": "suffix",
+		"required_level": 40,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 2,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "fire_penetration",
+		"id": "fire_penetration_t1",
+		"max": 7,
+		"min": 6,
+		"position": "suffix",
+		"required_level": 50,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 1,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "ice_damage",
+		"id": "ice_damage_t6",
+		"max": 12,
+		"min": 6,
+		"position": "prefix",
+		"required_level": 0,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 6,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "ice_damage",
+		"id": "ice_damage_t5",
+		"max": 18,
+		"min": 12,
+		"position": "prefix",
+		"required_level": 10,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 5,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "ice_damage",
+		"id": "ice_damage_t4",
+		"max": 24,
+		"min": 18,
+		"position": "prefix",
+		"required_level": 20,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 4,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "ice_damage",
+		"id": "ice_damage_t3",
+		"max": 30,
+		"min": 24,
+		"position": "prefix",
+		"required_level": 30,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 3,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "ice_damage",
+		"id": "ice_damage_t2",
+		"max": 36,
+		"min": 30,
+		"position": "prefix",
+		"required_level": 40,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 2,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "ice_damage",
+		"id": "ice_damage_t1",
+		"max": 42,
+		"min": 36,
+		"position": "prefix",
+		"required_level": 50,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 1,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "added_ice",
+		"id": "added_ice_t6",
+		"max": 2,
+		"min": 1,
+		"position": "prefix",
+		"required_level": 0,
+		"second_max": 5,
+		"second_min": 3,
+		"tier": 6,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "added_ice",
+		"id": "added_ice_t5",
+		"max": 4,
+		"min": 3,
+		"position": "prefix",
+		"required_level": 10,
+		"second_max": 8,
+		"second_min": 6,
+		"tier": 5,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "added_ice",
+		"id": "added_ice_t4",
+		"max": 6,
+		"min": 5,
+		"position": "prefix",
+		"required_level": 20,
+		"second_max": 11,
+		"second_min": 9,
+		"tier": 4,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "added_ice",
+		"id": "added_ice_t3",
+		"max": 8,
+		"min": 7,
+		"position": "prefix",
+		"required_level": 30,
+		"second_max": 14,
+		"second_min": 12,
+		"tier": 3,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "added_ice",
+		"id": "added_ice_t2",
+		"max": 10,
+		"min": 9,
+		"position": "prefix",
+		"required_level": 40,
+		"second_max": 17,
+		"second_min": 15,
+		"tier": 2,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "added_ice",
+		"id": "added_ice_t1",
+		"max": 12,
+		"min": 11,
+		"position": "prefix",
+		"required_level": 50,
+		"second_max": 20,
+		"second_min": 18,
+		"tier": 1,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "spell_added_ice",
+		"id": "spell_added_ice_t6",
+		"max": 2,
+		"min": 1,
+		"position": "prefix",
+		"required_level": 0,
+		"second_max": 5,
+		"second_min": 3,
+		"tier": 6,
+		"weapons": [
+			"staff"
+		]
+	},
+	{
+		"family": "spell_added_ice",
+		"id": "spell_added_ice_t5",
+		"max": 4,
+		"min": 3,
+		"position": "prefix",
+		"required_level": 10,
+		"second_max": 8,
+		"second_min": 6,
+		"tier": 5,
+		"weapons": [
+			"staff"
+		]
+	},
+	{
+		"family": "spell_added_ice",
+		"id": "spell_added_ice_t4",
+		"max": 6,
+		"min": 5,
+		"position": "prefix",
+		"required_level": 20,
+		"second_max": 11,
+		"second_min": 9,
+		"tier": 4,
+		"weapons": [
+			"staff"
+		]
+	},
+	{
+		"family": "spell_added_ice",
+		"id": "spell_added_ice_t3",
+		"max": 8,
+		"min": 7,
+		"position": "prefix",
+		"required_level": 30,
+		"second_max": 14,
+		"second_min": 12,
+		"tier": 3,
+		"weapons": [
+			"staff"
+		]
+	},
+	{
+		"family": "spell_added_ice",
+		"id": "spell_added_ice_t2",
+		"max": 10,
+		"min": 9,
+		"position": "prefix",
+		"required_level": 40,
+		"second_max": 17,
+		"second_min": 15,
+		"tier": 2,
+		"weapons": [
+			"staff"
+		]
+	},
+	{
+		"family": "spell_added_ice",
+		"id": "spell_added_ice_t1",
+		"max": 12,
+		"min": 11,
+		"position": "prefix",
+		"required_level": 50,
+		"second_max": 20,
+		"second_min": 18,
+		"tier": 1,
+		"weapons": [
+			"staff"
+		]
+	},
+	{
+		"family": "ice_status_chance",
+		"id": "ice_status_chance_t6",
+		"max": 5,
+		"min": 3,
+		"position": "suffix",
+		"required_level": 0,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 6,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "ice_status_chance",
+		"id": "ice_status_chance_t5",
+		"max": 7,
+		"min": 5,
+		"position": "suffix",
+		"required_level": 10,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 5,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "ice_status_chance",
+		"id": "ice_status_chance_t4",
+		"max": 9,
+		"min": 7,
+		"position": "suffix",
+		"required_level": 20,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 4,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "ice_status_chance",
+		"id": "ice_status_chance_t3",
+		"max": 11,
+		"min": 9,
+		"position": "suffix",
+		"required_level": 30,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 3,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "ice_status_chance",
+		"id": "ice_status_chance_t2",
+		"max": 13,
+		"min": 11,
+		"position": "suffix",
+		"required_level": 40,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 2,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "ice_status_chance",
+		"id": "ice_status_chance_t1",
+		"max": 15,
+		"min": 13,
+		"position": "suffix",
+		"required_level": 50,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 1,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "ice_penetration",
+		"id": "ice_penetration_t6",
+		"max": 2,
+		"min": 1,
+		"position": "suffix",
+		"required_level": 0,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 6,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "ice_penetration",
+		"id": "ice_penetration_t5",
+		"max": 3,
+		"min": 2,
+		"position": "suffix",
+		"required_level": 10,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 5,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "ice_penetration",
+		"id": "ice_penetration_t4",
+		"max": 4,
+		"min": 3,
+		"position": "suffix",
+		"required_level": 20,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 4,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "ice_penetration",
+		"id": "ice_penetration_t3",
+		"max": 5,
+		"min": 4,
+		"position": "suffix",
+		"required_level": 30,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 3,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "ice_penetration",
+		"id": "ice_penetration_t2",
+		"max": 6,
+		"min": 5,
+		"position": "suffix",
+		"required_level": 40,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 2,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "ice_penetration",
+		"id": "ice_penetration_t1",
+		"max": 7,
+		"min": 6,
+		"position": "suffix",
+		"required_level": 50,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 1,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "lightning_damage",
+		"id": "lightning_damage_t6",
+		"max": 12,
+		"min": 6,
+		"position": "prefix",
+		"required_level": 0,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 6,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "lightning_damage",
+		"id": "lightning_damage_t5",
+		"max": 18,
+		"min": 12,
+		"position": "prefix",
+		"required_level": 10,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 5,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "lightning_damage",
+		"id": "lightning_damage_t4",
+		"max": 24,
+		"min": 18,
+		"position": "prefix",
+		"required_level": 20,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 4,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "lightning_damage",
+		"id": "lightning_damage_t3",
+		"max": 30,
+		"min": 24,
+		"position": "prefix",
+		"required_level": 30,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 3,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "lightning_damage",
+		"id": "lightning_damage_t2",
+		"max": 36,
+		"min": 30,
+		"position": "prefix",
+		"required_level": 40,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 2,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "lightning_damage",
+		"id": "lightning_damage_t1",
+		"max": 42,
+		"min": 36,
+		"position": "prefix",
+		"required_level": 50,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 1,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "added_lightning",
+		"id": "added_lightning_t6",
+		"max": 2,
+		"min": 1,
+		"position": "prefix",
+		"required_level": 0,
+		"second_max": 5,
+		"second_min": 3,
+		"tier": 6,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "added_lightning",
+		"id": "added_lightning_t5",
+		"max": 4,
+		"min": 3,
+		"position": "prefix",
+		"required_level": 10,
+		"second_max": 8,
+		"second_min": 6,
+		"tier": 5,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "added_lightning",
+		"id": "added_lightning_t4",
+		"max": 6,
+		"min": 5,
+		"position": "prefix",
+		"required_level": 20,
+		"second_max": 11,
+		"second_min": 9,
+		"tier": 4,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "added_lightning",
+		"id": "added_lightning_t3",
+		"max": 8,
+		"min": 7,
+		"position": "prefix",
+		"required_level": 30,
+		"second_max": 14,
+		"second_min": 12,
+		"tier": 3,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "added_lightning",
+		"id": "added_lightning_t2",
+		"max": 10,
+		"min": 9,
+		"position": "prefix",
+		"required_level": 40,
+		"second_max": 17,
+		"second_min": 15,
+		"tier": 2,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "added_lightning",
+		"id": "added_lightning_t1",
+		"max": 12,
+		"min": 11,
+		"position": "prefix",
+		"required_level": 50,
+		"second_max": 20,
+		"second_min": 18,
+		"tier": 1,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "spell_added_lightning",
+		"id": "spell_added_lightning_t6",
+		"max": 2,
+		"min": 1,
+		"position": "prefix",
+		"required_level": 0,
+		"second_max": 5,
+		"second_min": 3,
+		"tier": 6,
+		"weapons": [
+			"staff"
+		]
+	},
+	{
+		"family": "spell_added_lightning",
+		"id": "spell_added_lightning_t5",
+		"max": 4,
+		"min": 3,
+		"position": "prefix",
+		"required_level": 10,
+		"second_max": 8,
+		"second_min": 6,
+		"tier": 5,
+		"weapons": [
+			"staff"
+		]
+	},
+	{
+		"family": "spell_added_lightning",
+		"id": "spell_added_lightning_t4",
+		"max": 6,
+		"min": 5,
+		"position": "prefix",
+		"required_level": 20,
+		"second_max": 11,
+		"second_min": 9,
+		"tier": 4,
+		"weapons": [
+			"staff"
+		]
+	},
+	{
+		"family": "spell_added_lightning",
+		"id": "spell_added_lightning_t3",
+		"max": 8,
+		"min": 7,
+		"position": "prefix",
+		"required_level": 30,
+		"second_max": 14,
+		"second_min": 12,
+		"tier": 3,
+		"weapons": [
+			"staff"
+		]
+	},
+	{
+		"family": "spell_added_lightning",
+		"id": "spell_added_lightning_t2",
+		"max": 10,
+		"min": 9,
+		"position": "prefix",
+		"required_level": 40,
+		"second_max": 17,
+		"second_min": 15,
+		"tier": 2,
+		"weapons": [
+			"staff"
+		]
+	},
+	{
+		"family": "spell_added_lightning",
+		"id": "spell_added_lightning_t1",
+		"max": 12,
+		"min": 11,
+		"position": "prefix",
+		"required_level": 50,
+		"second_max": 20,
+		"second_min": 18,
+		"tier": 1,
+		"weapons": [
+			"staff"
+		]
+	},
+	{
+		"family": "lightning_status_chance",
+		"id": "lightning_status_chance_t6",
+		"max": 5,
+		"min": 3,
+		"position": "suffix",
+		"required_level": 0,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 6,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "lightning_status_chance",
+		"id": "lightning_status_chance_t5",
+		"max": 7,
+		"min": 5,
+		"position": "suffix",
+		"required_level": 10,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 5,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "lightning_status_chance",
+		"id": "lightning_status_chance_t4",
+		"max": 9,
+		"min": 7,
+		"position": "suffix",
+		"required_level": 20,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 4,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "lightning_status_chance",
+		"id": "lightning_status_chance_t3",
+		"max": 11,
+		"min": 9,
+		"position": "suffix",
+		"required_level": 30,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 3,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "lightning_status_chance",
+		"id": "lightning_status_chance_t2",
+		"max": 13,
+		"min": 11,
+		"position": "suffix",
+		"required_level": 40,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 2,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "lightning_status_chance",
+		"id": "lightning_status_chance_t1",
+		"max": 15,
+		"min": 13,
+		"position": "suffix",
+		"required_level": 50,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 1,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "lightning_penetration",
+		"id": "lightning_penetration_t6",
+		"max": 2,
+		"min": 1,
+		"position": "suffix",
+		"required_level": 0,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 6,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "lightning_penetration",
+		"id": "lightning_penetration_t5",
+		"max": 3,
+		"min": 2,
+		"position": "suffix",
+		"required_level": 10,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 5,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "lightning_penetration",
+		"id": "lightning_penetration_t4",
+		"max": 4,
+		"min": 3,
+		"position": "suffix",
+		"required_level": 20,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 4,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "lightning_penetration",
+		"id": "lightning_penetration_t3",
+		"max": 5,
+		"min": 4,
+		"position": "suffix",
+		"required_level": 30,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 3,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "lightning_penetration",
+		"id": "lightning_penetration_t2",
+		"max": 6,
+		"min": 5,
+		"position": "suffix",
+		"required_level": 40,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 2,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "lightning_penetration",
+		"id": "lightning_penetration_t1",
+		"max": 7,
+		"min": 6,
+		"position": "suffix",
+		"required_level": 50,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 1,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "elemental_penetration",
+		"id": "elemental_penetration_t6",
+		"max": 2,
+		"min": 1,
+		"position": "suffix",
+		"required_level": 0,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 6,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "elemental_penetration",
+		"id": "elemental_penetration_t5",
+		"max": 3,
+		"min": 2,
+		"position": "suffix",
+		"required_level": 10,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 5,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "elemental_penetration",
+		"id": "elemental_penetration_t4",
+		"max": 4,
+		"min": 3,
+		"position": "suffix",
+		"required_level": 20,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 4,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "elemental_penetration",
+		"id": "elemental_penetration_t3",
+		"max": 5,
+		"min": 4,
+		"position": "suffix",
+		"required_level": 30,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 3,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "elemental_penetration",
+		"id": "elemental_penetration_t2",
+		"max": 6,
+		"min": 5,
+		"position": "suffix",
+		"required_level": 40,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 2,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "elemental_penetration",
+		"id": "elemental_penetration_t1",
+		"max": 7,
+		"min": 6,
+		"position": "suffix",
+		"required_level": 50,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 1,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "projectile_speed",
+		"id": "projectile_speed_t6",
+		"max": 10,
+		"min": 5,
+		"position": "suffix",
+		"required_level": 0,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 6,
+		"weapons": [
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "projectile_speed",
+		"id": "projectile_speed_t5",
+		"max": 15,
+		"min": 10,
+		"position": "suffix",
+		"required_level": 10,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 5,
+		"weapons": [
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "projectile_speed",
+		"id": "projectile_speed_t4",
+		"max": 20,
+		"min": 15,
+		"position": "suffix",
+		"required_level": 20,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 4,
+		"weapons": [
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "projectile_speed",
+		"id": "projectile_speed_t3",
+		"max": 25,
+		"min": 20,
+		"position": "suffix",
+		"required_level": 30,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 3,
+		"weapons": [
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "projectile_speed",
+		"id": "projectile_speed_t2",
+		"max": 30,
+		"min": 25,
+		"position": "suffix",
+		"required_level": 40,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 2,
+		"weapons": [
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "projectile_speed",
+		"id": "projectile_speed_t1",
+		"max": 35,
+		"min": 30,
+		"position": "suffix",
+		"required_level": 50,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 1,
+		"weapons": [
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "projectiles",
+		"id": "projectiles_t1",
+		"max": 1,
+		"min": 1,
+		"position": "suffix",
+		"required_level": 50,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 1,
+		"weapons": [
+			"bow"
+		]
+	},
+	{
+		"family": "projectile_pierce",
+		"id": "projectile_pierce_t1",
+		"max": 2,
+		"min": 2,
+		"position": "suffix",
+		"required_level": 50,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 1,
+		"weapons": [
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "attack_hit_mana",
+		"id": "attack_hit_mana_t1",
+		"max": 2,
+		"min": 2,
+		"position": "suffix",
+		"required_level": 50,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 1,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "area",
+		"id": "area_t6",
+		"max": 8,
+		"min": 4,
+		"position": "suffix",
+		"required_level": 0,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 6,
+		"weapons": [
+			"sword",
+			"staff"
+		]
+	},
+	{
+		"family": "area",
+		"id": "area_t5",
+		"max": 11,
+		"min": 7,
+		"position": "suffix",
+		"required_level": 10,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 5,
+		"weapons": [
+			"sword",
+			"staff"
+		]
+	},
+	{
+		"family": "area",
+		"id": "area_t4",
+		"max": 14,
+		"min": 10,
+		"position": "suffix",
+		"required_level": 20,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 4,
+		"weapons": [
+			"sword",
+			"staff"
+		]
+	},
+	{
+		"family": "area",
+		"id": "area_t3",
+		"max": 17,
+		"min": 13,
+		"position": "suffix",
+		"required_level": 30,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 3,
+		"weapons": [
+			"sword",
+			"staff"
+		]
+	},
+	{
+		"family": "area",
+		"id": "area_t2",
+		"max": 20,
+		"min": 16,
+		"position": "suffix",
+		"required_level": 40,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 2,
+		"weapons": [
+			"sword",
+			"staff"
+		]
+	},
+	{
+		"family": "area",
+		"id": "area_t1",
+		"max": 23,
+		"min": 19,
+		"position": "suffix",
+		"required_level": 50,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 1,
+		"weapons": [
+			"sword",
+			"staff"
+		]
+	},
+	{
+		"family": "burn_damage",
+		"id": "burn_damage_t6",
+		"max": 15,
+		"min": 8,
+		"position": "prefix",
+		"required_level": 0,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 6,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "burn_damage",
+		"id": "burn_damage_t5",
+		"max": 22,
+		"min": 15,
+		"position": "prefix",
+		"required_level": 10,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 5,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "burn_damage",
+		"id": "burn_damage_t4",
+		"max": 29,
+		"min": 22,
+		"position": "prefix",
+		"required_level": 20,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 4,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "burn_damage",
+		"id": "burn_damage_t3",
+		"max": 36,
+		"min": 29,
+		"position": "prefix",
+		"required_level": 30,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 3,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "burn_damage",
+		"id": "burn_damage_t2",
+		"max": 43,
+		"min": 36,
+		"position": "prefix",
+		"required_level": 40,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 2,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "burn_damage",
+		"id": "burn_damage_t1",
+		"max": 50,
+		"min": 43,
+		"position": "prefix",
+		"required_level": 50,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 1,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "burn_duration",
+		"id": "burn_duration_t6",
+		"max": 10,
+		"min": 5,
+		"position": "suffix",
+		"required_level": 0,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 6,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "burn_duration",
+		"id": "burn_duration_t5",
+		"max": 15,
+		"min": 10,
+		"position": "suffix",
+		"required_level": 10,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 5,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "burn_duration",
+		"id": "burn_duration_t4",
+		"max": 20,
+		"min": 15,
+		"position": "suffix",
+		"required_level": 20,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 4,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "burn_duration",
+		"id": "burn_duration_t3",
+		"max": 25,
+		"min": 20,
+		"position": "suffix",
+		"required_level": 30,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 3,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "burn_duration",
+		"id": "burn_duration_t2",
+		"max": 30,
+		"min": 25,
+		"position": "suffix",
+		"required_level": 40,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 2,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "burn_duration",
+		"id": "burn_duration_t1",
+		"max": 35,
+		"min": 30,
+		"position": "suffix",
+		"required_level": 50,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 1,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "cold_duration",
+		"id": "cold_duration_t6",
+		"max": 10,
+		"min": 5,
+		"position": "suffix",
+		"required_level": 0,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 6,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "cold_duration",
+		"id": "cold_duration_t5",
+		"max": 15,
+		"min": 10,
+		"position": "suffix",
+		"required_level": 10,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 5,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "cold_duration",
+		"id": "cold_duration_t4",
+		"max": 20,
+		"min": 15,
+		"position": "suffix",
+		"required_level": 20,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 4,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "cold_duration",
+		"id": "cold_duration_t3",
+		"max": 25,
+		"min": 20,
+		"position": "suffix",
+		"required_level": 30,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 3,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "cold_duration",
+		"id": "cold_duration_t2",
+		"max": 30,
+		"min": 25,
+		"position": "suffix",
+		"required_level": 40,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 2,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "cold_duration",
+		"id": "cold_duration_t1",
+		"max": 35,
+		"min": 30,
+		"position": "suffix",
+		"required_level": 50,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 1,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "mana_cost",
+		"id": "mana_cost_t6",
+		"max": 4,
+		"min": 2,
+		"position": "suffix",
+		"required_level": 0,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 6,
+		"weapons": [
+			"staff"
+		]
+	},
+	{
+		"family": "mana_cost",
+		"id": "mana_cost_t5",
+		"max": 6,
+		"min": 4,
+		"position": "suffix",
+		"required_level": 10,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 5,
+		"weapons": [
+			"staff"
+		]
+	},
+	{
+		"family": "mana_cost",
+		"id": "mana_cost_t4",
+		"max": 8,
+		"min": 6,
+		"position": "suffix",
+		"required_level": 20,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 4,
+		"weapons": [
+			"staff"
+		]
+	},
+	{
+		"family": "mana_cost",
+		"id": "mana_cost_t3",
+		"max": 10,
+		"min": 8,
+		"position": "suffix",
+		"required_level": 30,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 3,
+		"weapons": [
+			"staff"
+		]
+	},
+	{
+		"family": "mana_cost",
+		"id": "mana_cost_t2",
+		"max": 12,
+		"min": 10,
+		"position": "suffix",
+		"required_level": 40,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 2,
+		"weapons": [
+			"staff"
+		]
+	},
+	{
+		"family": "mana_cost",
+		"id": "mana_cost_t1",
+		"max": 14,
+		"min": 12,
+		"position": "suffix",
+		"required_level": 50,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 1,
+		"weapons": [
+			"staff"
+		]
+	},
+	{
+		"family": "mana",
+		"id": "mana_t6",
+		"max": 10,
+		"min": 5,
+		"position": "prefix",
+		"required_level": 0,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 6,
+		"weapons": [
+			"staff"
+		]
+	},
+	{
+		"family": "mana",
+		"id": "mana_t5",
+		"max": 15,
+		"min": 10,
+		"position": "prefix",
+		"required_level": 10,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 5,
+		"weapons": [
+			"staff"
+		]
+	},
+	{
+		"family": "mana",
+		"id": "mana_t4",
+		"max": 20,
+		"min": 15,
+		"position": "prefix",
+		"required_level": 20,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 4,
+		"weapons": [
+			"staff"
+		]
+	},
+	{
+		"family": "mana",
+		"id": "mana_t3",
+		"max": 25,
+		"min": 20,
+		"position": "prefix",
+		"required_level": 30,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 3,
+		"weapons": [
+			"staff"
+		]
+	},
+	{
+		"family": "mana",
+		"id": "mana_t2",
+		"max": 30,
+		"min": 25,
+		"position": "prefix",
+		"required_level": 40,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 2,
+		"weapons": [
+			"staff"
+		]
+	},
+	{
+		"family": "mana",
+		"id": "mana_t1",
+		"max": 35,
+		"min": 30,
+		"position": "prefix",
+		"required_level": 50,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 1,
+		"weapons": [
+			"staff"
+		]
+	},
+	{
+		"family": "mana_regen",
+		"id": "mana_regen_t6",
+		"max": 10,
+		"min": 5,
+		"position": "suffix",
+		"required_level": 0,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 6,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "mana_regen",
+		"id": "mana_regen_t5",
+		"max": 15,
+		"min": 10,
+		"position": "suffix",
+		"required_level": 10,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 5,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "mana_regen",
+		"id": "mana_regen_t4",
+		"max": 20,
+		"min": 15,
+		"position": "suffix",
+		"required_level": 20,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 4,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "mana_regen",
+		"id": "mana_regen_t3",
+		"max": 25,
+		"min": 20,
+		"position": "suffix",
+		"required_level": 30,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 3,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "mana_regen",
+		"id": "mana_regen_t2",
+		"max": 30,
+		"min": 25,
+		"position": "suffix",
+		"required_level": 40,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 2,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "mana_regen",
+		"id": "mana_regen_t1",
+		"max": 35,
+		"min": 30,
+		"position": "suffix",
+		"required_level": 50,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 1,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "mana_kill",
+		"id": "mana_kill_t6",
+		"max": 2,
+		"min": 1,
+		"position": "suffix",
+		"required_level": 0,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 6,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "mana_kill",
+		"id": "mana_kill_t5",
+		"max": 3,
+		"min": 2,
+		"position": "suffix",
+		"required_level": 10,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 5,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "mana_kill",
+		"id": "mana_kill_t4",
+		"max": 4,
+		"min": 3,
+		"position": "suffix",
+		"required_level": 20,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 4,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "mana_kill",
+		"id": "mana_kill_t3",
+		"max": 5,
+		"min": 4,
+		"position": "suffix",
+		"required_level": 30,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 3,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "mana_kill",
+		"id": "mana_kill_t2",
+		"max": 6,
+		"min": 5,
+		"position": "suffix",
+		"required_level": 40,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 2,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "mana_kill",
+		"id": "mana_kill_t1",
+		"max": 7,
+		"min": 6,
+		"position": "suffix",
+		"required_level": 50,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 1,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "freeze_duration",
+		"id": "freeze_duration_t6",
+		"max": 10,
+		"min": 5,
+		"position": "suffix",
+		"required_level": 0,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 6,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "freeze_duration",
+		"id": "freeze_duration_t5",
+		"max": 15,
+		"min": 10,
+		"position": "suffix",
+		"required_level": 10,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 5,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "freeze_duration",
+		"id": "freeze_duration_t4",
+		"max": 20,
+		"min": 15,
+		"position": "suffix",
+		"required_level": 20,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 4,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "freeze_duration",
+		"id": "freeze_duration_t3",
+		"max": 25,
+		"min": 20,
+		"position": "suffix",
+		"required_level": 30,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 3,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "freeze_duration",
+		"id": "freeze_duration_t2",
+		"max": 30,
+		"min": 25,
+		"position": "suffix",
+		"required_level": 40,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 2,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	},
+	{
+		"family": "freeze_duration",
+		"id": "freeze_duration_t1",
+		"max": 35,
+		"min": 30,
+		"position": "suffix",
+		"required_level": 50,
+		"second_max": 0,
+		"second_min": 0,
+		"tier": 1,
+		"weapons": [
+			"sword",
+			"staff",
+			"bow"
+		]
+	}
+]

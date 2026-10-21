@@ -36,6 +36,9 @@ namespace ReconstructNodesServer.Library.Models
         [JsonPropertyName("fate")]
         public CharacterFate Fate { get; set; }
 
+        [JsonPropertyName("locked")]
+        public bool Locked { get; set; }
+
         [JsonPropertyName("weapon_quality_version")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public int? WeaponQualityVersion { get; set; }

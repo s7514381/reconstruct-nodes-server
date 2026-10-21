@@ -11,6 +11,10 @@ namespace ReconstructNodesServer.Library.Models
         public Guid RequestId { get; set; }
         [JsonPropertyName("count")]
         public int Count { get; set; }
+        /// <summary>新手選角：指定戰士／弓箭手／法師之一，免費且僅限尚未擁有一般角色時；一般抽取為 null。</summary>
+        [JsonPropertyName("starter_kind")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public CharacterKind? StarterKind { get; set; }
     }
 
     public class ShopDrawResult

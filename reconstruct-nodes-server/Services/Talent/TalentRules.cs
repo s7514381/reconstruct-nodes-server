@@ -4,20 +4,23 @@ using ReconstructNodesServer.Library.Models;
 namespace ReconstructNodesServer.Services;
 
 /// <summary>
-/// Transaction metadata verified against the client's TalentTreeLayout / TalentCatalog (8 boards x 22 nodes).
+/// Transaction metadata verified against the client's TalentTreeLayout / TalentCatalog (8 boards; 22 nodes, or 23 on
+/// the three-keystone dexterity and intelligence boards).
 /// Stage 1: 1-3 (3 levels). Stage 2: 4-9, stage 3: 10-15 (2 levels; first three are upgrades of the previous
-/// stage's first three). Stage 4: 16-20 (1 level; 16-18 upgrade 13-15). Stage 5: keystones 21/22 (1 level, mutually
-/// exclusive). Effects are intentionally absent.
+/// stage's first three). Stage 4: 16-20 (1 level; 16-18 upgrade 13-15). Stage 5: keystones 21-22 (21-23 on boards declaring three; 1 level, all keystones of a
+/// board are mutually exclusive). Effects are intentionally absent.
 /// </summary>
 public static class TalentRules
 {
-    public sealed record Node(string Id, int Stage, int MaxLevel, string? Prerequisite, string? Exclusive = null);
+    public sealed record Node(string Id, int Stage, int MaxLevel, string? Prerequisite, IReadOnlyList<string>? Exclusive = null);
 
     /// <summary>Client save version that introduced the 8-board layout.</summary>
     public const int CurrentVersion = 4;
 
     private static readonly int[] StageStarts = [1, 4, 10, 16, 21];
     private static readonly int[] StageSizes = [3, 6, 6, 5, 2];
+    private const int DefaultKeystoneCount = 2;
+    private const int ThreeKeystoneCount = 3;
     private static readonly int[] StageMaxLevels = [3, 2, 2, 1, 1];
     private static readonly int[] StageRequirements = [0, 6, 6, 6, 4];
 
@@ -31,8 +34,8 @@ public static class TalentRules
         new Dictionary<string, IReadOnlyDictionary<string, Node>>
         {
             ["t_strength"] = Build("str"),
-            ["t_dexterity"] = Build("dex"),
-            ["t_intelligence"] = Build("int"),
+            ["t_dexterity"] = Build("dex", ThreeKeystoneCount),
+            ["t_intelligence"] = Build("int", ThreeKeystoneCount),
             ["t_fire"] = Build("fire"),
             ["t_ice"] = Build("ice"),
             ["t_lightning"] = Build("ltn"),
@@ -40,15 +43,21 @@ public static class TalentRules
             ["t_swift"] = Build("swift"),
         };
 
-    private static IReadOnlyDictionary<string, Node> Build(string prefix) =>
-        Enumerable.Range(1, StageSizes.Sum()).Select(number =>
+    private static IReadOnlyDictionary<string, Node> Build(string prefix, int keystoneCount = DefaultKeystoneCount)
+    {
+        int keystoneStart = StageStarts[^1];
+        int nodeCount = StageSizes.Sum() - DefaultKeystoneCount + keystoneCount;
+        return Enumerable.Range(1, nodeCount).Select(number =>
         {
             int stage = Array.FindLastIndex(StageStarts, start => number >= start) + 1;
             int offset = number - StageStarts[stage - 1];
             string? prerequisite = stage is >= 2 and <= 4 && offset < 3 ? $"{prefix}_{number - 3:D2}" : null;
-            string? exclusive = stage == 5 ? $"{prefix}_{(number == 21 ? 22 : 21):D2}" : null;
+            IReadOnlyList<string>? exclusive = stage == 5
+                ? Enumerable.Range(keystoneStart, keystoneCount).Where(other => other != number).Select(other => $"{prefix}_{other:D2}").ToArray()
+                : null;
             return new Node($"{prefix}_{number:D2}", stage, StageMaxLevels[stage - 1], prerequisite, exclusive);
         }).ToDictionary(node => node.Id);
+    }
 
     public static Node Get(string tree, string node) =>
         Trees.TryGetValue(tree, out var nodes) && nodes.TryGetValue(node, out var result)
@@ -62,7 +71,7 @@ public static class TalentRules
     {
         var nodes = Trees[tree];
         if (node.Prerequisite != null && Level(progress, node.Prerequisite) < nodes[node.Prerequisite].MaxLevel) { return false; }
-        if (node.Exclusive != null && Level(progress, node.Exclusive) > 0) { return false; }
+        if (node.Exclusive != null && node.Exclusive.Any(other => Level(progress, other) > 0)) { return false; }
         return node.Stage == 1 || nodes.Values.Where(n => n.Stage == node.Stage - 1).Sum(n => Math.Min(n.MaxLevel, Level(progress, n.Id)))
             >= StageRequirements[node.Stage - 1];
     }

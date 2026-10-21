@@ -12,7 +12,7 @@ public static class RefinementRules
 {
     private enum Operation { Awaken, Ascend, AddFine, AddRare, Remove, RerollFine, RerollRare, Reset, Tune, Maximize, Polarize }
     private sealed record Family(string Id, bool Prefix, string[] Types, int Min, int Max, int Step,
-        int SecondMin = 0, int SecondMax = 0, int SecondStep = 0);
+        int SecondMin = 0, int SecondMax = 0, int SecondStep = 0, bool TopTierOnly = false, int TopMin = -1);
     private sealed record Affix(Family Family, int Tier, int[] Values)
     {
         public string Id => $"{Family.Id}_t{Tier}";
@@ -34,13 +34,16 @@ public static class RefinementRules
         List<Family> families =
         [
             new("global_damage",true,All,5,10,5), new("range",false,All,4,8,3),
+            // 武器附加傷害：下限在 T6 與 T1 之間線性插值（與客戶端 WeaponAffixCatalog 一致）。
+            new("weapon_added_percent",true,All,1,5,10,TopMin:50), new("weapon_added_flat",true,All,1,5,4,TopMin:20),
             new("recovery",false,All,4,8,3), new("critical_chance",false,All,1,2,1),
             new("critical_damage",false,All,8,12,5), new("physical_damage",true,All,5,10,5),
             new("elemental_damage",true,All,4,8,4), new("attack_damage",true,All,5,10,5),
             new("spell_damage",true,["staff"],5,10,5), new("projectile_damage",true,Ranged,5,10,5),
             new("area_damage",true,["sword","staff"],5,10,5), new("added_physical",true,All,1,2,2,3,4,3),
             new("elemental_penetration",false,All,1,2,1), new("projectile_speed",false,Ranged,5,10,5),
-            new("projectiles",false,["bow"],1,1,0), new("projectile_pierce",false,Ranged,1,1,0),
+            new("projectiles",false,["bow"],1,1,0,TopTierOnly:true), new("projectile_pierce",false,Ranged,2,2,0,TopTierOnly:true),
+            new("attack_hit_mana",false,All,2,2,0,TopTierOnly:true),
             new("area",false,["sword","staff"],4,8,3), new("burn_damage",true,All,8,15,7),
             new("burn_duration",false,All,5,10,5), new("cold_duration",false,All,5,10,5),
             new("mana_cost",false,["staff"],2,4,2), new("mana",true,["staff"],5,10,5),
@@ -53,6 +56,7 @@ public static class RefinementRules
             families.Add(new($"added_{element}",true,All,1,2,2,3,5,3));
             families.Add(new($"spell_added_{element}",true,["staff"],1,2,2,3,5,3));
             families.Add(new($"{element}_penetration",false,All,1,2,1));
+            families.Add(new($"{element}_status_chance",false,All,3,5,2));
         }
         return families.ToDictionary(f => f.Id);
     }
@@ -87,9 +91,18 @@ public static class RefinementRules
             int split = parsed.AffixKey.LastIndexOf("_t", StringComparison.Ordinal);
             if (split < 1 || !Families.TryGetValue(parsed.AffixKey[..split], out Family? family) ||
                 !int.TryParse(parsed.AffixKey[(split + 2)..], out int tier) || tier is < 1 or > 6 ||
-                !family.Types.Contains(type) || (6 - tier) * 10 > level)
+                !family.Types.Contains(type))
             { throw new BusinessArgumentException("weapon.error.affix_eligibility"); }
             int[] values = parsed.Values.ToArray();
+            if (family.TopTierOnly && tier > 1)
+            {
+                // 舊版多階詞綴：轉為固定值 T1；武器等級不足 T1 需求時移除。
+                if (level < TopTierLevel) { continue; }
+                tier = 1;
+                values = [family.Min];
+            }
+            if ((6 - tier) * 10 > level || family.TopTierOnly && tier != 1)
+            { throw new BusinessArgumentException("weapon.error.affix_eligibility"); }
             var bounds = Bounds(family, tier);
             if (values.Length != bounds.Length || values.Where((v, i) => v < bounds[i].Min || v > bounds[i].Max).Any())
             { throw new BusinessArgumentException("weapon.error.invalid_affix"); }
@@ -145,6 +158,7 @@ public static class RefinementRules
         };
     }
 
+    private const int TopTierLevel = 50;
     private static (string Type, int Level) WeaponBase(string id)
     {
         foreach (string type in All)
@@ -160,7 +174,7 @@ public static class RefinementRules
     {
         int rank = 6 - tier;
         int min = family.Min + rank * family.Step, max = family.Max + rank * family.Step;
-        if (family.Id is "projectiles" or "projectile_pierce") { min += rank / 2; max += (rank + 1) / 2; }
+        if (family.TopMin >= 0) { min = (int)Math.Round(family.Min + (family.TopMin - family.Min) * rank / 5.0, MidpointRounding.AwayFromZero); }
         return family.SecondMax > 0
             ? [(min, max), (family.SecondMin + rank * family.SecondStep, family.SecondMax + rank * family.SecondStep)]
             : [(min, max)];
@@ -188,12 +202,12 @@ public static class RefinementRules
     private static void Add(List<Affix> affixes, string quality, string type, int level)
     {
         int limit = quality == "fine" ? 1 : 3;
-        var eligible = Families.Values.Where(f => f.Types.Contains(type) &&
+        var eligible = Families.Values.Where(f => f.Types.Contains(type) && (!f.TopTierOnly || level >= TopTierLevel) &&
             !affixes.Any(a => a.Family.Id == f.Id) &&
             affixes.Count(a => a.Family.Prefix == f.Prefix) < limit).ToArray();
         if (eligible.Length == 0) { throw new BusinessOperationException("weapon.error.quota"); }
         Family family = eligible[Roll(0, eligible.Length - 1)];
-        int[] tiers = Enumerable.Range(1, 6).Where(tier => (6 - tier) * 10 <= level).ToArray();
+        int[] tiers = Enumerable.Range(1, 6).Where(tier => (6 - tier) * 10 <= level && (!family.TopTierOnly || tier == 1)).ToArray();
         affixes.Add(Rolled(family, tiers[Roll(0, tiers.Length - 1)]));
     }
 }

@@ -36,6 +36,7 @@ namespace ReconstructNodesServer
         public virtual DbSet<EconomyRequest> EconomyRequest { get; set; }
         public virtual DbSet<IapPurchase> IapPurchase { get; set; }
         public virtual DbSet<DailyCheckIn> DailyCheckIn { get; set; }
+        public virtual DbSet<AdRewardGrant> AdRewardGrant { get; set; }
         public virtual DbSet<BattlefieldRoad> BattlefieldRoad { get; set; }
         public virtual DbSet<Talent> Talent { get; set; }
         public virtual DbSet<TalentAcquired> TalentAcquired { get; set; }
@@ -145,6 +146,19 @@ namespace ReconstructNodesServer
             modelBuilder.Entity<DailyCheckIn>()
                 .HasIndex(row => new { row.CreateUserId, row.DateKey }).IsUnique()
                 .HasFilter("[Status] <> -1");
+
+            // 看廣告領鑽石：同一次廣告觀看（transaction_id）全域只發一次；同一玩家同一天的第 n 次領取只會成功一次；同一請求只對應一次廣告。
+            modelBuilder.Entity<AdRewardGrant>().Property(row => row.TransactionId).HasMaxLength(450);
+            modelBuilder.Entity<AdRewardGrant>().Property(row => row.DateKey).HasMaxLength(10);
+            modelBuilder.Entity<AdRewardGrant>()
+                .HasIndex(row => row.TransactionId).IsUnique()
+                .HasFilter("[Status] <> -1");
+            modelBuilder.Entity<AdRewardGrant>()
+                .HasIndex(row => new { row.CreateUserId, row.RequestId }).IsUnique()
+                .HasFilter("[Status] <> -1");
+            modelBuilder.Entity<AdRewardGrant>()
+                .HasIndex(row => new { row.CreateUserId, row.DateKey, row.Slot }).IsUnique()
+                .HasFilter("[Status] <> -1 AND [Slot] IS NOT NULL");
 
             // 天賦每位玩家只有一列父資料，以唯一索引保證併發寫入時不會產生重複列。
             modelBuilder.Entity<Talent>()

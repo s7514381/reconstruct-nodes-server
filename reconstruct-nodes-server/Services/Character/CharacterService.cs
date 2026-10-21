@@ -104,6 +104,7 @@ namespace ReconstructNodesServer.Services
                     Level = row.Level,
                     Personality = row.Personality,
                     Fate = row.Fate,
+                    Locked = row.Locked,
                     SkillTrees = treesByCharacter[row.Id].Select(tree => new GameProgressSkillLoadoutModel
                     {
                         Kind = tree.Kind,

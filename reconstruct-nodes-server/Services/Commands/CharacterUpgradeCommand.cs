@@ -72,6 +72,7 @@ public class CharacterUpgradeCommand(BaseServiceArgument argument) : BaseService
             Character material = state.Characters.FirstOrDefault(row => row.Id == id)
                 ?? throw new BusinessArgumentException(ApiMessageKeys.CharacterNotOwned);
             if (material.Kind == CharacterKind.Core) { throw new BusinessArgumentException(ApiMessageKeys.CharacterUpgradeMaterialInvalid); }
+            if (material.Locked) { throw new BusinessArgumentException(ApiMessageKeys.CharacterLocked); }
             if (state.Deployments.Any(row => row.CharacterId == id))
             { throw new BusinessArgumentException(ApiMessageKeys.CharacterDissolveDeployed); }
             materials.Add(material);

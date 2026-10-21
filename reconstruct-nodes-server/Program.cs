@@ -104,6 +104,10 @@ var googlePlayOptions = builder.Configuration.GetSection(GooglePlayBillingOption
 services.AddSingleton(googlePlayOptions);
 services.AddHttpClient<IGooglePlayBilling, GooglePlayBilling>(client => client.Timeout = TimeSpan.FromSeconds(15));
 
+// AdMob 看廣告領鑽石：SSV 回呼以 Google 公佈的金鑰驗證簽章。ad_unit 設定後才檢查（AdMob:AdUnitId）。
+services.AddSingleton(builder.Configuration.GetSection(AdMobSsvOptions.SectionName).Get<AdMobSsvOptions>() ?? new AdMobSsvOptions());
+services.AddHttpClient<IAdMobSsvKeySource, AdMobSsvKeySource>(client => client.Timeout = TimeSpan.FromSeconds(15));
+
 
 var app = builder.Build();
 
